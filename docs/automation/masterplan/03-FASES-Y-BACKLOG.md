@@ -1,6 +1,20 @@
 # Fases, dependencias y backlog ejecutable
 Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejecutar un hito acotado por sesión y actualizar evidencia/estado. Estimaciones son orientativas, no fechas comprometidas.
 
+## Corte de ejecución 2026-09-23
+
+| ID | Estado | Evidencia / límite |
+|---|---|---|
+| M0.1–M0.4 | passed | Git/remotos/AGENTS, matriz de ocho commits y 28 paths en `M0-INTEGRACION.md`; baseline generado por código sin leer el DWG |
+| M0.5 | passed local | Rama de implementación y merge explícito; build debug, smoke del mismo binario, 13/13 tests MCP y suite lib 1665 passed, 24 ignored. Publicación se anota en el checkpoint |
+| M1.1–M1.3 | passed L1 | Biblioteca `mcp_client.py` reutilizada por tres harnesses; ocho pruebas sintéticas de transporte |
+| M1.4 | partial | Backoff y un solo intento de lanzamiento; estado formal `starting/ready` y `retry_after_ms` del servidor pendientes |
+| M1.5 | partial | Selección explícita ante sesiones ambiguas; precondición obligatoria de `document_id/revision` pendiente |
+| M1.6 | partial | Consulta de operación tras timeout de mutación sin replay; lote `run_script` incierto y journal durable pendientes |
+| M2–M8 | pending | Fuera de este corte |
+
+El owner_role del corte M0/M1 es la sesión ejecutora. Reproducir L1 con `python -m unittest discover -s docs/automation -p test_mcp_client.py -v`. No hay gate L2–L5 aceptado por estos tests. El caso original continúa partial.
+
 ## Dependencias
 M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7 → M8.
 Se permite investigar capacidades M5 mientras M1–M3 avanzan, pero no aceptar calidad ni rendimiento antes de contratos y telemetría estables.

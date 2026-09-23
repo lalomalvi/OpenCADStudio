@@ -1,0 +1,32 @@
+{
+  "schema_version": "m0-baseline-1",
+  "historical_case": "2026-09-23-luna-floorplan-01",
+  "historical_status": "partial",
+  "historical_hashes_from_existing_documentation_not_reopened": {
+    "source_png_sha256": "A4D37BF7E653B9E581D71D7DBFE44400CC10C259CFAE20577ED3052AB9C00DF5",
+    "dwg_sha256": "3F33951F80468F208C4BD8520FE82DFDF7FD0C001326276153F3952BD53D4ABB",
+    "preview_sha256": "A7C55D6B8E5B13C4419CE7694698FF496143B5F24921C399BF4DA717861B1005"
+  },
+  "historical_metrics_from_existing_documentation": {
+    "responses": 84,
+    "total_tokens": 9797952,
+    "mcp_calls": 30,
+    "entities": 273,
+    "layers_used": 1
+  },
+  "integration": {
+    "base": "133bfddba9dc994b1b5fadfe581c8ce0ebcd3e2d",
+    "origin_main_at_m0": "a069d7f146c27a18255f2a47d733bf678385feae",
+    "experimental_head": "d002b08a4c70a88de5af5df103b4ecbfb6890b26",
+    "implementation_head": "c449853c2142e32022e1e00c29d6687da2526701",
+    "cargo_lock_sha256": "8A5C4B498C2352D4DDC62673EF730B99F9EAAB4AA0904953D5AEAF1E9881C4C5",
+    "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cargo_version": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "validation_build_command": "cargo test --lib mcp::tests",
+    "historical_release_code_revision": "4e5a69f39605aaf4cdb1174322b3eb9eba9b1168",
+    "historical_release_executable_sha256": "446D79FF325EE385FA52F756B98FB5AEE6EAF389449A88AE4C4E491B6BC30A9B",
+    "historical_release_matches_documented_hash": true,
+    "current_debug_executable_sha256": "53E874F605CEC4FA79C8FB982DB6FEE4C25C6895AF80AE09F9CCFF1B3551EFBE"
+  },
+  "scope_note": "Historical private PNG and DWG were not read by this generator."
+}

@@ -2,75 +2,11 @@
 
 import json
 from pathlib import Path
-import subprocess
 import sys
 import time
 import uuid
 
-
-META = {
-    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-    "io.modelcontextprotocol/clientInfo": {"name": "ocs-reconstruction-eval", "version": "1"},
-    "io.modelcontextprotocol/clientCapabilities": {
-        "extensions": {"io.modelcontextprotocol/tasks": {}}
-    },
-}
-
-
-class Client:
-    def __init__(self, server: Path) -> None:
-        self.process = subprocess.Popen(
-            [str(server), "--mcp"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        self.serial = 0
-
-    def rpc(self, method: str, params: dict) -> dict:
-        assert self.process.stdin and self.process.stdout
-        self.serial += 1
-        payload = {"jsonrpc": "2.0", "id": self.serial, "method": method, "params": params}
-        self.process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
-        self.process.stdin.flush()
-        response = json.loads(self.process.stdout.readline())
-        if "error" in response:
-            raise RuntimeError(response["error"])
-        return response["result"]
-
-    def tool(self, name: str, arguments: dict) -> dict:
-        result = self.rpc("tools/call", {"name": name, "arguments": arguments, "_meta": META})
-        if result.get("resultType") == "task":
-            task_id = result["taskId"]
-            while True:
-                time.sleep(result.get("pollIntervalMs", 250) / 1000)
-                task = self.rpc("tasks/get", {"taskId": task_id, "_meta": META})
-                if task["status"] in {"failed", "cancelled"}:
-                    raise RuntimeError(task)
-                if task["status"] == "completed":
-                    result = task["result"]
-                    break
-        structured = result.get("structuredContent")
-        if structured is None or structured.get("ok") is False:
-            raise RuntimeError(structured or result)
-        return structured
-
-    def sessions(self, timeout_seconds: float = 90.0) -> list[dict]:
-        deadline = time.monotonic() + timeout_seconds
-        while True:
-            try:
-                return self.tool("ocs_sessions", {"launch_if_none": True})["result"]
-            except RuntimeError as error:
-                if "still starting" not in str(error) or time.monotonic() >= deadline:
-                    raise
-                time.sleep(0.5)
-
-    def close(self) -> None:
-        assert self.process.stdin
-        self.process.stdin.close()
-        if self.process.wait(timeout=5) != 0:
-            raise RuntimeError(self.process.stderr.read() if self.process.stderr else "MCP exited")
+from mcp_client import Client
 
 
 def plan_commands(origin: int) -> list[str]:
@@ -98,9 +34,10 @@ def main() -> None:
     handles: list[str] = []
     started = time.perf_counter()
     try:
-        sessions = client.sessions()
-        session = sessions[0]["session_id"]
-        while sessions[0].get("modal"):
+        client.handshake()
+        selected = client.ready_session(launch_if_none=True)
+        session = selected["session_id"]
+        while selected.get("modal"):
             client.tool(
                 "ocs_execute",
                 {
@@ -112,8 +49,8 @@ def main() -> None:
                     },
                 },
             )
-            sessions = client.tool("ocs_sessions", {"launch_if_none": False})["result"]
-        active = next(d for d in sessions[0]["documents"] if d["id"] == sessions[0]["document_id"])
+            selected = client.ready_session(session_id=session)
+        active = next(d for d in selected["documents"] if d["id"] == selected["document_id"])
         if active.get("start"):
             client.tool(
                 "ocs_execute",

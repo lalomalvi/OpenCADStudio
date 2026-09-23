@@ -2,7 +2,7 @@
 
 Base comprobada: `origin/main` = `a069d7f146c27a18255f2a47d733bf678385feae`; rama experimental `codex/image-to-cad-hardening` = `d002b08a4c70a88de5af5df103b4ecbfb6890b26`. Árbol inicial limpio. `origin` es el fork `lalomalvi/OpenCADStudio`; `upstream` es `HakanSeven12/OpenCADStudio`. No hay `AGENTS.md` dentro del repo; aplica `C:/Users/Luis Martinez/AGENTS.md`. La rama de implementación parte de `origin/main`: `codex/mcp-persistent-client`.
 
-El merge documental `ed8dbaf2` incorporó solo el masterplan. Los ocho commits funcionales de la rama experimental tienen como ancestro `133bfddb` y no son equivalentes a los commits documentales. Se revisaron los 28 paths del diff; no hay cambios de dependencias ni lockfiles. El código experimental se integra como merge explícito en esta rama, conservando ambos historiales y sin cherry-picks duplicados. No se usa el ensayo privado para probar esta integración.
+El merge documental `ed8dbaf2` incorporó solo el masterplan. Los nueve commits de la rama experimental (ocho de implementación/pruebas y uno de evidencia) tienen como ancestro `133bfddb` y no son equivalentes a los commits documentales. Se revisaron los 28 paths del diff; no hay cambios de dependencias ni lockfiles. El código experimental se integra como merge explícito en esta rama, conservando ambos historiales y sin cherry-picks duplicados. No se usa el ensayo privado para probar esta integración.
 
 | Commits | Capacidad y paths principales | Decisión |
 |---|---|---|

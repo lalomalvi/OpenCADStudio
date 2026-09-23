@@ -8,7 +8,7 @@ import sys
 import time
 import uuid
 
-from mcp_eval import Client, META
+from mcp_client import Client, META
 
 
 def request_id(prefix: str) -> str:
@@ -24,9 +24,10 @@ def main() -> None:
     session = None
     report: dict = {"ok": False, "server": str(server), "output": str(output)}
     try:
-        sessions = client.tool("ocs_sessions", {"launch_if_none": True})["result"]
-        session = sessions[0]["session_id"]
-        while sessions[0].get("modal"):
+        client.handshake()
+        selected = client.ready_session(launch_if_none=True)
+        session = selected["session_id"]
+        while selected.get("modal"):
             client.tool(
                 "ocs_execute",
                 {
@@ -38,7 +39,7 @@ def main() -> None:
                     },
                 },
             )
-            sessions = client.tool("ocs_sessions", {"launch_if_none": False})["result"]
+            selected = client.ready_session(session_id=session)
 
         client.tool(
             "ocs_execute",

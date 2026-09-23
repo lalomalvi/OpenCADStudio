@@ -1,6 +1,8 @@
 # Masterplan de robustecimiento MCP y reconstrucción CAD
 Versión 1.0 · 2026-09-23 · Estado: planificación; implementación futura pendiente.
 
+Actualización M0/M1: ver [M0-INTEGRACION.md](M0-INTEGRACION.md), [BASELINE.json](BASELINE.json), [mcp_client.md](../mcp_client.md) y el corte vigente en [05-CHECKPOINT-Y-CONTINUACION.md](05-CHECKPOINT-Y-CONTINUACION.md). La tabla siguiente conserva el estado inicial histórico.
+
 ## Propósito
 Convertir el ensayo Luna → MCP → OpenCADStudio en un flujo reproducible, medible y recuperable que genere CAD editable con precisión declarada. Este plan abarca arranque, transporte, ejecución, evidencia, consumo, semántica CAD, evaluación e integración. El programa probado fue OpenCADStudio; LibreCAD no participó.
 

@@ -2,81 +2,11 @@
 
 import json
 from pathlib import Path
-import subprocess
 import sys
 import time
 import uuid
 
-
-MODERN = "2026-07-28"
-META = {
-    "io.modelcontextprotocol/protocolVersion": MODERN,
-    "io.modelcontextprotocol/clientInfo": {"name": "ocs-eval", "version": "1"},
-    "io.modelcontextprotocol/clientCapabilities": {
-        "extensions": {"io.modelcontextprotocol/tasks": {}}
-    },
-}
-
-
-class Client:
-    def __init__(self, server: Path) -> None:
-        self.process = subprocess.Popen(
-            [str(server), "--mcp"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        self.serial = 0
-        self.rpc_calls = 0
-        self.tool_calls = 0
-        self.tasks = 0
-        self.request_bytes = 0
-        self.response_bytes = 0
-
-    def rpc(self, method: str, params: dict) -> dict:
-        assert self.process.stdin and self.process.stdout
-        self.serial += 1
-        payload = {"jsonrpc": "2.0", "id": self.serial, "method": method, "params": params}
-        wire = json.dumps(payload, separators=(",", ":"))
-        self.request_bytes += len(wire.encode())
-        self.rpc_calls += 1
-        self.process.stdin.write(wire + "\n")
-        self.process.stdin.flush()
-        line = self.process.stdout.readline()
-        self.response_bytes += len(line.encode())
-        response = json.loads(line)
-        if "error" in response:
-            raise RuntimeError(response["error"])
-        return response["result"]
-
-    def tool(self, name: str, arguments: dict) -> dict:
-        self.tool_calls += 1
-        result = self.rpc("tools/call", {"name": name, "arguments": arguments, "_meta": META})
-        if result.get("resultType") == "task":
-            self.tasks += 1
-            task_id = result["taskId"]
-            poll_interval = result.get("pollIntervalMs", 250)
-            while True:
-                time.sleep(poll_interval / 1000)
-                task = self.rpc("tasks/get", {"taskId": task_id, "_meta": META})
-                if task["status"] in {"failed", "cancelled"}:
-                    raise RuntimeError(task)
-                if task["status"] == "completed":
-                    result = task["result"]
-                    break
-        structured = result.get("structuredContent")
-        if structured is None:
-            raise RuntimeError(result)
-        if structured.get("ok") is False:
-            raise RuntimeError(structured)
-        return structured
-
-    def close(self) -> None:
-        assert self.process.stdin
-        self.process.stdin.close()
-        if self.process.wait(timeout=5) != 0:
-            raise RuntimeError(self.process.stderr.read() if self.process.stderr else "MCP exited")
+from mcp_client import Client
 
 
 def main() -> None:
@@ -88,11 +18,11 @@ def main() -> None:
     base = 0
     succeeded = False
     try:
-        discovery = client.rpc("server/discover", {"_meta": META})
+        discovery = client.handshake()
         assert "io.modelcontextprotocol/tasks" in discovery["capabilities"]["extensions"]
-        sessions = client.tool("ocs_sessions", {"launch_if_none": True})["result"]
-        session = sessions[0]["session_id"]
-        while sessions[0].get("modal"):
+        selected = client.ready_session(launch_if_none=True)
+        session = selected["session_id"]
+        while selected.get("modal"):
             client.tool(
                 "ocs_execute",
                 {
@@ -104,10 +34,10 @@ def main() -> None:
                     },
                 },
             )
-            sessions = client.tool("ocs_sessions", {"launch_if_none": False})["result"]
+            selected = client.ready_session(session_id=session)
         active = next(
-            document for document in sessions[0]["documents"]
-            if document["id"] == sessions[0]["document_id"]
+            document for document in selected["documents"]
+            if document["id"] == selected["document_id"]
         )
         if active.get("start"):
             client.tool(
