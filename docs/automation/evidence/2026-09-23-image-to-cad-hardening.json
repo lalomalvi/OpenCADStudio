@@ -47,10 +47,25 @@
       "elapsed_ms": 159200.3,
       "cleanup_entities_before": 100,
       "cleanup_entities_after": 0
+    },
+    "live_release_reconstruction": {
+      "status": "passed",
+      "implementation_revision": "4e5a69f39605",
+      "version": "OpenCADStudio 2026.38+58.g4e5a69f3",
+      "commands": 100,
+      "entities": 100,
+      "entity_types": {
+        "Line": 80,
+        "Circle": 20
+      },
+      "elapsed_ms_including_cold_start": 168934.2,
+      "performance_verdict": "not_comparable_cold_start_included",
+      "cleanup_entities_after": 0
     }
   },
   "artifacts": {
     "debug_executable_sha256": "EFB8ED1237A7A42A3F9FEDFDF3836C77F1BD9AD7C8E0A99179366B3527EABE5C",
+    "release_executable_sha256": "446D79FF325EE385FA52F756B98FB5AEE6EAF389449A88AE4C4E491B6BC30A9B",
     "protected_original_sha256": "B4EF0DC00283518E1941B4985C81E7C88875F1C64879D1E7889B09C04F0D2C67",
     "protected_original_lock_present": false,
     "opencadstudio_process_residue": 0
