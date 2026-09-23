@@ -14,7 +14,6 @@ Corte inicial: 2026-09-23. Este documento describe el estado antes del commit do
 
 La raíz no está en main y no recibe automáticamente los documentos de la otra rama; abrir este worktree o fetch/checkout controlado. El ensayo permanece partial. No hay revisión externa ni visual del usuario aceptada. La próxima sesión no necesita abrir el DWG para M0/M1.
 
-## Primera entrega siguiente
 ## Publicación verificada de esta sesión
 - Documentación: commit 9814cd17a1ad95b0565cd1454da82d695a62b111 (incluye normalización de finales de archivo).
 - Merge documental publicado en origin/main: ed8dbaf2a87494f23d3960232fda4a212fc05a01.
