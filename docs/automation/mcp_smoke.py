@@ -52,7 +52,8 @@ def legacy(server: Path) -> None:
     names = set(definitions)
     assert names == TOOLS, names
     execute_request = definitions["ocs_execute"]["inputSchema"]["properties"]["request"]
-    assert len(execute_request["oneOf"]) == 18
+    assert len(execute_request["oneOf"]) == 19
+    assert execute_request["properties"]["commands"]["maxItems"] == 256
     assert execute_request["properties"]["steps"]["maxItems"] == 64
     assert execute_request["properties"]["cmd"]["examples"][0] == "LINE 0,0 10,10"
     assert "set_properties" in execute_request["properties"]["op"]["enum"]

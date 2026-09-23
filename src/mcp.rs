@@ -7,7 +7,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs::{File, OpenOptions},
     io::{self, BufRead, BufReader, Read, Write},
     net::TcpStream,
@@ -22,7 +22,7 @@ const MODERN_PROTOCOL_VERSION: &str = "2026-07-28";
 const MAX_REQUEST: usize = 1_048_576;
 const MAX_RESPONSE: u64 = 16 * 1024 * 1024;
 const CACHE_TTL_MS: u64 = 3_600_000;
-const INSTRUCTIONS: &str = "Call ocs_sessions, then pass its session_id as ocs_session_id to ocs_read, ocs_execute and ocs_capture. Read capabilities to discover the complete CAD automation surface. Call record_schema to discover every record type, property path, JSON type, enum, unit, constraint and write rule before editing unfamiliar data. Use records to inspect every serializable entity, object, table, header and document record; filter with RFC 6901 JSON Pointer paths. Use set_properties for atomic, type-checked record edits and preserve document_id, revision and request_id. Use commands with parameters.name for a command manifest. Use batch when several steps are known, and request changed_entities when resulting geometry is needed. For interactive work, call start and follow state.command.accepts, options and input_example. A run.cmd contains the command name followed by prompt answers separated by spaces; points use x,y or x,y,z. After a timeout, query the existing operation and never replay a mutation with a new request_id. waiting_input and running are not completion. Let OCS and its geometry kernel calculate geometry; use query near, contains_point and intersections for exact relationships. Before delivery call audit with the intended target_format and target_version; use save_verified with an explicit absolute path to save, reopen, hash and compare the semantic manifest.";
+const INSTRUCTIONS: &str = "Call ocs_sessions, then pass its session_id as ocs_session_id to ocs_read, ocs_execute and ocs_capture. Read capabilities to discover the complete CAD automation surface. Call record_schema to discover every record type, property path, JSON type, enum, unit, constraint and write rule before editing unfamiliar data. Use records to inspect every serializable entity, object, table, header and document record; filter with RFC 6901 JSON Pointer paths. Use set_properties for atomic, type-checked record edits and preserve document_id, revision and request_id. Use commands with parameters.name for a command manifest. Use run_script for a long, known sequence of complete command lines; it is resumable, strict by default and returns a compact summary. Use batch when operations other than command lines must be mixed, and request changed_entities only when resulting geometry is needed. For interactive work, call start and follow state.command.accepts, options and input_example. A run.cmd contains the command name followed by prompt answers separated by spaces; points use x,y or x,y,z. After a timeout, query the existing operation and never replay a mutation with a new request_id. waiting_input and running are not completion. Let OCS and its geometry kernel calculate geometry; use query near, contains_point and intersections for exact relationships. Before delivery call audit with the intended target_format and target_version; use save_verified with an explicit absolute path to save, reopen, hash and compare the semantic manifest.";
 const READ_OPS: &[&str] = &[
     "state",
     "hello",
@@ -60,6 +60,7 @@ const EXECUTE_OPS: &[&str] = &[
     "save_verified",
     "stop",
     "batch",
+    "run_script",
 ];
 const BATCH_STEP_OPS: &[&str] = &[
     "new",
@@ -80,6 +81,9 @@ const BATCH_STEP_OPS: &[&str] = &[
     "stop",
 ];
 const MAX_BATCH_STEPS: usize = 64;
+const MAX_SCRIPT_COMMANDS: usize = 256;
+const MAX_SCRIPT_COMMAND_BYTES: usize = 4096;
+const MAX_SCRIPT_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Deserialize)]
 struct Descriptor {
@@ -490,7 +494,7 @@ impl GuiClient {
                         .as_secs_f64(),
                 )
             };
-            let response = match response {
+            let mut response = match response {
                 Ok(response) => response,
                 Err(error) => {
                     batch.active = Some(step_id);
@@ -499,6 +503,18 @@ impl GuiClient {
                     return Err(error);
                 }
             };
+
+            let strict = batch.request["strict"]
+                .as_bool()
+                .unwrap_or(batch.request["op"] == "run_script");
+            if let Some(error) = strict.then(|| strict_command_error(&response)).flatten() {
+                if let Some(object) = response.as_object_mut() {
+                    object.insert("ok".into(), Value::Bool(false));
+                    object.insert("status".into(), Value::String("failed".into()));
+                    object.insert("code".into(), Value::String("strict_command_rejected".into()));
+                    object.insert("error".into(), Value::String(error));
+                }
+            }
 
             if matches!(response["status"].as_str(), Some("accepted" | "running")) {
                 batch.active = Some(step_id);
@@ -572,7 +588,49 @@ fn batch_step_id(id: &str, step: usize) -> String {
     format!("batch-{hash:016x}-{step}")
 }
 
+fn strict_command_error(response: &Value) -> Option<String> {
+    if response["status"] == "waiting_input" {
+        Some("command did not finish and is waiting for input".to_string())
+    } else if response["result"]["unconsumed"]
+        .as_array()
+        .is_some_and(|tokens| !tokens.is_empty())
+    {
+        Some(format!(
+            "command left unconsumed tokens: {}",
+            response["result"]["unconsumed"]
+        ))
+    } else {
+        None
+    }
+}
+
 fn batch_result(batch: &BatchExecution, status: &str, ok: bool) -> Value {
+    if batch.request["op"] == "run_script" {
+        let added_entities = batch
+            .changes
+            .iter()
+            .filter(|change| change["kind"] == "Added")
+            .filter_map(|change| change["handle"].as_str())
+            .collect::<HashSet<_>>()
+            .len();
+        let failed_result = (!ok).then(|| batch.results.last().cloned()).flatten();
+        return json!({
+            "ok":ok,
+            "status":status,
+            "request_id":batch.id,
+            "code":failed_result.as_ref().and_then(|result| result.get("code")).cloned(),
+            "error":failed_result.as_ref().and_then(|result| result.get("error")).cloned(),
+            "completed_commands":batch.next,
+            "successful_commands":if ok { batch.next } else { batch.next.saturating_sub(1) },
+            "failed_command":(!ok).then(|| batch.next.saturating_sub(1)),
+            "total_commands":batch.steps.len(),
+            "next_command":(batch.next < batch.steps.len()).then_some(batch.next),
+            "added_entities":added_entities,
+            "failed_result":failed_result,
+            "changes":batch.changes,
+            "state":batch.state
+        });
+    }
     json!({
         "ok":ok,
         "status":status,
@@ -616,6 +674,7 @@ fn validate_execute_request(request: &Value, op: &str) -> Result<(), String> {
         ))
     };
     match op {
+        "run_script" => validate_run_script(request),
         "batch" => {
             let steps = request["steps"].as_array().ok_or_else(|| {
                 r#"Missing steps for batch. Example request: {"op":"batch","request_id":"draw-1","steps":[{"op":"run","cmd":"LINE 0,0 10,0"}]}"#.to_string()
@@ -737,6 +796,56 @@ fn validate_execute_request(request: &Value, op: &str) -> Result<(), String> {
     }
 }
 
+fn validate_run_script(request: &Value) -> Result<(), String> {
+    let commands = request["commands"].as_array().ok_or_else(|| {
+        r#"Missing commands for run_script. Example request: {"op":"run_script","request_id":"walls-1","commands":["LINE 0,0 10,0","LINE 10,0 10,10"]}"#.to_string()
+    })?;
+    if commands.is_empty() || commands.len() > MAX_SCRIPT_COMMANDS {
+        return Err(format!(
+            "run_script commands must contain 1 to {MAX_SCRIPT_COMMANDS} command lines"
+        ));
+    }
+    let mut total = 0usize;
+    for (index, value) in commands.iter().enumerate() {
+        let command = value
+            .as_str()
+            .ok_or_else(|| format!("run_script command {index} must be a string"))?;
+        if command.trim().is_empty() {
+            return Err(format!("run_script command {index} must not be empty"));
+        }
+        if command.contains(['\r', '\n', '\0']) {
+            return Err(format!(
+                "run_script command {index} must be exactly one command line"
+            ));
+        }
+        if command.len() > MAX_SCRIPT_COMMAND_BYTES {
+            return Err(format!(
+                "run_script command {index} exceeds {MAX_SCRIPT_COMMAND_BYTES} bytes"
+            ));
+        }
+        total = total.saturating_add(command.len());
+    }
+    if total > MAX_SCRIPT_BYTES {
+        return Err(format!(
+            "run_script commands exceed the {MAX_SCRIPT_BYTES}-byte payload budget"
+        ));
+    }
+    Ok(())
+}
+
+fn expand_run_script(mut request: Value) -> Value {
+    let commands = request["commands"].as_array().cloned().unwrap_or_default();
+    let steps = commands
+        .into_iter()
+        .map(|cmd| json!({"op":"run","cmd":cmd}))
+        .collect::<Vec<_>>();
+    request
+        .as_object_mut()
+        .expect("validated run_script request is an object")
+        .insert("steps".into(), Value::Array(steps));
+    request
+}
+
 fn compact_state(state: &Value) -> Value {
     let mut compact = Map::new();
     for key in [
@@ -782,7 +891,7 @@ fn shape_execute_response(
         let handles = response_handles(&response);
         if !handles.is_empty() {
             let entities = gui.request(
-                json!({"op":"query","handles":handles,"detail":"geometry","limit":MAX_BATCH_STEPS * 100}),
+                json!({"op":"query","handles":handles,"detail":"geometry","limit":MAX_SCRIPT_COMMANDS * 100}),
                 30.0,
             )?;
             if let Some(object) = response.as_object_mut() {
@@ -825,24 +934,27 @@ fn call_tool(
         }
         "ocs_execute" => {
             let session_id = required_string(arguments, "ocs_session_id")?;
-            let request = arguments["request"]
+            let mut request = arguments["request"]
                 .as_object()
                 .cloned()
                 .map(Value::Object)
                 .ok_or_else(|| "Missing request object".to_string())?;
-            let op = required_string(&request, "op")?;
-            if !EXECUTE_OPS.contains(&op) {
+            let op = required_string(&request, "op")?.to_owned();
+            if !EXECUTE_OPS.contains(&op.as_str()) {
                 return Err(format!("Unknown mutation operation: {op}"));
             }
             let request_id = required_string(&request, "request_id")?;
             if request_id.len() > 128 {
                 return Err("request_id must not exceed 128 bytes".into());
             }
-            validate_execute_request(&request, op)?;
+            validate_execute_request(&request, &op)?;
+            if op == "run_script" {
+                request = expand_run_script(request);
+            }
             let wait = arguments["wait_seconds"].as_f64().unwrap_or(30.0);
             let detail = arguments["response_detail"].as_str().unwrap_or("compact");
             let gui = client(clients, session_id)?;
-            let response = if op == "batch" {
+            let response = if matches!(op.as_str(), "batch" | "run_script") {
                 gui.execute_batch(request, wait)?
             } else {
                 gui.request(request, wait)?
@@ -942,7 +1054,9 @@ fn execute_request_schema() -> Value {
             "collection":{"type":"string","description":"Record collection returned by ocs_read records."},
             "updates":{"type":"array","minItems":1,"description":"Atomic, type-checked property replacements. Paths are RFC 6901 JSON Pointers relative to record.properties.","items":{"type":"object","properties":{"path":{"type":"string","pattern":"^/"},"value":{},"expected":{"description":"Optional compare-and-set value."}},"required":["path","value"],"additionalProperties":false}},
             "name":{"type":"string","enum":crate::app::automation_action_names(),"description":"UI action returned by ocs_read commands."},
-            "steps":{"type":"array","minItems":1,"maxItems":MAX_BATCH_STEPS,"description":"Sequential editor operations executed with fresh state and idempotency keys. Execution stops at the first failure; completed_steps says what committed.","items":batch_step_schema()}
+            "steps":{"type":"array","minItems":1,"maxItems":MAX_BATCH_STEPS,"description":"Sequential editor operations executed with fresh state and idempotency keys. Execution stops at the first failure; completed_steps says what committed.","items":batch_step_schema()},
+            "commands":{"type":"array","minItems":1,"maxItems":MAX_SCRIPT_COMMANDS,"description":"Complete one-line CAD commands for a resumable high-volume drawing script. Read command manifests first; points use x,y or x,y,z.","items":{"type":"string","minLength":1,"maxLength":MAX_SCRIPT_COMMAND_BYTES}},
+            "strict":{"type":"boolean","default":true,"description":"For run_script, fail closed when a command waits for more input or leaves unconsumed tokens."}
         },
         "required":["op","request_id"],
         "additionalProperties":false,
@@ -972,7 +1086,8 @@ fn execute_request_schema() -> Value {
             {"properties":{"op":{"const":"save"}}},
             {"properties":{"op":{"const":"save_verified"}},"required":["path"]},
             {"properties":{"op":{"const":"stop"}}},
-            {"properties":{"op":{"const":"batch"}},"required":["steps"]}
+            {"properties":{"op":{"const":"batch"}},"required":["steps"]},
+            {"properties":{"op":{"const":"run_script"}},"required":["commands"]}
         ]
     })
 }
@@ -1021,7 +1136,7 @@ fn tool_definitions() -> Value {
         },
         {
             "name":"ocs_execute",
-            "description":"Execute semantic OCS actions. Use current state fields and a unique request_id. Use run for one complete command, batch to remove round trips, or start plus input for guided steps. accepted, running and waiting_input are not completion.",
+            "description":"Execute semantic OCS actions. Use current state fields and a unique request_id. Use run for one complete command, run_script for a long strict sequence, batch to mix operation types, or start plus input for guided steps. accepted, running and waiting_input are not completion.",
             "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"request":execute_request_schema(),"wait_seconds":{"type":"number","minimum":0,"maximum":60,"default":30,"description":"Total time to wait for completion before returning."},"response_detail":{"type":"string","enum":["compact","changed_entities","full"],"default":"compact","description":"compact returns only state needed for the next edit; changed_entities also returns current geometry for changed handles; full preserves the complete editor state."}},"required":["ocs_session_id","request"],"additionalProperties":false},
             "outputSchema":execute_output_schema(),
             "annotations":{"title":"Execute OCS action","readOnlyHint":false,"destructiveHint":true,"idempotentHint":true,"openWorldHint":false}
@@ -1371,6 +1486,10 @@ mod tests {
             MAX_BATCH_STEPS
         );
         assert_eq!(
+            tools[2]["inputSchema"]["properties"]["request"]["properties"]["commands"]["maxItems"],
+            MAX_SCRIPT_COMMANDS
+        );
+        assert_eq!(
             tools[2]["inputSchema"]["properties"]["response_detail"]["default"],
             "compact"
         );
@@ -1388,6 +1507,7 @@ mod tests {
         assert!(READ_OPS.contains(&"audit"));
         assert!(EXECUTE_OPS.contains(&"set_properties"));
         assert!(EXECUTE_OPS.contains(&"save_verified"));
+        assert!(EXECUTE_OPS.contains(&"run_script"));
         assert_eq!(
             tools[2]["inputSchema"]["properties"]["request"]["properties"]
                 ["target_version"]["enum"][0],
@@ -1576,6 +1696,70 @@ mod tests {
         assert_eq!(compact["revision"], 4);
         assert!(compact.get("camera").is_none());
         assert!(compact.get("documents").is_none());
+    }
+
+    #[test]
+    fn validates_and_expands_strict_run_script() {
+        let script = json!({
+            "op":"run_script",
+            "request_id":"walls",
+            "commands":["LINE 0,0 10,0","CIRCLE 5,5 2"]
+        });
+        assert!(validate_execute_request(&script, "run_script").is_ok());
+        let expanded = expand_run_script(script);
+        assert_eq!(expanded["op"], "run_script");
+        assert_eq!(expanded["steps"].as_array().unwrap().len(), 2);
+        assert_eq!(expanded["steps"][1]["op"], "run");
+        assert_eq!(expanded["steps"][1]["cmd"], "CIRCLE 5,5 2");
+
+        let multiline = json!({
+            "op":"run_script",
+            "request_id":"bad",
+            "commands":["LINE 0,0 1,1\nCIRCLE 0,0 1"]
+        });
+        assert!(validate_run_script(&multiline)
+            .unwrap_err()
+            .contains("exactly one command line"));
+    }
+
+    #[test]
+    fn strict_script_rejects_incomplete_and_overtyped_commands() {
+        assert!(strict_command_error(&json!({
+            "status":"waiting_input",
+            "result":{"unconsumed":[]}
+        })).unwrap().contains("waiting for input"));
+        assert!(strict_command_error(&json!({
+            "status":"completed",
+            "result":{"unconsumed":["9"]}
+        })).unwrap().contains("unconsumed tokens"));
+        assert!(strict_command_error(&json!({
+            "status":"completed",
+            "result":{"unconsumed":[]}
+        })).is_none());
+    }
+
+    #[test]
+    fn script_summary_counts_unique_added_handles() {
+        let batch = BatchExecution {
+            id: "script".into(),
+            request: json!({"op":"run_script"}),
+            steps: vec![json!({"op":"run"}), json!({"op":"run"})],
+            next: 2,
+            active: None,
+            results: Vec::new(),
+            changes: vec![
+                json!({"handle":"A","kind":"Added","step":0}),
+                json!({"handle":"A","kind":"Added","step":0}),
+                json!({"handle":"B","kind":"Added","step":1}),
+                json!({"handle":"C","kind":"Modified","step":1}),
+            ],
+            state: None,
+            terminal: None,
+        };
+        let result = batch_result(&batch, "completed", true);
+        assert_eq!(result["added_entities"], 2);
+        assert_eq!(result["successful_commands"], 2);
+        assert!(result["failed_command"].is_null());
     }
 
     #[test]

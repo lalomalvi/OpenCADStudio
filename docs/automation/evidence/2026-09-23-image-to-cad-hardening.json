@@ -1,0 +1,64 @@
+{
+  "date": "2026-09-23",
+  "branch": "codex/image-to-cad-hardening",
+  "base_revision": "b84466923fbfff675382b361840cb582988cd8da",
+  "scope": "First image-to-CAD robustness cut: strict resumable high-volume command scripts and a frozen GPT-6 Luna acceptance protocol",
+  "status": "implementation_passed_final_luna_jpg_acceptance_pending",
+  "implementation": {
+    "operation": "run_script",
+    "maximum_commands": 256,
+    "maximum_command_bytes": 4096,
+    "maximum_script_bytes": 262144,
+    "strict_default": true,
+    "rejects": [
+      "empty commands",
+      "multiline commands",
+      "commands waiting for more input",
+      "commands with unconsumed tokens"
+    ],
+    "reports": [
+      "completed_commands",
+      "successful_commands",
+      "failed_command",
+      "next_command",
+      "unique added_entities",
+      "changed handles"
+    ]
+  },
+  "validation": {
+    "cargo_test_lib_mcp": {
+      "status": "passed",
+      "passed": 14,
+      "failed": 0,
+      "filtered_out": 1675,
+      "pre_existing_warnings": 4
+    },
+    "mcp_smoke": "passed",
+    "python_compile_reconstruction_eval": "passed",
+    "git_diff_check": "passed",
+    "live_debug_reconstruction": {
+      "status": "passed",
+      "commands": 100,
+      "entities": 100,
+      "entity_types": {
+        "Line": 80,
+        "Circle": 20
+      },
+      "elapsed_ms": 159200.3,
+      "cleanup_entities_before": 100,
+      "cleanup_entities_after": 0
+    }
+  },
+  "artifacts": {
+    "debug_executable_sha256": "EFB8ED1237A7A42A3F9FEDFDF3836C77F1BD9AD7C8E0A99179366B3527EABE5C",
+    "protected_original_sha256": "B4EF0DC00283518E1941B4985C81E7C88875F1C64879D1E7889B09C04F0D2C67",
+    "protected_original_lock_present": false,
+    "opencadstudio_process_residue": 0
+  },
+  "not_claimed": [
+    "No JPG was reconstructed in this cut",
+    "No GPT-6 Luna run was executed in this cut",
+    "No universal raster-to-CAD fidelity is claimed",
+    "No push or pull request was created"
+  ]
+}

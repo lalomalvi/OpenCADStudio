@@ -178,6 +178,37 @@ Use `batch` when the steps are already known. OCS supplies each step with the st
 }
 ```
 
+For a long sequence made only of complete CAD command lines, prefer
+`run_script`. It accepts up to 256 commands per request, assigns deterministic
+per-command idempotency keys, resumes the same request after a timeout, and is
+strict by default. Strict mode stops if a command waits for missing input or
+leaves any token unconsumed; this prevents a vision model's malformed line from
+silently shifting the rest of a reconstruction:
+
+```json
+{
+  "ocs_session_id": "SESSION_FROM_OCS_SESSIONS",
+  "request": {
+    "op": "run_script",
+    "request_id": "walls-001",
+    "document_id": 1,
+    "revision": 12,
+    "commands": [
+      "LINE 0,0 10,0",
+      "LINE 10,0 10,8",
+      "CIRCLE 5,4 1.25"
+    ]
+  }
+}
+```
+
+The compact result reports `completed_commands`, `successful_commands`,
+`failed_command`, `total_commands`, `next_command`, `added_entities`, and the
+failed command result when relevant.
+`run_script` is not atomic: commands completed before a failure remain in the
+drawing and are reported. Continue only after reading the returned state and
+correcting the failed index; never replay the script with a new request ID.
+
 Execute responses use `response_detail: "compact"` by default and return only the state needed for the next edit. Use `changed_entities` to receive the current geometry of affected handles in the same response, or `full` when the complete editor state is needed.
 
 `ocs_read` query accepts exact handles, type/layer filters, field projection, world-XY bounds, nearest-curve ranking, closed-curve containment, and exact intersections between two planar curves. `detail: "full"` adds the complete serialized entity properties. Nearest points, containment, curve length, area, and intersections are calculated by the geometry kernel:
