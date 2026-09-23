@@ -1,0 +1,111 @@
+# Fases, dependencias y backlog ejecutable
+Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejecutar un hito acotado por sesión y actualizar evidencia/estado. Estimaciones son orientativas, no fechas comprometidas.
+
+## Dependencias
+M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7 → M8.
+Se permite investigar capacidades M5 mientras M1–M3 avanzan, pero no aceptar calidad ni rendimiento antes de contratos y telemetría estables.
+
+## M0 — Baseline e integración reproducible
+Objetivo: una base implementable sin perder carriles anteriores.
+- M0.1 Inventariar ramas, remotos, HEAD, cambios locales y AGENTS.md.
+- M0.2 Comparar origin/main con codex/image-to-cad-hardening y mapear las 28 modificaciones por origen: PLINE, PSETUP, previews, save_verified, fuentes, run_script.
+- M0.3 Revisar duplicados/equivalencias de commits y elegir integración explícita; no cherry-pick indiscriminado ni merge de toda la rama sin revisión.
+- M0.4 Preservar hashes del caso, baseline disponible y anexos de correcciones. Separar métricas calculadas de afirmaciones del modelo.
+- M0.5 Crear rama de implementación desde base resuelta y manifest de build.
+Entregables: BASELINE.json sanitizado, matriz de commits/capacidades y checkpoint.
+Aceptación: árbol limpio salvo archivos identificados del usuario; build reproducible identificado; sin cambio del original; plan de integración escrito antes de merge.
+Verificación: diff completo, dependencias/lockfiles, pruebas focalizadas de cambios integrados.
+Tamaño: 1 sesión.
+
+## M1 — Cliente persistente y disponibilidad
+- M1.1 Reutilizar mcp_smoke/mcp_acceptance/mcp_reconstruction_eval; extraer biblioteca de transporte, no otro cliente ad hoc.
+- M1.2 Handshake/version negotiation, stdout solo protocolo y stderr drenado para evitar deadlock.
+- M1.3 IDs correlacionados, cola limitada, timeouts monotónicos, EOF/JSON inválido y respuestas fuera de orden.
+- M1.4 starting/ready, polling con backoff y deadline; no abrir otra GUI por un arranque lento.
+- M1.5 Selección explícita entre varias sesiones y protección por document_id/revision.
+- M1.6 Consulta de operación después de timeout de mutación; no reejecutar con ID nuevo.
+Aceptación: arranque frío y conexión caliente; desconexión tras mutación no duplica entidades; sesión ambigua se rechaza; comandos incompletos fallan con progreso recuperable.
+Evidencia: traces de fallos inyectados y flujo real pequeño, sin imagen del usuario.
+Tamaño: 1–2 sesiones.
+
+## M2 — Sesiones, propiedad y cierre
+- M2.1 Descubrimiento acotado con PID/inicio/binario/handshake, cache y sondeo paralelo limitado.
+- M2.2 Heartbeat y descriptores obsoletos; cuarentena segura con rutas absolutas.
+- M2.3 close_document y shutdown_owned_session; preservar documentos ajenos y cambios sin guardar.
+- M2.4 Idempotencia del cierre, diagnóstico de modalidad y estados waiting_user.
+Aceptación: fixtures con 0/1/20/100 descriptores muertos; tiempo no crece linealmente por un segundo cada uno; PID reutilizado no se cierra; cliente desconectado no borra proceso vivo; salida guardada y sesiones ajenas intactas.
+Medir p50/p95; objetivo provisional discovery p95 <2 s con 100 entradas locales muertas, ajustar justificadamente antes de la medición.
+Tamaño: 1–2 sesiones.
+
+## M3 — Telemetría, artefactos y evidencia automática
+- M3.1 Uso por respuesta/turno/run y supervisor con cobertura y deduplicación.
+- M3.2 Timestamps de entrada/salida; separar espera del modelo, transporte, CAD y render.
+- M3.3 ArtifactRef, negociación de imagen/recurso/ruta, recortes y render-fence.
+- M3.4 Registro append-only con referencia a PNG; redacción de credenciales y configuración privada.
+- M3.5 Generador de AUDIT, SAVE, VERDICT y SEAL desde resultados reales; validación de esquema y hashes.
+- M3.6 Presupuestos, checkpoint y reanudación al alcanzar límite.
+Aceptación: sumas de uso reproducen 9,797,952 del baseline sin duplicados; un hash cambiado falla; identidad ausente queda unknown; captura vieja se detecta; exportación no contiene secretos; costo facturado queda null si no disponible.
+Objetivo: reducir tamaño de log excluyendo binarios; medir además tokens realmente recibidos, sin equiparar ambas cosas.
+Tamaño: 2 sesiones.
+
+## M4 — PlanSpec y conciliación
+- M4.1 JSON Schema versionado e inventario de procedencia por elemento.
+- M4.2 Validación unidades/origen/escala/IDs/finitud/referencias y confianza.
+- M4.3 Grafo de cotas con caras/ejes y extremos; reporte de conflictos/indeterminación.
+- M4.4 Compilador puro y determinista con manifiestos cacheados por build.
+- M4.5 Dry-run que devuelve comandos/capacidades faltantes sin crear dibujo.
+- M4.6 Trazabilidad ID→comando→handle y correcciones localizadas.
+Aceptación: cadenas con diferentes referencias no producen falso conflicto; texto 2.50 sobre distancia 2.54 se rechaza; misma especificación produce mismo hash de comandos; unidades mixtas requieren conversión explícita; ningún error de validación muta CAD.
+Tamaño: 2–3 sesiones.
+
+## M5 — Semántica CAD profesional
+Primero censar soporte existente; identificar falta en generación, manifest, transporte o motor.
+- M5.1 Capas y estilos parametrizados por perfil; asignación verificable.
+- M5.2 Arcos nativos y polilíneas cerradas, espesores/uniones.
+- M5.3 Cotas nativas medidas y asociatividad demostrada al editar.
+- M5.4 Bloques/INSERT para componentes repetidos, preservando unidades y rotación.
+- M5.5 HATCH y contornos; legibilidad y grosor por escala.
+- M5.6 Biblioteca paramétrica local versionada y procedencia; opción de reconstrucción fiel sin sustituir símbolos arbitrariamente.
+- M5.7 Perfil de unidades, escala, textos y plantilla métrica.
+Aceptación: mover referencia actualiza cota si se afirma asociatividad; arcos no se degradan a segmentos sin declarar; bloques conservan transformaciones; capas/estilos sobreviven guardado; funciones ausentes quedan unsupported.
+Tamaño: 2–4 sesiones según censo.
+
+## M6 — QA geométrica y persistencia
+- M6.1 Detectar duplicados, degenerados, contornos abiertos e intersecciones no deseadas.
+- M6.2 Separar bounds arquitectónicos de bounds de cotas/anotaciones.
+- M6.3 Aperturas vinculadas a muro, puertas/ventanas y colisiones por categoría.
+- M6.4 Comparación de coordenadas/radios/ángulos/propiedades pre/post save con tolerancias, no solo conteos.
+- M6.5 QA visual por zonas y reporte de ambigüedades sin inventar datos.
+- M6.6 Validación en otro motor; identificar producto, versión y conversiones. LibreCAD/DXF no se presenta como prueba DWG nativa.
+Aceptación: defecto sembrado es detectado; reapertura en mismo motor se etiqueta interna; verificación externa ausente queda pending; resultado parcial no se promueve a éxito.
+Tamaño: 2 sesiones.
+
+## M7 — Evaluación controlada y optimización
+- M7.1 Congelar protocolo v2 y cohortes: desarrollo vs reserva.
+- M7.2 Repetir caso histórico solo como regresión conocida; reservar planos inéditos.
+- M7.3 Baseline vs pipeline con igual modelo/effort/hardware; tres repeticiones por caso.
+- M7.4 Ablaciones: cliente preparado, compactación, artefactos, PlanSpec, compilador y QA regional.
+- M7.5 Comparar low vs medium únicamente después de protocolo específico; no mezclar con baseline medium.
+- M7.6 Registrar asistencia supervisora, reintentos y abandonos; sumar costo hasta aceptación, no solo intentos exitosos.
+Aceptación: ninguna mejora de velocidad degrada gates obligatorios; reporte por caso, medianas y p95 donde muestra suficiente; resultado estadístico limitado si muestra pequeña.
+Objetivos exploratorios por plano simple: 12–20 respuestas, 2–4 M entrada, 20–35 k salida, 8–15 min, 3–4 capturas. No son garantías.
+Tamaño: 2–3 sesiones y disponibilidad de casos.
+
+## M8 — Entrega e integración
+- M8.1 Release candidate con build/hash, contrato, CLI y guía rápida.
+- M8.2 Pruebas proporcionales, revisión de diff, compatibilidad y recuperación.
+- M8.3 PR al fork, checks, merge explícito y verificación remota.
+- M8.4 Notas de release, limitaciones, checkpoint y prompt de continuación.
+- M8.5 Propuesta upstream separada, solo con autorización de envío al autor.
+Aceptación: usuario puede repetir un caso mediante entrada+contrato; no necesita improvisar Python ni reconstruir la conversación; evidencia local verificable y paquete publicable sanitizado.
+Tamaño: 1 sesión.
+
+## Orden de prioridad
+P0: identidad verificable, arranque/recuperación, coherencia dimensional, evidencia íntegra y privacidad.
+P1: cierre/descubrimiento, cliente estable, artefactos, PlanSpec y semántica.
+P2: optimización de tokens, biblioteca ampliada y comparación de modelos.
+No ahorrar tokens eliminando controles P0.
+
+## Registro por tarea
+Cada tarea mantiene: ID, estado (pending/in_progress/passed/failed/partial/blocked), owner_role, commit, dependencias, evidencias, comando reproducible, limitaciones y siguiente acción.
+El responsable es la sesión ejecutora; no se presupone trabajo paralelo de agentes. Un bloqueo no detiene tareas independientes y autorizadas.
