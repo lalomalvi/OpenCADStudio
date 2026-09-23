@@ -72,4 +72,3 @@ Estos materiales permanecen locales. Publicar métricas sanitizadas y hashes; no
 - https://developers.openai.com/api/docs/guides/agents-api/observability
 - https://developers.openai.com/api/docs/models/gpt-6-luna
 Son fuentes utilizadas en la auditoría precedente; refrescar precios y capacidades cuando se ejecute un nuevo benchmark.
-

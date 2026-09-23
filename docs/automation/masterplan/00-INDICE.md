@@ -31,4 +31,3 @@ Unidades, permisos, validación, límites, identidad de sesión y recuperación 
 
 ## Definición de terminado
 Una versión candidata requiere todos los gates técnicos y de fidelidad de su alcance aprobados, costo y latencia medidos, limitaciones explícitas, evidencia reproducible, revisión del diff, publicación en el fork correcto y checkpoint suficiente para continuar sin esta conversación. Una única reconstrucción no permite declarar compatibilidad universal.
-

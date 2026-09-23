@@ -64,4 +64,3 @@ Rollback de código publicado mediante revert revisado; rollback de artefactos c
 
 ## Cierre de sesión
 Actualizar estado de tareas, decisiones, pendientes y rutas exactas. Registrar commit/branch/remote destino, verificación remota y evidencia de pruebas. Incluir primer comando/lectura de la próxima sesión. Prohibido declarar cierre completo si push, checks o verificación están pendientes.
-

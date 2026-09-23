@@ -54,4 +54,3 @@ Captura tras render-fence de la revisión objetivo; rechazar imágenes obsoletas
 TraceEvent: run_id, model_response_id, request_id, phase, timestamps UTC, monotonic_start/end, queue_ms, discovery_ms, execution_ms, render_ms, bytes_in/out, status, error_code, retry_of y artifact_refs.
 UsageRecord: input, cached_input, cache_write, output, reasoning_output, provider/model/effort, response_id, source y completeness. Deduplicar por response_id. Separar agregados acumulados de incrementales, supervisor de generador y coste estimado de factura.
 Evidencia generada por código a partir de fuentes, validada contra esquema y sellada con hashes. Registrar correcciones como nuevo manifiesto que apunta al anterior. MODEL-SUMMARY no se llama transcript. Exportar transcript sanitizado de mensajes/herramientas visibles; no pretender exportar razonamiento privado.
-

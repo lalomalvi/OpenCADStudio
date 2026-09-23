@@ -109,4 +109,3 @@ No ahorrar tokens eliminando controles P0.
 ## Registro por tarea
 Cada tarea mantiene: ID, estado (pending/in_progress/passed/failed/partial/blocked), owner_role, commit, dependencias, evidencias, comando reproducible, limitaciones y siguiente acción.
 El responsable es la sesión ejecutora; no se presupone trabajo paralelo de agentes. Un bloqueo no detiene tareas independientes y autorizadas.
-
