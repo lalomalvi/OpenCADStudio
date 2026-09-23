@@ -17,6 +17,20 @@ The server provides four tools:
 - `ocs_execute` performs one operation, an atomic record update, or a sequential batch against the real editor.
 - `ocs_capture` returns a bounded PNG of the drawing viewport or complete window.
 
+Run `python docs/automation/mcp_acceptance.py target/debug/OpenCADStudio.exe`
+for a repeatable end-to-end acceptance. It creates visible geometry through
+MCP, audits and verified-saves DWG 2000/2013/2018 plus DXF 2000, and records a
+viewport PNG and JSON report below `target/acceptance/`.
+
+On a workstation with AutoCAD 2025, run
+`docs/automation/autocad_acceptance.ps1 -Directory target/acceptance/TIMESTAMP`.
+It opens the three generated DWGs read-only in isolated Core Console profiles,
+runs AutoCAD's audit without repairs, and retains one log per version. Isolation
+keeps Autodesk profile writes outside protected Documents folders. On the
+verified workstation Core Console reported the audit result and then remained
+alive after `QUIT`; the runner terminates only the process it launched after the
+timeout and records `ForcedTermination` separately from the audit outcome.
+
 Native builds also accept a second, headless entry point (`OpenCADStudio --serve`, one
 JSON request per line) for scripts and CI; the two native channels, their startup dialogs
 and their limits are described in [native.md](native.md).
@@ -36,6 +50,42 @@ The normal flow is to call `ocs_sessions`, pass its returned `session_id` as `oc
 ```
 
 Call `ocs_read` with `op: "capabilities"` before unfamiliar work. It reports the command, geometry, transaction, capture, and database facilities supported by the running build. The `records.collections` list gives every available database collection, its record count, and whether it can be edited.
+
+Before delivery, call `ocs_read` with `op: "audit"` and the intended
+`target_format` / `target_version`. The report includes entity manifests,
+layers, blocks, finite bounds, duplicate entity handles, DXF dangling handle
+references, source hash, and `dropped_on_save`. A clean in-memory document can
+still be lossy for a different format, so target selection is part of the
+audit:
+
+```json
+{
+  "ocs_session_id": "SESSION_FROM_OCS_SESSIONS",
+  "op": "audit",
+  "parameters": {"target_format": "dwg", "target_version": "2000"}
+}
+```
+
+Use `save_verified` for the delivery write. It requires an explicit absolute
+path, refuses overwrite and lossy conversion unless separately acknowledged,
+writes the requested version, reopens it, checks the actual version, compares
+the semantic entity manifest, audits raw DXF handle references, and returns a
+SHA-256 hash. A verification failure preserves the output for diagnosis and
+reports it as failed instead of silently declaring success.
+
+```json
+{
+  "ocs_session_id": "SESSION_FROM_OCS_SESSIONS",
+  "request": {
+    "op": "save_verified",
+    "request_id": "deliver-2026-09-22-1",
+    "path": "C:\\drawings\\issued\\plan.dwg",
+    "target_format": "dwg",
+    "target_version": "2000",
+    "overwrite": false
+  }
+}
+```
 
 Call `ocs_read` with `op: "record_schema"` before editing an unfamiliar record. With no parameters it lists the complete generated type registry. A collection returns the record types accepted by that collection even when the current drawing has no instance of a type. Supplying both `collection` and `type` returns the type's complete dependency graph, flattened property paths, JSON types, optional and sequence markers, enum variants, integer bounds, unambiguous unit annotations, identity fields, and write rules:
 
@@ -127,6 +177,37 @@ Use `batch` when the steps are already known. OCS supplies each step with the st
   }
 }
 ```
+
+For a long sequence made only of complete CAD command lines, prefer
+`run_script`. It accepts up to 256 commands per request, assigns deterministic
+per-command idempotency keys, resumes the same request after a timeout, and is
+strict by default. Strict mode stops if a command waits for missing input or
+leaves any token unconsumed; this prevents a vision model's malformed line from
+silently shifting the rest of a reconstruction:
+
+```json
+{
+  "ocs_session_id": "SESSION_FROM_OCS_SESSIONS",
+  "request": {
+    "op": "run_script",
+    "request_id": "walls-001",
+    "document_id": 1,
+    "revision": 12,
+    "commands": [
+      "LINE 0,0 10,0",
+      "LINE 10,0 10,8",
+      "CIRCLE 5,4 1.25"
+    ]
+  }
+}
+```
+
+The compact result reports `completed_commands`, `successful_commands`,
+`failed_command`, `total_commands`, `next_command`, `added_entities`, and the
+failed command result when relevant.
+`run_script` is not atomic: commands completed before a failure remain in the
+drawing and are reported. Continue only after reading the returned state and
+correcting the failed index; never replay the script with a new request ID.
 
 Execute responses use `response_detail: "compact"` by default and return only the state needed for the next edit. Use `changed_entities` to receive the current geometry of affected handles in the same response, or `full` when the complete editor state is needed.
 

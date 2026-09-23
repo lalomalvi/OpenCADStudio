@@ -1413,6 +1413,21 @@ impl OpenCADStudio {
         path: std::path::PathBuf,
         set_current_path: bool,
     ) -> Result<(), crate::io::SaveFailure> {
+        let version = self.tabs[i].scene.document.version;
+        self.save_tab_synchronously_protected_as(i, path, version, set_current_path)
+    }
+
+    /// Synchronous protected save with an explicit output version. Automation
+    /// uses this path so format conversion never depends on an implicit source
+    /// version or silently upgrades to the newest DWG.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(in crate::app) fn save_tab_synchronously_protected_as(
+        &mut self,
+        i: usize,
+        path: std::path::PathBuf,
+        version: acadrust::DxfVersion,
+        set_current_path: bool,
+    ) -> Result<(), crate::io::SaveFailure> {
         let previous_autosave = self.autosave_target(i);
         if self.tabs[i].recovery_save_as_required
             && self.tabs[i]
@@ -1465,7 +1480,6 @@ impl OpenCADStudio {
             Self::native_save_verification(&path, lease, expected_fingerprint)?;
 
         self.prepare_native_save(i);
-        let version = self.tabs[i].scene.document.version;
         let snapshot = self.tabs[i].scene.document_for_save();
         crate::io::save_owned_as_version_atomic(
             snapshot,
@@ -1478,6 +1492,7 @@ impl OpenCADStudio {
 
         if set_current_path {
             self.tabs[i].current_path = Some(path.clone());
+            self.tabs[i].scene.document.version = version;
         }
         self.refresh_native_edit_guard_after_save(i, &path, path_changed, destination_lease);
         self.tabs[i].dirty = false;
@@ -1877,12 +1892,22 @@ impl OpenCADStudio {
                 // fetch them from the community repository before the user
                 // studies garbled substitute text (unless recovery already
                 // owns the modal slot).
-                let missing = crate::io::font_repo::missing_shx_fonts(
+                let mut missing = crate::io::font_repo::missing_shx_fonts(
                     &self.tabs[i].scene.document,
                 );
-                if !missing.is_empty() && self.check_missing_fonts {
+                missing.retain(|name| {
+                    !self
+                        .suppressed_missing_fonts
+                        .contains(&crate::io::font_repo::font_key(name))
+                });
+                // Read-only/MCP evaluation sessions must remain non-blocking:
+                // report missing fonts through control state, but never offer
+                // a network/download mutation from a read-only launch.
+                if !missing.is_empty() && self.check_missing_fonts && !self.read_only {
                     self.font_source_input = self.font_source_url.clone();
                     self.missing_fonts = Some(missing);
+                    self.missing_fonts_path = self.tabs[i].current_path.clone();
+                    self.missing_fonts_downloading = false;
                     self.active_modal = Some(crate::app::ModalKind::MissingFonts);
                 }
             }
