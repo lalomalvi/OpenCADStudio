@@ -47,7 +47,13 @@ El primer corte M1 está en `docs/automation/mcp_client.py`: proceso stdio persi
 
 Verificaciones observadas: ocho pruebas L1 pasaron; `py_compile` pasó; `git diff --check` pasó; `mcp_smoke.py` contra el Release anterior y contra el binario debug de este worktree pasó; el cliente nuevo negoció `2026-07-28` y enumeró cuatro herramientas reales. `cargo test --lib mcp::tests` pasó 13/13, y `cargo test --lib` pasó 1665 con 24 ignored y cero fallos; hubo cuatro warnings preexistentes. `cargo build --bin OpenCADStudio` pasó. El hash del binario debug lo genera `BASELINE.json`. No se lanzó la evaluación GUI sobre una sesión de usuario ni se abrió el DWG. L2 CAD sintético y L3–L5 siguen pending. El formato formal de readiness del servidor, precondiciones cliente obligatorias de documento/revisión, recuperación de lotes `run_script` tras pérdida de transporte, journal durable, propiedad/cierre y telemetría quedan pendientes.
 
-La publicación, SHAs definitivos y verificación remota se añadirán al terminar los gates; no interpretar este párrafo como evidencia de push.
+### Publicación verificada del corte
+
+- Código y evidencia M0/M1: `6db1b790eeb0609f5efdf46d7e20d6f4a09a4322`.
+- `origin/codex/mcp-persistent-client` y `origin/main` devolvieron ese SHA en `git ls-remote` después de sendos push no forzados. `main` avanzó desde `a069d7f1`; incluye el merge explícito `c449853c` de la rama experimental y el commit de implementación.
+- Destino exclusivo: `https://github.com/lalomalvi/OpenCADStudio.git`. No hubo push a `upstream` ni PR al repositorio del autor. No se creó PR en el fork: el usuario autorizó merge/push y ambos refs se publicaron directamente.
+- El commit de este último registro documental tendrá un SHA posterior al de código. Verificarlo en la próxima sesión mediante `git log -1` y `git ls-remote origin`; el propio archivo no puede contener su SHA final sin crear otro commit.
+- Revisión de publicación: 13 archivos de implementación/checkpoint, cero DWG/PNG/JPG/JSONL añadidos, cero coincidencias de patrones de secretos en el diff staged, enlaces Markdown locales completos, `git diff --check` aprobado. El caso histórico y el DWG del usuario permanecen intactos.
 
 ### Prompt de continuación tras este corte
 

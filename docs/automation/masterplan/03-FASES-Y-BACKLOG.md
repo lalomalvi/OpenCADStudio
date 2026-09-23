@@ -6,7 +6,7 @@ Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejec
 | ID | Estado | Evidencia / límite |
 |---|---|---|
 | M0.1–M0.4 | passed | Git/remotos/AGENTS, matriz de ocho commits y 28 paths en `M0-INTEGRACION.md`; baseline generado por código sin leer el DWG |
-| M0.5 | passed local | Rama de implementación y merge explícito; build debug, smoke del mismo binario, 13/13 tests MCP y suite lib 1665 passed, 24 ignored. Publicación se anota en el checkpoint |
+| M0.5 | passed | Rama de implementación y merge explícito; build debug, smoke del mismo binario, 13/13 tests MCP y suite lib 1665 passed, 24 ignored; commit de código `6db1b790` publicado en `origin/main` y rama de respaldo |
 | M1.1–M1.3 | passed L1 | Biblioteca `mcp_client.py` reutilizada por tres harnesses; ocho pruebas sintéticas de transporte |
 | M1.4 | partial | Backoff y un solo intento de lanzamiento; estado formal `starting/ready` y `retry_after_ms` del servidor pendientes |
 | M1.5 | partial | Selección explícita ante sesiones ambiguas; precondición obligatoria de `document_id/revision` pendiente |
