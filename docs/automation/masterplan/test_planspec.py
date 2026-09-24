@@ -399,6 +399,63 @@ class PlanSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(module.PlanError, "too short"):
             module.dry_run(changed)
 
+    def test_v6_wall_face_binding_validates_without_emitting_native_dimension(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertEqual(result["unsupported"], ["native_dimension"])
+        self.assertFalse(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_unopened_wall", "generated_parts": 4})
+        self.assertEqual(len(result["commands"]), 4)
+        self.assertTrue(all("DIM" not in item["command"] for item in result["commands"]))
+        self.assertEqual(result["dimension_graph"]["status"], "satisfied")
+
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["end_ref"]["side"] = "left"
+        with self.assertRaisesRegex(module.PlanError, "node differs"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["start_ref"]["station_m"] = 4
+        with self.assertRaisesRegex(module.PlanError, "outside"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["start_ref"]["wall_id"] = "missing"
+        with self.assertRaisesRegex(module.PlanError, "reference is invalid"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"] = []
+        with self.assertRaisesRegex(module.PlanError, "requires exactly one"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"].append(deepcopy(changed["dimension_bindings"][0]))
+        with self.assertRaisesRegex(module.PlanError, "duplicated"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["start_ref"]["side"] = "axis"
+        with self.assertRaisesRegex(module.PlanError, "reference type"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["openings"] = [{"id": "gap", "wall_id": "wall-1", "offset_m": 1.5,
+                                "width_m": 1, "kind": "clear", "source": SOURCE}]
+        with self.assertRaisesRegex(module.PlanError, "wall opening"):
+            module.validate(changed)
+
+    def test_v6_axis_binding_recomputes_from_wall_geometry(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        value["nodes"][2].update(x=1, y=0)
+        value["nodes"][3].update(x=3, y=0)
+        value["dimensions"][0].update(axis="x", reference_type="axis", value=2,
+                                        text="2.00 m")
+        value["dimension_bindings"][0]["start_ref"].update(side="axis", station_m=1)
+        value["dimension_bindings"][0]["end_ref"].update(side="axis", station_m=3)
+        self.assertEqual(module.dry_run(value)["unsupported"], ["native_dimension"])
+        changed = deepcopy(value)
+        changed["walls"][0]["end"] = "right-face"
+        with self.assertRaises(module.PlanError):
+            module.validate(changed)
+
 
 if __name__ == "__main__":
     unittest.main()

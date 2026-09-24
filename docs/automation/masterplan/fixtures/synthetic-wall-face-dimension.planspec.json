@@ -1,0 +1,142 @@
+{
+  "schema_version": "planspec-6",
+  "units": "m",
+  "origin": {
+    "x": 0,
+    "y": 0
+  },
+  "nodes": [
+    {
+      "id": "wall-start",
+      "x": 0,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "wall-end",
+      "x": 4,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "left-face",
+      "x": 2,
+      "y": 0.1,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "right-face",
+      "x": 2,
+      "y": -0.1,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "lines": [],
+  "circles": [],
+  "dimensions": [
+    {
+      "id": "wall-thickness",
+      "start": "left-face",
+      "end": "right-face",
+      "axis": "y",
+      "reference_type": "face",
+      "value": 0.2,
+      "text": "0.20 m",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "topology": {
+    "contours": []
+  },
+  "walls": [
+    {
+      "id": "wall-1",
+      "start": "wall-start",
+      "end": "wall-end",
+      "thickness_m": 0.2,
+      "layer": "0",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "openings": [],
+  "joins": [],
+  "dimension_bindings": [
+    {
+      "dimension_id": "wall-thickness",
+      "start_ref": {
+        "wall_id": "wall-1",
+        "side": "left",
+        "station_m": 2
+      },
+      "end_ref": {
+        "wall_id": "wall-1",
+        "side": "right",
+        "station_m": 2
+      },
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ]
+}
