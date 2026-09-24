@@ -1252,6 +1252,15 @@ def _source_bounds(plan: dict[str, Any], nodes: dict[str, tuple[Decimal, Decimal
             add(annotation, ((a[0] + b[0]) / 2, a[1] + offset))
         else:
             add(annotation, (a[0] - offset, (a[1] + b[1]) / 2))
+    elif dimension_status == "compiled_multi_axis_spans":
+        placements = {item["dimension_id"]: item for item in plan["dimension_placements"]}
+        for dimension in plan["dimensions"]:
+            a, b = nodes[dimension["start"]], nodes[dimension["end"]]
+            offset = _number(placements[dimension["id"]]["offset_m"], "offset_m")
+            if dimension["axis"] == "x":
+                add(annotation, ((a[0] + b[0]) / 2, a[1] + offset))
+            else:
+                add(annotation, (a[0] - offset, (a[1] + b[1]) / 2))
     elif dimension_status == "compiled_single_aligned_axis_span":
         dimension = plan["dimensions"][0]
         placement = plan["dimension_placements"][0]
@@ -1473,6 +1482,68 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                 "wall_half_thickness_m": format(half, "f"),
                 "dimension_normal_offset_m": format(offset, "f"),
                 "scope": "2d_aligned_axis_line_position_only_no_text_extents"}
+    if (plan["schema_version"] in {"planspec-8", "planspec-9"} and
+            len(plan["walls"]) == 1 and not plan["lines"] and not plan["circles"] and
+            not plan["openings"] and not plan["joins"] and
+            2 <= len(plan["dimensions"]) <= 8 and
+            wall_status == "compiled_single_unopened_wall"):
+        wall = plan["walls"][0]
+        a, b = nodes[wall["start"]], nodes[wall["end"]]
+        horizontal = a[1] == b[1] and a[0] < b[0]
+        vertical = a[0] == b[0] and a[1] < b[1]
+        if horizontal or vertical:
+            bindings = {item["dimension_id"]: item for item in plan["dimension_bindings"]}
+            placements = {item["dimension_id"]: item for item in plan["dimension_placements"]}
+            spans = []
+            for dimension in plan["dimensions"]:
+                binding = bindings[dimension["id"]]
+                start_ref, end_ref = binding["start_ref"], binding["end_ref"]
+                station_a = _number(start_ref["station_m"], "station_m")
+                station_b = _number(end_ref["station_m"], "station_m")
+                if (dimension["axis"] != ("x" if horizontal else "y") or
+                        dimension["reference_type"] != "axis" or
+                        start_ref["wall_id"] != wall["id"] or
+                        end_ref["wall_id"] != wall["id"] or
+                        start_ref["side"] != "axis" or end_ref["side"] != "axis" or
+                        station_a >= station_b):
+                    break
+                spans.append((station_a, station_b, dimension,
+                              _number(placements[dimension["id"]]["offset_m"], "offset_m")))
+            if len(spans) == len(plan["dimensions"]):
+                half = _number(wall["thickness_m"], "wall.thickness_m") / 2
+                minimum_gap = (_number(plan["dimension_style"]["text_height_m"], "text_height_m") +
+                               2 * _number(plan["dimension_style"]["gap_m"], "gap_m"))
+                overlap = []
+                for index, first in enumerate(spans):
+                    for second in spans[index + 1:]:
+                        if max(first[0], second[0]) < min(first[1], second[1]) and \
+                                abs(first[3] - second[3]) < minimum_gap:
+                            overlap.append(sorted((first[2]["id"], second[2]["id"])))
+                overlap.sort()
+                def point(value):
+                    return ",".join(_coordinate(value[axis] + origin[axis]) for axis in (0, 1))
+                for _, _, dimension, offset in sorted(spans,
+                        key=lambda item: (item[0], item[1], item[2]["id"])):
+                    start, end = nodes[dimension["start"]], nodes[dimension["end"]]
+                    location = (((start[0] + end[0]) / 2, start[1] + offset)
+                                if horizontal else
+                                (start[0] - offset, (start[1] + end[1]) / 2))
+                    commands.append({"planspec_id": dimension["id"],
+                                     "source_id": dimension["id"],
+                                     "part": "axis_span_dimension",
+                                     "command": f"DIMLINEAR {point(start)} {point(end)} {point(location)}",
+                                     "layer": placements[dimension["id"]]["layer"]})
+                dimension_status = "compiled_multi_axis_spans"
+                dimension_placement_qa = {
+                    "status": ("inside_wall_bounds" if any(span[3] <= half for span in spans)
+                               else "dimension_lines_overlap" if overlap else
+                               "outside_wall_bounds"),
+                    "wall_id": wall["id"],
+                    "dimension_ids": sorted(item[2]["id"] for item in spans),
+                    "wall_half_thickness_m": format(half, "f"),
+                    "minimum_offset_separation_m": format(minimum_gap, "f"),
+                    "overlapping_pairs": overlap,
+                    "scope": "2d_multi_axis_line_position_only_no_text_extents"}
     if len({item["planspec_id"] for item in commands}) != len(commands):
         raise PlanError("Generated wall part ID collides with PlanSpec geometry ID")
     layers = sorted({item["layer"] for item in commands} - {"0"})
@@ -1483,7 +1554,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                             "compiled_single_vertical_face_thickness",
                             "compiled_single_horizontal_axis_span",
                             "compiled_single_vertical_axis_span",
-                            "compiled_single_aligned_axis_span"}:
+                            "compiled_single_aligned_axis_span",
+                            "compiled_multi_axis_spans"}:
         style = plan["dimension_style"]
         name = style["name"]
         execution.extend({"planspec_id": None, "command": command, "layer": "0"} for command in (
@@ -1529,6 +1601,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     source_bounds = _source_bounds(plan, nodes, origin, dimension_status)
     quality_blockers = (["dimension_line_inside_wall_bounds"]
                         if dimension_placement_qa["status"] == "inside_wall_bounds" else [])
+    if dimension_placement_qa.get("overlapping_pairs"):
+        quality_blockers.append("dimension_lines_overlap")
     if any(item["line_category"] == "contour"
            for item in door_clearance_qa["sweep_intersections"]):
         quality_blockers.append("door_swing_sweep_crosses_contour")
@@ -1544,7 +1618,10 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             "architecture": architecture,
             "wall_compilation": {"status": wall_status, "generated_parts": wall_parts},
             "dimension_compilation": {"status": dimension_status,
-                                      "generated_parts": 1 if dimension_status.startswith("compiled_") else 0},
+                                      "generated_parts": (len(plan["dimensions"])
+                                                          if dimension_status == "compiled_multi_axis_spans"
+                                                          else 1 if dimension_status.startswith("compiled_")
+                                                          else 0)},
             "dimension_placement_qa": dimension_placement_qa,
             "source_bounds": source_bounds,
             "geometry_qa": geometry_qa,

@@ -999,6 +999,50 @@ class PlanSpecTests(unittest.TestCase):
             with self.assertRaises(module.PlanError):
                 module.validate(swapped)
 
+    def test_v8_three_axis_dimensions_compile_as_one_consistent_chain(self):
+        fixture = Path(__file__).with_name("fixtures") / \
+            "synthetic-wall-axis-chain-v8.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["dimension_graph"]["status"], "satisfied")
+        self.assertEqual(result["dimension_compilation"],
+                         {"status": "compiled_multi_axis_spans", "generated_parts": 3})
+        self.assertEqual([item["command"] for item in result["commands"][-3:]], [
+            "DIMLINEAR 0.5,0 2,0 1.25,0.5",
+            "DIMLINEAR 0.5,0 3.5,0 2,0.9",
+            "DIMLINEAR 2,0 3.5,0 2.75,0.5"])
+        self.assertEqual(result["source_bounds"]["annotation_reference_bounds_m"],
+                         {"min_x": "0.5", "min_y": "0", "max_x": "3.5", "max_y": "0.9"})
+        reversed_plan = deepcopy(value)
+        for field in ("dimensions", "dimension_bindings", "dimension_placements"):
+            reversed_plan[field].reverse()
+        self.assertEqual(result["commands_sha256"],
+                         module.dry_run(reversed_plan)["commands_sha256"])
+
+    def test_v8_axis_chain_conflict_and_placements_fail_before_cad(self):
+        fixture = Path(__file__).with_name("fixtures") / \
+            "synthetic-wall-axis-chain-v8.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        bad = deepcopy(value)
+        for dimension in bad["dimensions"]:
+            if dimension["id"] == "axis-total":
+                dimension.update(value=3.0009, text="3.0009 m")
+            else:
+                dimension.update(value=1.4991, text="1.4991 m")
+        with self.assertRaisesRegex(module.PlanError, "Dimension chain conflict"):
+            module.dry_run(bad)
+        overlap = deepcopy(value)
+        overlap["dimension_placements"][-1]["offset_m"] = 0.52
+        result = module.dry_run(overlap)
+        self.assertFalse(result["executable"])
+        self.assertEqual(result["quality_blockers"], ["dimension_lines_overlap"])
+        inside = deepcopy(value)
+        inside["dimension_placements"][0]["offset_m"] = 0.05
+        result = module.dry_run(inside)
+        self.assertFalse(result["executable"])
+        self.assertIn("dimension_line_inside_wall_bounds", result["quality_blockers"])
+
     def test_v9_axis_endpoints_and_aligned_wall_dimension(self):
         fixtures = Path(__file__).with_name("fixtures")
         schema = json.loads((Path(__file__).with_name("planspec-9.schema.json"))
