@@ -86,14 +86,7 @@ fn listen(sender: mpsc::Sender<Envelope>) -> std::io::Result<()> {
         "started_at_unix_ms":started_at_unix_ms,"port":listener.local_addr()?.port(),
         "token":token,"executable":std::env::current_exe()?.to_string_lossy()});
     let path = dir.join(format!("{}.json", session_id()));
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&path)?;
+    let mut file = crate::automation_security::create_private_file(&path)?;
     write!(file, "{descriptor}")?;
     drop(file);
     let heartbeat_dir = dir.clone();

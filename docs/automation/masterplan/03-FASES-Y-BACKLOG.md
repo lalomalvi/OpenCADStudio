@@ -11,8 +11,8 @@ Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejec
 | M1.4 | passed L1/L2 | Estados formales de disponibilidad, deadline y un solo launch; GUI fría aislada verificada |
 | M1.5 | passed L1/L2 | Sesión seleccionada por ID y handshake; document_id/revision exigidos antes de editar |
 | M1.6 | passed scoped L1/L2 | Journal atómico local por sesión/lote; reinicio de MCP a mitad de `run_script` recuperó 3 entidades sin duplicación por el mismo ID; journal corrupto/operación desconocida bloquean nuevas mutaciones. Reinicio de GUI no evaluado |
-| M2.1 | partial L1/L2 | Descubrimiento concurrente 0/1/20/100 y conexión directa; 10 muestras con 100 descriptores sintéticos muertos: p50 1869.7 ms, p95 conservador 1909.1 ms; ACL Windows pendiente |
-| M2.2 | partial L1/L2 | Heartbeat y proceso Win32 verificados; descriptor de proceso terminado en cuarentena en L2. ACL Windows y nueva medición p50/p95 pendientes |
+| M2.1 | passed scoped L1/L2 | Descubrimiento concurrente 0/1/20/100 y conexión directa; 10 muestras del binario final con 100 descriptores sintéticos privados: p50 1900.45 ms, p95 conservador 1907.2 ms en esta máquina |
+| M2.2 | passed scoped L1/L2 | Heartbeat/identidad Win32 y cuarentena L2; descriptor creado con DACL protegido owner+SYSTEM, rechazo de ACL ampliado; journal privado y recuperación tras reinicio MCP. ACL heredados antiguos fallan cerrado |
 | M2.3 | passed scoped L1/L2 | `close_document` con política `require_saved` y `shutdown_owned_session` solo para GUI hija del MCP; PID/inicio/binario/raíz, rechazo dirty/foreign, cierre e idempotencia L2 |
 | M2.4 | partial L1/L2 | Modales iniciales diagnosticados y salida propia verificada; más modalidades/caídas pendientes |
 | M3.1, M3.3, M3.5 | partial L1 | 84 respuestas únicas reproducen 9,797,952 tokens históricos sin exportar rollout; referencias de PNG y sello determinista con tests de hash/revisión |

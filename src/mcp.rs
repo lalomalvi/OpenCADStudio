@@ -212,13 +212,8 @@ fn persist_batch_in(dir: &Path, session_id: &str, batch: &BatchExecution) -> Res
     if wire.len() as u64 > MAX_BATCH_JOURNAL {
         return Err("Batch journal exceeds size limit".into());
     }
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)] {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&temporary).map_err(|error| error.to_string())?;
+    let mut file = crate::automation_security::create_private_file(&temporary)
+        .map_err(|error| error.to_string())?;
     file.write_all(&wire).and_then(|_| file.sync_all()).map_err(|error| error.to_string())?;
     drop(file);
     atomic_replace(&temporary, &path)?;
@@ -342,7 +337,12 @@ fn private_descriptor(path: &Path) -> bool {
     file.uid() == directory.uid() && file.mode() & 0o077 == 0
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn private_descriptor(path: &Path) -> bool {
+    crate::automation_security::private_file(path)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn private_descriptor(_: &Path) -> bool {
     true
 }
@@ -478,17 +478,25 @@ fn descriptors_in(directory: &Path) -> Result<Vec<(Descriptor, Value)>, String> 
         path.metadata().and_then(|m| m.modified()).ok()));
     let next = AtomicUsize::new(0);
     let found = Mutex::new(Vec::new());
+    let unsafe_descriptor = std::sync::atomic::AtomicBool::new(false);
     thread::scope(|scope| {
         for _ in 0..paths.len().min(16) {
             let paths = &paths;
             let next = &next;
             let found = &found;
+            let unsafe_descriptor = &unsafe_descriptor;
             scope.spawn(move || {
                 loop {
                     let index = next.fetch_add(1, Ordering::Relaxed);
                     let Some(path) = paths.get(index) else { break };
-                    if !private_descriptor(path)
-                        || !path.metadata().is_ok_and(|meta| meta.len() <= MAX_DESCRIPTOR) { continue; }
+                    if !path.metadata().is_ok_and(|meta| meta.len() <= MAX_DESCRIPTOR) { continue; }
+                    if !private_descriptor(path) {
+                        let name = path.file_stem().and_then(|name| name.to_str()).unwrap_or_default();
+                        if name.len() == 32 && name.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                            unsafe_descriptor.store(true, Ordering::Relaxed);
+                        }
+                        continue;
+                    }
                     let Ok(text) = std::fs::read_to_string(path) else { continue };
                     let Ok(descriptor) = serde_json::from_str::<Descriptor>(&text) else { continue };
                     if descriptor.session_id.len() != 32
@@ -514,6 +522,9 @@ fn descriptors_in(directory: &Path) -> Result<Vec<(Descriptor, Value)>, String> 
             });
         }
     });
+    if unsafe_descriptor.load(Ordering::Relaxed) {
+        return Err("Unsafe session descriptor present; inspect its ACL before launch".into());
+    }
     let mut found = found.into_inner().map_err(|_| "Discovery lock poisoned".to_string())?;
     found.sort_by(|a, b| a.0.session_id.cmp(&b.0.session_id));
     Ok(found)
@@ -2050,8 +2061,10 @@ mod tests {
         for count in [0, 1, 20, 100] {
             let existing = directory.read_dir().unwrap().count();
             for index in existing..count {
-                std::fs::write(directory.join(format!("{index:03}.json")),
-                    json!({"session_id":format!("{index:032x}"),"port":port,"token":"fixture"}).to_string()).unwrap();
+                let path = directory.join(format!("{index:03}.json"));
+                let mut file = crate::automation_security::create_private_file(&path).unwrap();
+                write!(file, "{}", json!({"session_id":format!("{index:032x}"),
+                    "port":port,"token":"fixture"})).unwrap();
             }
             let began = Instant::now();
             assert!(descriptors_in(&directory).unwrap().is_empty());
