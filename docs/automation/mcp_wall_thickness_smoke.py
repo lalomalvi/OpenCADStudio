@@ -35,6 +35,14 @@ def wall_edges(client, session, handles, *, vertical):
             "points": [[item[0], item[1]] for item in points]}
 
 
+def same_wall_geometry(expected, observed):
+    if len(expected["points"]) != 4 or len(observed["points"]) != 4:
+        return False
+    return all(abs(expected["points"][edge][end][axis] -
+                   observed["points"][edge][end][axis]) <= 1e-6
+               for edge in range(4) for end in range(2) for axis in range(3))
+
+
 def main():
     repo = Path(__file__).resolve().parents[2]
     server = Path(sys.argv[1] if len(sys.argv) > 1 else repo / "target/debug/OpenCADStudio.exe").resolve()
@@ -109,8 +117,8 @@ def main():
                 target_format="dwg", target_version="2018")
         request(client, session, "open", path=first["path"])
         reopened_before = wall_edges(client, session, edges, vertical=vertical)
-        if abs(reopened_before["thickness_m"] - 0.2) > 1e-6:
-            raise ProtocolError("Wall thickness changed on reopen")
+        if not same_wall_geometry(before, reopened_before):
+            raise ProtocolError("Wall edge coordinates changed on first DWG reopen")
         state = read_state(client, session)
         edit_id = "wall-edit-" + uuid.uuid4().hex
         payload = {"op": "edit_wall_thickness", "request_id": edit_id,
@@ -139,13 +147,15 @@ def main():
                 target_format="dwg", target_version="2018")
         request(client, session, "open", path=second["path"])
         reopened_after = wall_edges(client, session, edges, vertical=vertical)
-        if abs(reopened_after["thickness_m"] - 0.25) > 1e-6 or \
+        if not same_wall_geometry(after, reopened_after) or \
                 abs(dimension(client, session, dim) - 0.25) > 1e-6:
-            raise ProtocolError("Edited wall did not persist on reopen")
+            raise ProtocolError("Edited wall coordinates or dimension changed on DWG reopen")
         report.update({"status": "passed", "edit_request_id": edit_id,
                        "measurements_m": {"initial": 0.2, "edited": measurement},
                        "wall_before": before, "wall_after": after,
+                       "wall_reopened_before": reopened_before,
                        "wall_reopened_after": reopened_after,
+                       "coordinate_parity_on_reopen": True,
                        "first_save": first, "second_save": second,
                        "operation_recovered": True, "replay_without_mutation": True})
         try:
