@@ -14,6 +14,8 @@ import time
 import uuid
 
 from mcp_client import Client, ProtocolError, ToolError, UncertainMutation
+from mcp_budgeted_run import CheckpointError
+from mcp_capture_budget import CaptureBudget
 from masterplan.artifact_evidence import artifact_ref
 from masterplan.planspec import dry_run
 
@@ -494,13 +496,41 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             report["association_fixture"]["roundtrip_measurement"] = restored_assoc_measure
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         capture_path = (output / "capture.png").resolve()
+        capture_checkpoint = (output / "capture-budget.jsonl").resolve()
+        capture_budget = CaptureBudget(client, session, capture_checkpoint,
+                                       "l2-capture-" + session[:12],
+                                       max_captures=1, max_bytes=20_000_000)
         capture_started_ns = time.monotonic_ns()
-        capture = client.capture_artifact(session, capture_path,
-                                          document_id=state["document_id"],
-                                          geometry_revision=state["geometry_revision"],
-                                          camera_revision=state["camera_revision"])
+        budget_result = capture_budget.capture(capture_path,
+                                                document_id=state["document_id"],
+                                                geometry_revision=state["geometry_revision"],
+                                                camera_revision=state["camera_revision"])
+        capture = budget_result["metadata"]
         report.setdefault("client_timings_ms", {})["capture_rpc_and_artifact"] = round(
             (time.monotonic_ns() - capture_started_ns) / 1_000_000, 3)
+        resumed_capture = capture_budget.capture(capture_path,
+                                                 document_id=state["document_id"],
+                                                 geometry_revision=state["geometry_revision"],
+                                                 camera_revision=state["camera_revision"])
+        if resumed_capture["status"] != "already_completed" or \
+                resumed_capture["sha256"] != budget_result["sha256"]:
+            raise ProtocolError("Capture budget did not reconcile completed artifact")
+        try:
+            capture_budget.capture((output / "second.png").resolve(),
+                                   document_id=state["document_id"],
+                                   geometry_revision=state["geometry_revision"],
+                                   camera_revision=state["camera_revision"])
+        except CheckpointError as error:
+            if "budget is exhausted" not in str(error):
+                raise
+        else:
+            raise ProtocolError("Capture budget allowed a second capture")
+        report["capture_budget"] = {"status": budget_result["status"],
+                                    "captures_used": 1, "max_captures": 1,
+                                    "bytes_used": budget_result["bytes"],
+                                    "max_bytes": 20_000_000,
+                                    "checkpoint_sha256": hashlib.sha256(
+                                        capture_checkpoint.read_bytes()).hexdigest().upper()}
         if capture.get("timings", {}).get("scope") != "gui_process_monotonic":
             raise ProtocolError("Synthetic capture omitted GUI phase timings")
         report["capture_engine_timings_ms"] = capture["timings"]
