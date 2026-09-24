@@ -3,6 +3,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+import struct
+
+from artifact_evidence import artifact_ref
 
 
 SPEC = importlib.util.spec_from_file_location("seal_cad_run", Path(__file__).with_name("seal_cad_run.py"))
@@ -55,6 +58,20 @@ class CadSealTests(unittest.TestCase):
         with self.assertRaises(module.SealError):
             module.seal_run(self.run, self.binary)
         self.assertFalse((self.run / "SEAL.json").exists())
+
+    def test_capture_ref_is_sealed_and_changed_png_fails(self):
+        png = self.run / "capture.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR"
+                        + struct.pack(">II", 2, 3) + b"synthetic")
+        self.report["capture_artifact"] = artifact_ref(self.run, "capture.png", document_id=2,
+                                                       geometry_revision=3, camera_revision=4)
+        self.save_report()
+        seal = module.seal_run(self.run, self.binary)
+        self.assertEqual(seal["schema_version"], "m3-cad-seal-2")
+        module.verify_seal(self.run, self.binary)
+        png.write_bytes(png.read_bytes() + b"tampered")
+        with self.assertRaises(module.SealError):
+            module.verify_seal(self.run, self.binary)
 
 
 if __name__ == "__main__":

@@ -1523,16 +1523,35 @@ fn call_tool(
             let path = std::env::temp_dir().join(format!("ocs-capture-{}.png", random_id()?));
             let scope = arguments["scope"].as_str().unwrap_or("viewport");
             let max_dimension = arguments["max_dimension"].as_u64().unwrap_or(1600);
+            let mut capture = json!({"op":"capture","path":path.to_string_lossy(),
+                "scope":scope,"max_dimension":max_dimension});
+            for key in ["document_id", "geometry_revision", "camera_revision"] {
+                if let Some(value) = arguments.get(key) {
+                    capture[key] = value.clone();
+                }
+            }
             let result = client(clients, session_id)?
-                .request(json!({"op":"capture","path":path.to_string_lossy(),"scope":scope,"max_dimension":max_dimension}), 30.0)?;
+                .request(capture, 30.0)?;
             if result["ok"].as_bool() != Some(true)
                 || result["status"].as_str() != Some("completed")
             {
+                let _ = std::fs::remove_file(&path);
                 return Err(result.to_string());
+            }
+            let metadata = &result["result"];
+            for key in ["document_id", "geometry_revision", "camera_revision"] {
+                if arguments.get(key).is_some() && arguments[key] != metadata[key] {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(format!("Capture {key} changed before screenshot completed"));
+                }
             }
             let bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
             let _ = std::fs::remove_file(path);
-            Ok(json!({"$image":BASE64.encode(bytes)}))
+            Ok(json!({"$image":BASE64.encode(bytes),"$meta":{
+                "ok":true,"document_id":metadata["document_id"],"revision":metadata["revision"],
+                "geometry_revision":metadata["geometry_revision"],
+                "camera_revision":metadata["camera_revision"],
+                "width":metadata["width"],"height":metadata["height"],"scope":metadata["scope"]}}))
         }
         _ => Err(format!("Unknown tool: {name}")),
     }
@@ -1708,7 +1727,7 @@ fn tool_definitions() -> Value {
         {
             "name":"ocs_capture",
             "description":"Capture the actual current OCS drawing viewport or window as a bounded PNG for visual verification.",
-            "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"scope":{"type":"string","enum":["viewport","window"],"default":"viewport","description":"Capture only the drawing viewport by default, or the complete application window."},"max_dimension":{"type":"integer","minimum":256,"maximum":4096,"default":1600,"description":"Resize the longest image edge to at most this many pixels."}},"required":["ocs_session_id"],"additionalProperties":false},
+            "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"scope":{"type":"string","enum":["viewport","window"],"default":"viewport","description":"Capture only the drawing viewport by default, or the complete application window."},"max_dimension":{"type":"integer","minimum":256,"maximum":4096,"default":1600,"description":"Resize the longest image edge to at most this many pixels."},"document_id":{"type":"integer","minimum":0},"geometry_revision":{"type":"integer","minimum":0},"camera_revision":{"type":"integer","minimum":0}},"required":["ocs_session_id"],"additionalProperties":false},
             "annotations":{"title":"Capture OCS window","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
         }
     ])
@@ -1716,7 +1735,8 @@ fn tool_definitions() -> Value {
 
 fn tool_result(value: Value) -> Value {
     if let Some(image) = value.get("$image").and_then(Value::as_str) {
-        return json!({"content":[{"type":"image","data":image,"mimeType":"image/png"}]});
+        return json!({"content":[{"type":"image","data":image,"mimeType":"image/png"}],
+            "structuredContent":value.get("$meta").cloned().unwrap_or(json!({"ok":true}))});
     }
     let structured = if value.is_object() {
         value.clone()

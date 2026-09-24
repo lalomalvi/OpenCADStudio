@@ -6,6 +6,8 @@ that requires reconciliation against the same session and request_id.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -240,6 +242,13 @@ class Client:
                                           "revision": state["revision"]}
 
     def _tool_raw(self, name: str, arguments: dict, *, deadline: float | None = None) -> dict:
+        result = self._tool_result(name, arguments, deadline=deadline)
+        structured = result.get("structuredContent")
+        if structured is None or structured.get("ok") is False or result.get("isError"):
+            raise ToolError(structured or result)
+        return structured
+
+    def _tool_result(self, name: str, arguments: dict, *, deadline: float | None = None) -> dict:
         if deadline is None:
             deadline = time.monotonic() + max(self.timeout, 90.0)
         self.tool_calls += 1
@@ -259,10 +268,44 @@ class Client:
                 if task["status"] == "completed":
                     result = task["result"]
                     break
-        structured = result.get("structuredContent")
-        if structured is None or structured.get("ok") is False or result.get("isError"):
-            raise ToolError(structured or result)
-        return structured
+        return result
+
+    def capture_artifact(self, session_id: str, path: Path, *, document_id: int,
+                         geometry_revision: int, camera_revision: int,
+                         max_dimension: int = 1024) -> dict:
+        """Store a fenced PNG locally; never put its Base64 into a trace or report."""
+        if not path.is_absolute() or path.suffix.lower() != ".png" or path.exists():
+            raise ValueError("Capture path must be a new absolute PNG path")
+        if not 256 <= max_dimension <= 4096:
+            raise ValueError("Capture max_dimension is outside the MCP contract")
+        expected = {"document_id": document_id, "geometry_revision": geometry_revision,
+                    "camera_revision": camera_revision}
+        if any(type(value) is not int or value < 0 for value in expected.values()):
+            raise ValueError("Capture document/revision identities are required")
+        result = self._tool_result("ocs_capture", {"ocs_session_id": session_id,
+                            "scope": "viewport", "max_dimension": max_dimension, **expected},
+                            deadline=time.monotonic() + 45)
+        metadata = result.get("structuredContent")
+        if result.get("isError") or not isinstance(metadata, dict) or metadata.get("ok") is not True \
+                or any(metadata.get(key) != value for key, value in expected.items()):
+            raise ProtocolError("Capture identity or render revision differs")
+        images = [item for item in result.get("content", [])
+                  if item.get("type") == "image" and item.get("mimeType") == "image/png"]
+        if len(images) != 1 or not isinstance(images[0].get("data"), str):
+            raise ProtocolError("MCP capture did not return exactly one PNG image")
+        try:
+            data = base64.b64decode(images[0]["data"], validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise ProtocolError("MCP capture Base64 is invalid") from error
+        if len(data) > 20_000_000 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise ProtocolError("MCP capture is not a bounded PNG")
+        with path.open("xb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        return {key: metadata.get(key) for key in
+                ("document_id", "revision", "geometry_revision", "camera_revision",
+                 "width", "height", "scope")}
 
     @staticmethod
     def _remaining(deadline: float | None) -> float | None:

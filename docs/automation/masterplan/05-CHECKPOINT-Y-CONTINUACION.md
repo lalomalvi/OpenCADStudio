@@ -207,3 +207,13 @@ El L2 `target/mcp-isolated/20260923-213433-3a2932b3/report.json` pasó con cinco
 ### Prompt de continuidad desde el decimocuarto corte
 
 Verifica SHA remoto y árbol limpio. Completa M3 con artefactos PNG reales/revisiones/render-fence y tiempos por fase más presupuesto; no mezcles uso del supervisor con el generador. Extiende PlanSpec y M5 sobre capacidades probadas, M6 con QA espacial/external, y M7/M8 con cohortes y gates pendientes. Mantén el DWG del usuario, los runs fallidos y el caso histórico intactos; nunca publiques contenido privado ni upstream.
+
+## Decimoquinto corte captura MCP y ArtifactRef — 2026-09-23, en progreso
+
+El decimocuarto corte se publicó en `origin/codex/mcp-cad-evidence-seal` con commit `b83b8595` (verificar SHA completo remoto). La rama `codex/mcp-capture-artifact-fence` extiende `ocs_capture` con argumentos opcionales de documento y revisiones de geometría/cámara. La GUI devuelve las revisiones al terminar el screenshot; el servidor rechaza discrepancias, conserva `content` MCP de imagen para clientes remotos y agrega `structuredContent` sin Base64. El cliente persistente guarda un solo PNG acotado a ruta nueva y genera `ArtifactRef` con SHA, bytes, dimensiones y revisiones; el trace no registra contenido. Un test Python demuestra que una revisión obsoleta no escribe archivo. Las 20 pruebas Python de automatización y 20 pruebas Rust MCP focalizadas pasaron antes del L2.
+
+El L2 `target/mcp-isolated/20260923-214220-27b215c6/report.json` pasó con PNG 1024×506, 37,292 bytes, hash `b568159ea1b80abaad2e4658e4b60c1d4eebb66d49d542077f2dfc9a8bb06c12`, documento 2/geometry 13/camera 0. La inspección visual mostró las tres entidades sintéticas, junto con UI y texto de ruta local; el PNG permanece privado en `target`. El L2 semántico `target/mcp-isolated/20260923-214352-af7e4c77/report.json` pasó con cinco entidades y captura ligada a documento 3/geometry 24/camera 1. Allí se creó `ARTIFACTS.json` y `SEAL.json` v2; `--verify` pasó. El test de sello detectó cambio de PNG. Los sellos v1 anteriores se preservan. Falta un render-fence explícito que asegure que el frame contiene la revisión observada; el recorte viewport aún incluye UI. M3.3 sigue partial, y el veredicto general sigue partial.
+
+### Prompt de continuidad desde el decimoquinto corte
+
+Verifica SHA remoto del corte y árbol Git. Implementa render-fence real en GUI o declara formalmente la brecha; mejora recorte para eliminar UI sin perder geometría y mide bytes/tokens observados. Completa presupuesto/reanudación y telemetría por fase M3, PlanSpec/M5/M6, protocolo M7 y M8 según gates. Mantén capturas y DWG sintéticos dentro de `target`, sin publicar archivos privados ni tocar el DWG del usuario; nunca push a upstream.

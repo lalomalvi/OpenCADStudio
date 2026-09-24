@@ -1,6 +1,7 @@
 """L1 synthetic fault tests for the persistent MCP client."""
 
 import concurrent.futures
+import base64
 import json
 import os
 from pathlib import Path
@@ -181,6 +182,24 @@ class ClientTests(unittest.TestCase):
                 self.assertNotIn("token", trace.read_text(encoding="utf-8"))
             finally:
                 client.close()
+
+    def test_capture_artifact_rejects_stale_revision_without_writing(self):
+        client = self.client()
+        fake = {"structuredContent": {"ok": True, "document_id": 1,
+                                      "geometry_revision": 3, "camera_revision": 4},
+                "content": [{"type": "image", "mimeType": "image/png",
+                             "data": base64.b64encode(b"\x89PNG\r\n\x1a\nfixture").decode()}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = (Path(directory) / "capture.png").resolve()
+            with patch.object(client, "_tool_result", return_value=fake):
+                with self.assertRaisesRegex(ProtocolError, "revision differs"):
+                    client.capture_artifact("s1", path, document_id=1,
+                                            geometry_revision=2, camera_revision=4)
+                self.assertFalse(path.exists())
+                metadata = client.capture_artifact("s1", path, document_id=1,
+                                                    geometry_revision=3, camera_revision=4)
+                self.assertEqual(metadata["geometry_revision"], 3)
+                self.assertEqual(path.read_bytes(), b"\x89PNG\r\n\x1a\nfixture")
 
 
 if __name__ == "__main__":

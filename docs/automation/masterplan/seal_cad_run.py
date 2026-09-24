@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from artifact_evidence import verify_ref
 from planspec import dry_run
 
 
@@ -68,6 +69,16 @@ def prepare(run: Path, binary: Path) -> dict[str, Any]:
         raise SealError("Verified drawing escapes the synthetic run")
     if digest(drawing) != saved.get("sha256") or drawing.stat().st_size != saved.get("bytes"):
         raise SealError("Verified drawing hash or size changed")
+    references = []
+    if "capture_artifact" in report:
+        reference = report["capture_artifact"]
+        try:
+            verify_ref(root, reference, document_id=reference["document_id"],
+                       geometry_revision=reference["geometry_revision"],
+                       camera_revision=reference["camera_revision"])
+        except (ValueError, KeyError, OSError) as error:
+            raise SealError("Capture artifact differs from its revision-bound reference") from error
+        references.append(reference)
     audit_public = {"schema_version": "m3-audit-1", "status": audit["status"],
                     "summary": audit["summary"], "target": audit["target"],
                     "manifest": audit["manifest"], "bounds": audit["bounds"],
@@ -78,11 +89,14 @@ def prepare(run: Path, binary: Path) -> dict[str, Any]:
                    "verification_engine": "OpenCADStudio-internal"}
     verdict = {"schema_version": "m3-verdict-1", "status": "partial",
                "passed_gates": ["synthetic_planspec", "mcp_execution", "internal_audit",
-                                "internal_dwg_reopen", "gui_exit"],
-               "pending_gates": ["image_interpretation", "external_cad_engine", "human_review"],
+                                "internal_dwg_reopen", "gui_exit"] +
+                               (["capture_revision_checked"] if references else []),
+               "pending_gates": ["image_interpretation", "render_fence", "external_cad_engine",
+                                 "human_review"],
                "model_identity": "unknown", "billed_cost": None}
     return {"AUDIT.json": audit_public, "SAVE.json": save_public,
             "VERDICT.json": verdict,
+            "ARTIFACTS.json": {"schema_version": "m3-artifacts-1", "references": references},
             "drawing_sha256": saved["sha256"], "binary_sha256": report["binary_sha256"],
             "report_sha256": digest(report_path)}
 
@@ -90,13 +104,14 @@ def prepare(run: Path, binary: Path) -> dict[str, Any]:
 def seal_run(run: Path, binary: Path) -> dict[str, Any]:
     root = run.resolve(strict=True)
     prepared = prepare(root, binary)
-    for name in ("AUDIT.json", "SAVE.json", "VERDICT.json", "SEAL.json"):
+    for name in ("AUDIT.json", "SAVE.json", "VERDICT.json", "ARTIFACTS.json", "SEAL.json"):
         if (root / name).exists():
             raise SealError("Evidence files already exist; preserve this cut and use a new run")
-    for name in ("AUDIT.json", "SAVE.json", "VERDICT.json"):
+    for name in ("AUDIT.json", "SAVE.json", "VERDICT.json", "ARTIFACTS.json"):
         _write_once(root / name, prepared[name])
-    sealed_files = {name: digest(root / name) for name in ("AUDIT.json", "SAVE.json", "VERDICT.json")}
-    seal = {"schema_version": "m3-cad-seal-1", "status": "partial",
+    sealed_files = {name: digest(root / name) for name in
+                    ("AUDIT.json", "SAVE.json", "VERDICT.json", "ARTIFACTS.json")}
+    seal = {"schema_version": "m3-cad-seal-2", "status": "partial",
             "files_sha256": sealed_files, "report_sha256": prepared["report_sha256"],
             "drawing_sha256": prepared["drawing_sha256"],
             "binary_sha256": prepared["binary_sha256"]}
@@ -108,17 +123,22 @@ def verify_seal(run: Path, binary: Path) -> None:
     root = run.resolve(strict=True)
     seal = json.loads((root / "SEAL.json").read_text(encoding="utf-8"))
     prepared = prepare(root, binary)
-    if seal.get("schema_version") != "m3-cad-seal-1" or seal.get("status") != "partial" \
+    version = seal.get("schema_version")
+    if version not in {"m3-cad-seal-1", "m3-cad-seal-2"} or seal.get("status") != "partial" \
             or seal.get("report_sha256") != prepared["report_sha256"] \
             or seal.get("drawing_sha256") != prepared["drawing_sha256"] \
             or seal.get("binary_sha256") != prepared["binary_sha256"]:
         raise SealError("Seal source hashes differ")
+    covered = {"AUDIT.json", "SAVE.json", "VERDICT.json"}
+    if version == "m3-cad-seal-2":
+        covered.add("ARTIFACTS.json")
     for name, expected in seal.get("files_sha256", {}).items():
-        if name not in {"AUDIT.json", "SAVE.json", "VERDICT.json"} \
+        if name not in covered \
                 or digest(root / name) != expected \
-                or (root / name).read_bytes() != _json_bytes(prepared[name]):
+                or (version == "m3-cad-seal-2" and
+                    (root / name).read_bytes() != _json_bytes(prepared[name])):
             raise SealError("Sealed evidence file changed")
-    if set(seal.get("files_sha256", {})) != {"AUDIT.json", "SAVE.json", "VERDICT.json"}:
+    if set(seal.get("files_sha256", {})) != covered:
         raise SealError("Seal file coverage is incomplete")
 
 

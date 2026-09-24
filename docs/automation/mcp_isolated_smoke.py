@@ -14,6 +14,7 @@ import time
 import uuid
 
 from mcp_client import Client, ProtocolError, ToolError, UncertainMutation
+from masterplan.artifact_evidence import artifact_ref
 from masterplan.planspec import dry_run
 
 
@@ -206,6 +207,18 @@ def main(*, semantic: bool = False) -> None:
                 raise ProtocolError("Native primitive geometry changed after internal DWG reopen")
             report["native_primitives"]["roundtrip_geometry"] = "matched_1e-6_internal"
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
+        capture_path = (output / "capture.png").resolve()
+        capture = client.capture_artifact(session, capture_path,
+                                          document_id=state["document_id"],
+                                          geometry_revision=state["geometry_revision"],
+                                          camera_revision=state["camera_revision"])
+        reference = artifact_ref(output, capture_path.name,
+                                 document_id=capture["document_id"],
+                                 geometry_revision=capture["geometry_revision"],
+                                 camera_revision=capture["camera_revision"])
+        if (reference["width"], reference["height"]) != (capture["width"], capture["height"]):
+            raise ProtocolError("Capture PNG dimensions differ from MCP metadata")
+        report["capture_artifact"] = reference
         if any(document.get("dirty") for document in state["documents"]):
             report["shutdown"] = "waiting_user_dirty_document"
             return
