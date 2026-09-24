@@ -61,7 +61,7 @@ def read_state(client: Client, session: str, *, timeout: float = 10.0) -> dict:
             time.sleep(0.2)
 
 
-def main(*, semantic: bool = False) -> None:
+def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> None:
     server = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/OpenCADStudio.exe").resolve()
     if not server.is_file():
         raise FileNotFoundError(server)
@@ -79,13 +79,24 @@ def main(*, semantic: bool = False) -> None:
     report = {"schema_version": "mcp-isolated-l2-1", "status": "failed",
               "binary_sha256": hashlib.sha256(server.read_bytes()).hexdigest().upper(),
               "output": str(output)}
-    fixture = Path(__file__).resolve().parent / "masterplan/fixtures/synthetic-room.planspec.json"
-    compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")))
+    if plan_fixture not in {"synthetic-room", "synthetic-layer"}:
+        raise ValueError("Only versioned synthetic PlanSpec fixtures are allowed")
+    fixtures = Path(__file__).resolve().parent / "masterplan/fixtures"
+    fixture = fixtures / f"{plan_fixture}.planspec.json"
+    manifest = None
+    if plan_fixture == "synthetic-layer":
+        manifest = json.loads((fixtures / "capabilities-d51b9253.json").read_text(encoding="utf-8"))
+        if report["binary_sha256"] != manifest["binary_sha256"]:
+            raise ProtocolError("Layer capability manifest belongs to another build")
+    compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")),
+                       capabilities=set(manifest["verified_capabilities"]) if manifest else None)
     if not compiled["executable"] or len(compiled["commands"]) != 3:
         raise ProtocolError("Synthetic PlanSpec has unsupported or missing commands")
-    report["planspec"] = {"fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
+    report["planspec"] = {"fixture": fixture.name,
+                          "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
                           "commands_sha256": compiled["commands_sha256"],
-                          "command_count": len(compiled["commands"])}
+                          "command_count": len(compiled["commands"]),
+                          "step_count": len(compiled["execution_steps"])}
     gui = subprocess.Popen([str(server), "--new-instance"], cwd=repo, env=environment,
                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
@@ -98,6 +109,14 @@ def main(*, semantic: bool = False) -> None:
             raise ProtocolError("Discovered session does not belong to the launched GUI")
         if Path(selected["executable_path"]).resolve() != server:
             raise ProtocolError("Discovered executable differs from tested build")
+        if manifest:
+            catalog = client.tool("ocs_read", {"ocs_session_id": session, "op": "commands",
+                                               "parameters": {"limit": 1000}})
+            names = set(catalog.get("commands", []))
+            actual = hashlib.sha256("\n".join(sorted(names)).encode()).hexdigest()
+            if catalog.get("count") != len(names) or actual != manifest["commands_sha256"]:
+                raise ProtocolError("Layer capability command catalog differs from manifest")
+            report["planspec"]["capability_manifest"] = "capabilities-d51b9253.json"
         report["session"] = {"id": session, "pid": gui.pid,
                              "started_at_unix_ms": selected.get("process_started_at_unix_ms")}
 
@@ -120,11 +139,14 @@ def main(*, semantic: bool = False) -> None:
         script = client.tool("ocs_execute", {"ocs_session_id": session,
             "request": {"op": "run_script", "request_id": "l2-script-" + uuid.uuid4().hex,
                         "strict": True,
-                        "commands": [item["command"] for item in compiled["commands"]]}})
-        if script.get("completed_commands") != 3 or script.get("added_entities") != 3:
+                        "commands": [item["command"] for item in compiled["execution_steps"]]}})
+        if script.get("completed_commands") != len(compiled["execution_steps"]) \
+                or script.get("added_entities") != len(compiled["commands"]):
             raise ProtocolError("Synthetic script did not create three entities")
         handles = {}
-        for step, item in enumerate(compiled["commands"]):
+        for step, item in enumerate(compiled["execution_steps"]):
+            if item["planspec_id"] is None:
+                continue
             created = [change["handle"] for change in script.get("changes", [])
                        if change.get("step") == step and change.get("kind") == "Added"
                        and isinstance(change.get("handle"), str)]
@@ -134,6 +156,15 @@ def main(*, semantic: bool = False) -> None:
         if len(set(handles.values())) != len(handles):
             raise ProtocolError("PlanSpec handles are not unique")
         report["planspec"]["handles_by_id"] = handles
+        properties = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                              "parameters": {"handles": list(handles.values()),
+                                                             "detail": "summary"}})
+        layers_by_handle = {entity["handle"]: entity["layer"]
+                            for entity in properties.get("entities", [])}
+        expected_layers = {item["planspec_id"]: item["layer"] for item in compiled["commands"]}
+        if {name: layers_by_handle.get(handle) for name, handle in handles.items()} != expected_layers:
+            raise ProtocolError("PlanSpec entity layer differs from compiled layer")
+        report["planspec"]["layers_by_id"] = expected_layers
         if semantic:
             native = client.tool("ocs_execute", {"ocs_session_id": session,
                 "request": {"op": "run_script", "request_id": "l2-native-" + uuid.uuid4().hex,
@@ -161,6 +192,22 @@ def main(*, semantic: bool = False) -> None:
                                            "polyline_vertices": len(by_type["Polyline"]["vertices"]),
                                            "polyline_closed": True}
             native_before = native_geometry(queried["entities"])
+            layered = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "run_script", "request_id": "l2-layer-" + uuid.uuid4().hex,
+                            "strict": True, "commands": ["LAYER NEW A-WALL", "CLAYER A-WALL",
+                                                          "LINE 30,0 34,0"]}})
+            if layered.get("completed_commands") != 3 or layered.get("added_entities") != 1:
+                raise ProtocolError("Layer fixture did not create exactly one line")
+            layer_handles = [change["handle"] for change in layered.get("changes", [])
+                             if change.get("kind") == "Added" and change.get("step") == 2]
+            if len(layer_handles) != 1:
+                raise ProtocolError("Layer fixture line handle is missing")
+            layer_query = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                    "parameters": {"handle": layer_handles[0],
+                                                                   "detail": "geometry"}})
+            if layer_query.get("entities", [{}])[0].get("layer") != "A-WALL":
+                raise ProtocolError("Layer fixture line was assigned to another layer")
+            report["layer_fixture"] = {"handle": layer_handles[0], "layer": "A-WALL"}
         audit = client.tool("ocs_read", {"ocs_session_id": session, "op": "audit",
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
@@ -180,11 +227,14 @@ def main(*, semantic: bool = False) -> None:
             if by_type.get("Arc") != 1 or by_type.get("Polyline") != 1:
                 raise ProtocolError("Native primitives did not survive internal DWG reopen")
             report["native_primitives"]["reopened_types"] = {"Arc": 1, "Polyline": 1}
+            if verified.get("manifest", {}).get("by_layer", {}).get("A-WALL") != 1:
+                raise ProtocolError("Synthetic layer assignment did not survive DWG reopen")
+            report["layer_fixture"]["reopened_count"] = 1
         actual_hash = hashlib.sha256(destination.read_bytes()).hexdigest().upper()
         if verified["sha256"].upper() != actual_hash:
             raise ProtocolError("Synthetic output hash differs from backend report")
-        report.update({"status": "passed", "script": {"completed_commands": 3,
-                                                      "added_entities": 3},
+        report.update({"status": "passed", "script": {"completed_commands": len(compiled["execution_steps"]),
+                                                      "added_entities": len(compiled["commands"])},
                        "audit_ok": True,
                        "verified_output": {"path": str(destination), "sha256": actual_hash,
                                            "bytes": destination.stat().st_size,

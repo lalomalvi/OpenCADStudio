@@ -130,7 +130,7 @@ def _coordinate(value: Decimal) -> str:
     return format(rounded, "f").rstrip("0").rstrip(".")
 
 
-def dry_run(plan: dict[str, Any]) -> dict[str, Any]:
+def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
     nodes = {node["id"]: (_number(node["x"], "x"), _number(node["y"], "y"))
              for node in plan["nodes"]}
@@ -151,14 +151,26 @@ def dry_run(plan: dict[str, Any]) -> dict[str, Any]:
         radius = _coordinate(_number(circle["radius"], "radius"))
         commands.append({"planspec_id": circle["id"], "command": f"CIRCLE {x},{y} {radius}",
                          "layer": circle["layer"]})
+    layers = sorted({item["layer"] for item in (*plan["lines"], *plan["circles"])} - {"0"})
+    execution = [{"planspec_id": None, "command": f"LAYER NEW {layer}", "layer": layer}
+                 for layer in layers]
+    current_layer = "0"
+    for command in commands:
+        if command["layer"] != current_layer:
+            execution.append({"planspec_id": None,
+                              "command": f"CLAYER {command['layer']}",
+                              "layer": command["layer"]})
+            current_layer = command["layer"]
+        execution.append(command)
     missing = set()
     if plan["dimensions"]:
         missing.add("native_dimension")
-    if any(item["layer"] != "0" for item in (*plan["lines"], *plan["circles"])):
+    if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")
     unsupported = sorted(missing)
-    wire = json.dumps(commands, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    wire = json.dumps(execution, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return {"schema_version": "planspec-dry-run-1", "commands": commands,
+            "execution_steps": execution,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
             "unsupported": unsupported, "executable": not unsupported,
-            "note": "Layer assignment needs manifest/GUI verification before execution"}
+            "note": "Nonzero layers require layer_assignment in a manifest verified for this build"}

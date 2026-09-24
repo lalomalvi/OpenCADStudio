@@ -77,6 +77,11 @@ class PlanSpecTests(unittest.TestCase):
         value = plan()
         value["lines"][0]["layer"] = "A-WALL"
         self.assertEqual(module.dry_run(value)["unsupported"], ["layer_assignment"])
+        compiled = module.dry_run(value, capabilities={"layer_assignment"})
+        self.assertTrue(compiled["executable"])
+        self.assertEqual([item["command"] for item in compiled["execution_steps"]],
+                         ["LAYER NEW A-WALL", "CLAYER A-WALL", "LINE 0,0 2.5,0",
+                          "CLAYER 0", "LINE 2.5,0 5,0"])
 
 
 if __name__ == "__main__":

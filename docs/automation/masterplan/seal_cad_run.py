@@ -50,12 +50,25 @@ def prepare(run: Path, binary: Path) -> dict[str, Any]:
         raise SealError("CAD run did not finish with GUI exit")
     if digest(binary) != report.get("binary_sha256"):
         raise SealError("Runtime binary hash differs from run report")
-    fixture = Path(__file__).with_name("fixtures") / "synthetic-room.planspec.json"
-    compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")))
     planspec = report.get("planspec", {})
+    fixture_name = planspec.get("fixture", "synthetic-room.planspec.json")
+    if fixture_name not in {"synthetic-room.planspec.json", "synthetic-layer.planspec.json"}:
+        raise SealError("PlanSpec fixture is outside the versioned synthetic set")
+    fixtures = Path(__file__).with_name("fixtures")
+    fixture = fixtures / fixture_name
+    capabilities = None
+    if fixture_name == "synthetic-layer.planspec.json":
+        manifest = json.loads((fixtures / "capabilities-d51b9253.json").read_text(encoding="utf-8"))
+        if manifest["binary_sha256"] != report["binary_sha256"] \
+                or planspec.get("capability_manifest") != "capabilities-d51b9253.json":
+            raise SealError("Build capability manifest differs from run")
+        capabilities = set(manifest["verified_capabilities"])
+    compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")), capabilities=capabilities)
     if not compiled["executable"] or digest(fixture).lower() != planspec.get("fixture_sha256") \
             or compiled["commands_sha256"] != planspec.get("commands_sha256") \
-            or len(planspec.get("handles_by_id", {})) != len(compiled["commands"]):
+            or len(planspec.get("handles_by_id", {})) != len(compiled["commands"]) \
+            or (planspec.get("step_count") is not None and
+                planspec["step_count"] != len(compiled["execution_steps"])):
         raise SealError("PlanSpec fixture, commands or handle coverage differs")
     audit = report.get("audit_summary", {})
     saved = report.get("verified_output", {})

@@ -1,0 +1,19 @@
+{
+  "schema_version": "planspec-1",
+  "units": "m",
+  "origin": {"x": 0, "y": 0},
+  "nodes": [
+    {"id": "a", "x": 0, "y": 0, "source": {"region_px": [0, 0, 10, 10], "confidence": 1, "classification": "measured"}},
+    {"id": "b", "x": 10, "y": 0, "source": {"region_px": [10, 0, 20, 10], "confidence": 1, "classification": "measured"}},
+    {"id": "c", "x": 10, "y": 10, "source": {"region_px": [10, 10, 20, 20], "confidence": 1, "classification": "measured"}},
+    {"id": "center", "x": 5, "y": 5, "source": {"region_px": [5, 5, 15, 15], "confidence": 1, "classification": "measured"}}
+  ],
+  "lines": [
+    {"id": "line-1", "start": "a", "end": "b", "layer": "A-WALL", "source": {"region_px": [0, 0, 20, 10], "confidence": 1, "classification": "measured"}},
+    {"id": "line-2", "start": "b", "end": "c", "layer": "0", "source": {"region_px": [10, 0, 20, 20], "confidence": 1, "classification": "measured"}}
+  ],
+  "circles": [
+    {"id": "circle-1", "center": "center", "radius": 2, "layer": "0", "source": {"region_px": [5, 5, 15, 15], "confidence": 1, "classification": "measured"}}
+  ],
+  "dimensions": []
+}
