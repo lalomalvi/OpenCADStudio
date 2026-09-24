@@ -1,0 +1,9 @@
+# Perfil métrico A4 de PDF, alcance v1
+
+`metric_plot_pdf` es una operación MCP para exportar una vista de Model con `INSUNITS=6` (metros) a un PDF A4 horizontal. Recibe `path` absoluto `.pdf`, `scale_denominator` entero 10–1000, `document_id`, `revision` y `request_id`. El destino debe ser nuevo y su directorio debe existir. La operación no modifica el documento; el ledger MCP permite consultar el resultado por `request_id` y evita repetir la escritura después de una respuesta incierta. Un nuevo ID al mismo destino se rechaza.
+
+La escala física 1:N se convierte a `1000/N` milímetros de papel por unidad CAD. Por ejemplo, 1:100 produce 10 mm por metro; una línea de 4 m debe medir 40 mm en PDF. El perfil usa A4 horizontal 297×210 mm, Model Extents, centrado y al menos 10 mm libres alrededor de las extensiones calculadas. Si la geometría no cabe, el backend rechaza antes de escribir. La ventana se amplía 0,5 mm en papel a cada lado para no recortar entidades situadas exactamente en el extremo del modelo; esta holgura no altera la escala.
+
+El oráculo L2 sintético dibuja una L de 4×1 m, exporta por MCP, comprueba hash, consulta de operación, replay sin reescritura, rechazo de destino ocupado, MediaBox de una página A4 y, mediante Poppler a 100 dpi, una huella de tinta de 40×10 mm dentro de tolerancia de raster de 3 px. Se inspecciona también el PNG. La primera ejecución histórica sin holgura se conserva: la LINE vertical en x=4 estaba en el documento y no apareció en el render.
+
+Este perfil no persiste un page setup en el DWG ni define pluma/CTB, grosores por capa, textos mínimos o legibilidad humana. Tampoco prueba impresión física, múltiples páginas, otras escalas o dibujos complejos. Se necesita un gate posterior M5.7 para page setup DWG, cotas/textos/lineweights por escala y L4 externo de su metadata, seguido de revisión L5.

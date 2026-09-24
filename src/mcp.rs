@@ -60,6 +60,7 @@ const EXECUTE_OPS: &[&str] = &[
     "set_properties",
     "edit_wall_thickness",
     "edit_wall_length",
+    "metric_plot_pdf",
     "action",
     "embed_image",
     "save",
@@ -1316,6 +1317,10 @@ fn validate_execute_request(request: &Value, op: &str) -> Result<(), String> {
             || request["expected_thickness_m"].as_f64().is_none() => {
             missing("wall edges, dimension or length", r#"{"op":"edit_wall_length","edge_handles":["64","65","66","67"],"dimension_handle":"68","expected_length_m":4,"new_length_m":4.5,"expected_thickness_m":0.2}"#)
         }
+        "metric_plot_pdf" if request["path"].as_str().is_none_or(str::is_empty)
+            || request["scale_denominator"].as_u64().is_none() => {
+            missing("PDF path or metric scale", r#"{"op":"metric_plot_pdf","path":"/absolute/plot.pdf","scale_denominator":100}"#)
+        }
         "action" => match request["name"].as_str() {
             Some(name) if crate::app::automation_action_names().contains(&name) => Ok(()),
             Some(name) => Err(format!(
@@ -1678,6 +1683,7 @@ fn execute_request_schema() -> Value {
             "dimension_handle":handle.clone(),
             "expected_length_m":{"type":"number","minimum":0.1,"maximum":1000},
             "new_length_m":{"type":"number","minimum":0.1,"maximum":1000},
+            "scale_denominator":{"type":"integer","minimum":10,"maximum":1000,"description":"Denominator of the 1:N metric model plot scale."},
             "name":{"type":"string","enum":crate::app::automation_action_names(),"description":"UI action returned by ocs_read commands."},
             "steps":{"type":"array","minItems":1,"maxItems":MAX_BATCH_STEPS,"description":"Sequential editor operations executed with fresh state and idempotency keys. Execution stops at the first failure; completed_steps says what committed.","items":batch_step_schema()},
             "commands":{"type":"array","minItems":1,"maxItems":MAX_SCRIPT_COMMANDS,"description":"Complete one-line CAD commands for a resumable high-volume drawing script. Read command manifests first; points use x,y or x,y,z.","items":{"type":"string","minLength":1,"maxLength":MAX_SCRIPT_COMMAND_BYTES}},
@@ -1713,6 +1719,7 @@ fn execute_request_schema() -> Value {
             {"properties":{"op":{"const":"set_properties"}},"required":["collection","updates"]},
             {"properties":{"op":{"const":"edit_wall_thickness"}},"required":["edge_handles","expected_thickness_m","new_thickness_m","document_id","revision"]},
             {"properties":{"op":{"const":"edit_wall_length"}},"required":["edge_handles","dimension_handle","expected_length_m","new_length_m","expected_thickness_m","document_id","revision"]},
+            {"properties":{"op":{"const":"metric_plot_pdf"}},"required":["path","scale_denominator","document_id","revision"]},
             {"properties":{"op":{"const":"action"}},"required":["name"]},
             {"properties":{"op":{"const":"embed_image"}},"required":["path"]},
             {"properties":{"op":{"const":"save"}}},
@@ -2487,6 +2494,22 @@ mod tests {
         let schema = execute_request_schema();
         assert_eq!(schema["properties"]["dimension_handle"]["type"], "string");
         assert_eq!(schema["properties"]["new_length_m"]["maximum"], 1000);
+    }
+
+    #[test]
+    fn metric_plot_requires_an_explicit_metric_scale_and_is_not_batched() {
+        let request = json!({"op":"metric_plot_pdf","request_id":"plot-1",
+            "document_id":1,"revision":2,"path":"C:/synthetic/plot.pdf",
+            "scale_denominator":100});
+        assert!(EXECUTE_OPS.contains(&"metric_plot_pdf"));
+        assert!(!BATCH_STEP_OPS.contains(&"metric_plot_pdf"));
+        assert!(validate_execute_request(&request, "metric_plot_pdf").is_ok());
+        let mut invalid = request.clone();
+        invalid.as_object_mut().unwrap().remove("scale_denominator");
+        assert!(validate_execute_request(&invalid, "metric_plot_pdf").is_err());
+        let schema = execute_request_schema();
+        assert_eq!(schema["properties"]["scale_denominator"]["minimum"], 10);
+        assert_eq!(schema["properties"]["scale_denominator"]["maximum"], 1000);
     }
 
     #[test]

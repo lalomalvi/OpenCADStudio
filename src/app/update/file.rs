@@ -5431,7 +5431,7 @@ impl OpenCADStudio {
 
     /// Render a selected rectangle through one shared Model/Paper path. The
     /// window may lie partly or wholly outside a paper sheet.
-    fn area_plot_job(&self, window: (f64, f64, f64, f64)) -> Option<PdfPageInput> {
+    pub(crate) fn area_plot_job(&self, window: (f64, f64, f64, f64)) -> Option<PdfPageInput> {
         use crate::io::paper_catalog::{window_to_sheet, PlotScale};
         let i = self.active_tab;
         let (x0, y0, x1, y1) = window;
