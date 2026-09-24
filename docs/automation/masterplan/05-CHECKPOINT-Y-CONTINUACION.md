@@ -1649,3 +1649,13 @@ M8.1 continúa parcial: entrada PlanSpec ya preparada, sin llamada de modelo en 
 ### Prompt de continuidad desde el centésimo trigésimo quinto corte
 
 Verifica AGENTS, Git/remotos, SHA local/remoto y árbol; coteja contrato/reporte/puente `apartment-four-windows-v1`, DWG y captura idénticos al run M7 y AutoCAD 55/55. No reejecutes el run M8. Continúa con las cinco imágenes de desarrollo autorizadas: reconstrucción por oráculos previos a Luna, PlanSpec tipado, L2/L4 y revisión visual. Amplía M8 hacia un paquete reproducible y sanitizado y M7 hacia comparación de casos distintos y L5; la identidad/uso directos M3 siguen pendientes. No pidas sexta imagen ni API, no abras/modifiques el DWG privado ni cambies umbrales retroactivamente; publica solo al fork y mantén main/upstream sin merge prematuro.
+
+## Centésimo trigésimo sexto corte: paquete visual de la planta parcial — 2026-09-24
+
+Se verificó el corte 135 local/remoto `2ba27b959b683e7d946432800982f741aeb17b51`, árbol limpio, remotos y AGENTS. Desde `codex/mcp-m7-visual-packet`, un proyector reproducible verificó hashes de imagen/PlanSpec/calibración y generó `target/mcp-review/apartment-four-windows-v1`: superposición completa SHA `1EB8D7C3AE10A2ADD1A76D084631E4F6856099D53A0C06E3C66A489068E4DC97` y comparación lado a lado SHA `E61ACFCFFA57074323350105C21D045DEFF8BA6415EDF4E76ACE14CA083366F4`. El censo visible es 26 LINE estructurales, 16 de ventana, una hoja y un ARC; se excluyen de la imagen cuatro soportes ocultos y siete cotas nativas. QA visual muestra ubicaciones generales coherentes de contorno y marcos, además de grandes regiones interiores sin reconstruir. Tres pruebas L0 verifican calibración, arco y rechazo de fuente distinta. Véase [M7-REVISION-VISUAL-PLANTA-PARCIAL-V1.md](M7-REVISION-VISUAL-PLANTA-PARCIAL-V1.md). Verificar suite y SHA local/remoto tras publicar.
+
+El paquete hace concreto el alcance de una futura revisión L5 pero no la acredita: planta, recintos y legibilidad siguen incompletos. Fuente y PNG derivados permanecen fuera de Git; el DWG privado y upstream intactos.
+
+### Prompt de continuidad desde el centésimo trigésimo sexto corte
+
+Verifica AGENTS, Git/remotos, SHA local/remoto y árbol; abre el manifiesto y la comparación `target/mcp-review/apartment-four-windows-v1`, coteja hashes y no confundas QA visual asistida con L5 humana. Usa las zonas interiores faltantes para priorizar el próximo recorte con oráculo antes de Luna; integra solo geometría respaldada por la fuente, PlanSpec, L2 y AutoCAD. Conserva todas las abstenciones y runs. M3 identidad/uso directo, M7 cohorte/L5/comparación integral y M8 release siguen abiertos. No pidas sexta imagen ni API, no abras/modifiques el DWG privado y publica solo al fork `lalomalvi/OpenCADStudio`.
