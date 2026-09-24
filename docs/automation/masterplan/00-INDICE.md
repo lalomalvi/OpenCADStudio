@@ -68,3 +68,4 @@ Una versión candidata requiere todos los gates técnicos y de fidelidad de su a
 [M7-APARTAMENTO-DOS-VENTANAS-V1.md](M7-APARTAMENTO-DOS-VENTANAS-V1.md): segunda ventana observada por Luna, dos símbolos tipados en un plano parcial y AutoCAD 45/45. El checkpoint 128 conserva evidencia y pendientes.
 [M7-APARTAMENTO-CUATRO-VENTANAS-V1.md](M7-APARTAMENTO-CUATRO-VENTANAS-V1.md): cuarta ventana observada y extensor dirigido, AutoCAD 55/55; los cortes 129–132 están en el checkpoint.
 [M8-CLI-CASO-SINTETICO-V1.md](M8-CLI-CASO-SINTETICO-V1.md): primer CLI preparar/ejecutar/verificar un PlanSpec sintético con contrato congelado, L2 y L4; M8 sigue parcial.
+[M7-VENTANA-OESTE-REPETIBILIDAD-V1.md](M7-VENTANA-OESTE-REPETIBILIDAD-V1.md): piloto intercalado de seis llamadas Luna CLI sobre un recorte de desarrollo; candidato 3/3, baseline 1/3 con dos abstenciones, sin aceptación M7.
