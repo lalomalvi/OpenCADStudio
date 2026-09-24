@@ -99,6 +99,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                           "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
                           "commands_sha256": compiled["commands_sha256"],
                           "topology": compiled["topology"],
+                          "dwg_unit_profile": compiled["dwg_unit_profile"],
                           "command_count": len(compiled["commands"]),
                           "step_count": len(compiled["execution_steps"])}
     gui = subprocess.Popen([str(server), "--new-instance"], cwd=repo, env=environment,

@@ -374,8 +374,11 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         commands.append({"planspec_id": circle["id"], "command": f"CIRCLE {x},{y} {radius}",
                          "layer": circle["layer"]})
     layers = sorted({item["layer"] for item in (*plan["lines"], *plan["circles"])} - {"0"})
-    execution = [{"planspec_id": None, "command": f"LAYER NEW {layer}", "layer": layer}
-                 for layer in layers]
+    # INSUNITS=6 is metres in DWG. A metric GUI template may otherwise default
+    # to INSUNITS=4 (millimetres), silently changing insertion scale semantics.
+    execution = [{"planspec_id": None, "command": "SETVAR INSUNITS 6", "layer": "0"}]
+    execution.extend({"planspec_id": None, "command": f"LAYER NEW {layer}", "layer": layer}
+                     for layer in layers)
     current_layer = "0"
     for command in commands:
         if command["layer"] != current_layer:
@@ -393,6 +396,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     wire = json.dumps(execution, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return {"schema_version": "planspec-dry-run-1", "commands": commands,
             "execution_steps": execution,
+            "dwg_unit_profile": {"plan_units": "m", "insunits": 6},
             "dimension_graph": dimension_graph,
             "topology": topology,
             "geometry_qa": geometry_qa,

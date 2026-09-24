@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$SyntheticDwg,
     [string]$AutoCadCore = 'C:\Program Files\Autodesk\AutoCAD 2025\accoreconsole.exe',
+    [Nullable[int]]$ExpectedInsunits = $null,
     [int]$TimeoutSeconds = 35
 )
 
@@ -62,6 +63,7 @@ $lispText = @"
       (if (vl-catch-all-error-p value) "-" (vl-princ-to-string value)))
     "-"))
 (write-line (strcat "ACADVER|" (getvar "ACADVER")) ocs_file)
+(write-line (strcat "INSUNITS|" (itoa (getvar "INSUNITS"))) ocs_file)
 (setq ocs_set (ssget "_X" '((410 . "Model"))))
 (if ocs_set
   (progn
@@ -149,13 +151,16 @@ try {
     $entityRows = @()
     $declaredCount = $null
     $acadver = $null
+    $insunits = $null
     if ($censusDone) {
         $lines = [IO.File]::ReadAllLines($censusPath)
         $entityRows = @($lines | Where-Object { $_.StartsWith('ENTITY|') })
         $countLine = $lines | Where-Object { $_.StartsWith('COUNT|') } | Select-Object -First 1
         $versionLine = $lines | Where-Object { $_.StartsWith('ACADVER|') } | Select-Object -First 1
+        $unitsLine = $lines | Where-Object { $_.StartsWith('INSUNITS|') } | Select-Object -First 1
         if ($countLine) { $declaredCount = [int]($countLine -split '\|')[1] }
         if ($versionLine) { $acadver = ($versionLine -split '\|')[1] }
+        if ($unitsLine) { $insunits = [int]($unitsLine -split '\|')[1] }
         $censusDone = $null -ne $declaredCount -and $declaredCount -eq $entityRows.Count -and
                       $null -ne $acadver
     }
@@ -285,7 +290,7 @@ try {
     }
     $propertyMismatch = @($propertyComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-2'
+        schema_version = 'mcp-autocad-audit-l4-3'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion
@@ -296,6 +301,11 @@ try {
         input_unchanged = ($before -eq $after)
         audit_zero_errors_zero_fixes = $auditZero
         acadver = $acadver
+        insunits = $insunits
+        expected_insunits = $ExpectedInsunits
+        unit_match = if ($null -eq $ExpectedInsunits) { $null } else {
+            $insunits -eq $ExpectedInsunits
+        }
         model_census_count = $declaredCount
         model_types = $types
         dimension_measurements = $dimensionMeasurements
@@ -312,7 +322,8 @@ try {
         forced_termination = $forcedTermination
         exit_code = $process.ExitCode
         log_sha256 = (Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash
-        verdict = if (-not $auditZero -or -not $censusDone -or $before -ne $after) {
+        verdict = if (-not $auditZero -or -not $censusDone -or $before -ne $after -or
+                      ($null -ne $ExpectedInsunits -and $insunits -ne $ExpectedInsunits)) {
             'failed'
         } elseif ($dimensionMismatch -or $propertyMismatch) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {

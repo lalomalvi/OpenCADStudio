@@ -30,6 +30,8 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual(first["commands_sha256"], module.dry_run(reversed_plan)["commands_sha256"])
         self.assertEqual(first["geometry_qa"], module.dry_run(reversed_plan)["geometry_qa"])
         self.assertEqual(first["commands"][0]["command"], "LINE 0,0 2.5,0")
+        self.assertEqual(first["execution_steps"][0]["command"], "SETVAR INSUNITS 6")
+        self.assertEqual(first["dwg_unit_profile"], {"plan_units": "m", "insunits": 6})
         self.assertTrue(first["executable"])
 
     def test_different_references_do_not_create_false_conflict(self):
@@ -110,7 +112,7 @@ class PlanSpecTests(unittest.TestCase):
         compiled = module.dry_run(value, capabilities={"layer_assignment"})
         self.assertTrue(compiled["executable"])
         self.assertEqual([item["command"] for item in compiled["execution_steps"]],
-                         ["LAYER NEW A-WALL", "CLAYER A-WALL", "LINE 0,0 2.5,0",
+                         ["SETVAR INSUNITS 6", "LAYER NEW A-WALL", "CLAYER A-WALL", "LINE 0,0 2.5,0",
                           "CLAYER 0", "LINE 2.5,0 5,0"])
 
     def test_geometry_qa_detects_reversed_duplicate_overlap_and_open_ends(self):
