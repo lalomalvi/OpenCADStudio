@@ -714,6 +714,20 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual(noted["door_clearance_qa"]["typed_obstacle_intersections"][0]
                          ["disposition"], "nonphysical")
 
+    def test_v8_middle_wall_door_clear_fixture_preserves_geometry(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        blocked = json.loads((fixtures /
+            "synthetic-three-wall-middle-door-obstacle-v8.planspec.json").read_text(encoding="utf-8"))
+        clear = json.loads((fixtures /
+            "synthetic-three-wall-middle-door-clear-v8.planspec.json").read_text(encoding="utf-8"))
+        self.assertEqual(clear["obstacles"][0]["base_z_m"], 2.1)
+        blocked["obstacles"][0]["base_z_m"] = 2.1
+        self.assertEqual(blocked, clear)
+        result = module.dry_run(clear)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["door_clearance_qa"]["status"], "clear")
+        self.assertEqual(len(result["commands"]), 18)
+
     def test_v6_wall_face_binding_validates_without_emitting_native_dimension(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))

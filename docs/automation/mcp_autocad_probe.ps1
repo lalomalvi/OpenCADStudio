@@ -958,6 +958,7 @@ try {
                                   'synthetic-three-wall-rotated.planspec.json',
                                   'synthetic-three-wall-door.planspec.json',
                                   'synthetic-three-wall-middle-door.planspec.json',
+                                  'synthetic-three-wall-middle-door-clear-v8.planspec.json',
                                   'synthetic-wall-face-dimension-readable-v7.planspec.json',
                                   'synthetic-wall-face-dimension-vertical-v7.planspec.json',
                                   'synthetic-wall-axis-span-v8.planspec.json',
@@ -1468,7 +1469,8 @@ try {
                 }
             }
             if ($fixtureName -in @('synthetic-three-wall-door.planspec.json',
-                                    'synthetic-three-wall-middle-door.planspec.json')) {
+                                    'synthetic-three-wall-middle-door.planspec.json',
+                                    'synthetic-three-wall-middle-door-clear-v8.planspec.json')) {
                 # Fixed independent 17-LINE + 1-ARC oracle. These coordinates
                 # are not read from the compiler output or the L2 command list.
                 $doorOracle = @(
@@ -1494,7 +1496,8 @@ try {
                 $expectedArcCenter = @(1.3, 0.1, 0.0)
                 $expectedArcStart = 0.0
                 $expectedArcEnd = [Math]::PI / 2
-                if ($fixtureName -eq 'synthetic-three-wall-middle-door.planspec.json') {
+                if ($fixtureName -in @('synthetic-three-wall-middle-door.planspec.json',
+                                       'synthetic-three-wall-middle-door-clear-v8.planspec.json')) {
                     $doorOracle = @(
                         @('three-wall-union__outline_0', 0, -0.1, 4, -0.1),
                         @('three-wall-union__outline_1', 4, -0.1, 4, 0),
@@ -1574,6 +1577,7 @@ try {
               'synthetic-three-wall-rotated.planspec.json',
               'synthetic-three-wall-door.planspec.json',
               'synthetic-three-wall-middle-door.planspec.json',
+              'synthetic-three-wall-middle-door-clear-v8.planspec.json',
               'synthetic-two-door-wall-v8.planspec.json',
               'synthetic-wall-axis-span-v8.planspec.json',
               'synthetic-wall-axis-span-vertical-v8.planspec.json',
