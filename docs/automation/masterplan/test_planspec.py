@@ -358,14 +358,26 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual(module.dry_run(multi)["unsupported"],
                          ["opening_compilation", "wall_compilation"])
 
-    def test_v5_explicit_orthogonal_join_validates_but_does_not_emit_cad(self):
+    def test_v5_explicit_orthogonal_join_compiles_closed_union_outline(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-join.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))
         result = module.dry_run(value)
         self.assertEqual(result["architecture"]["joins"][0]["id"], "join-corner")
-        self.assertEqual(result["unsupported"], ["join_compilation", "wall_compilation"])
-        self.assertFalse(result["executable"])
-        self.assertEqual(result["commands"], [])
+        self.assertEqual(result["unsupported"], [])
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_orthogonal_union_two_walls", "generated_parts": 8})
+        edges = [item["command"].split()[1:] for item in result["commands"]]
+        self.assertEqual(len(edges), 8)
+        self.assertTrue(all(end == edges[(index + 1) % 8][0]
+                            for index, (_, end) in enumerate(edges)))
+        vertices = [tuple(map(float, start.split(","))) for start, _ in edges]
+        doubled_area = sum(vertices[index][0] * vertices[(index + 1) % 8][1] -
+                           vertices[(index + 1) % 8][0] * vertices[index][1]
+                           for index in range(8))
+        self.assertAlmostEqual(abs(doubled_area) / 2, 1.39, places=6)
+        self.assertEqual([item["source_id"] for item in result["commands"]],
+                         ["wall-horizontal"] * 3 + ["wall-vertical"] * 3 + ["join-corner"] * 2)
         changed = deepcopy(value)
         changed["nodes"][2]["x"] = 4.1
         with self.assertRaisesRegex(module.PlanError, "perpendicular"):
@@ -382,6 +394,10 @@ class PlanSpecTests(unittest.TestCase):
         changed["joins"][0]["wall_a_id"] = "missing"
         with self.assertRaisesRegex(module.PlanError, "reference"):
             module.validate(changed)
+        changed = deepcopy(value)
+        changed["nodes"][2]["y"] = 0.05
+        with self.assertRaisesRegex(module.PlanError, "too short"):
+            module.dry_run(changed)
 
 
 if __name__ == "__main__":

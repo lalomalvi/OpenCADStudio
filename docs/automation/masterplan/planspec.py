@@ -642,6 +642,45 @@ def _single_window_symbol_commands(wall: dict, window: dict, nodes: dict,
     return result
 
 
+def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
+                               origin: tuple[Decimal, Decimal]) -> list[dict]:
+    """Outline the union of two perpendicular end-connected wall rectangles."""
+    first, second = walls[join["wall_a_id"]], walls[join["wall_b_id"]]
+    junction = nodes[first[join["wall_a_end"]]]
+    far_a = nodes[first["start" if join["wall_a_end"] == "end" else "end"]]
+    far_b = nodes[second["start" if join["wall_b_end"] == "end" else "end"]]
+    av = (far_a[0] - junction[0], far_a[1] - junction[1])
+    bv = (far_b[0] - junction[0], far_b[1] - junction[1])
+    length_a = (av[0] * av[0] + av[1] * av[1]).sqrt()
+    length_b = (bv[0] * bv[0] + bv[1] * bv[1]).sqrt()
+    half = _number(first["thickness_m"], "wall.thickness_m") / 2
+    if length_a <= half or length_b <= half:
+        raise PlanError("Joined wall is too short for an orthogonal outline union")
+    u = (av[0] / length_a, av[1] / length_a)
+    v = (bv[0] / length_b, bv[1] / length_b)
+    local = [(Decimal(0), -half), (length_a, -half), (length_a, half),
+             (half, half), (half, length_b), (-half, length_b),
+             (-half, Decimal(0)), (Decimal(0), Decimal(0))]
+    owners = [first["id"]] * 3 + [second["id"]] * 3 + [join["id"]] * 2
+
+    def xy(point: tuple[Decimal, Decimal]) -> str:
+        x = junction[0] + u[0] * point[0] + v[0] * point[1] + origin[0]
+        y = junction[1] + u[1] * point[0] + v[1] * point[1] + origin[1]
+        return f"{_coordinate(x)},{_coordinate(y)}"
+
+    vertices = [xy(point) for point in local]
+    if len(set(vertices)) != len(vertices):
+        raise PlanError("Joined wall outline collapses at compiler precision")
+    commands = []
+    for index, (start, end) in enumerate(zip(vertices, vertices[1:] + vertices[:1])):
+        if start == end:
+            raise PlanError("Joined wall edge collapses at compiler precision")
+        commands.append({"planspec_id": f"{join['id']}__outline_{index}",
+                         "source_id": owners[index], "part": f"outline_{index}",
+                         "command": f"LINE {start} {end}", "layer": first["layer"]})
+    return commands
+
+
 def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
     dimension_graph = analyze_dimension_graph(plan)
@@ -671,7 +710,16 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     wall_status = "not_applicable"
     if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5"} and plan["walls"]:
         wall_status = "unsupported"
-        if len(plan["walls"]) == 1 and not plan["openings"]:
+        if plan["schema_version"] == "planspec-5" and len(plan["walls"]) == 2 and \
+                len(plan["joins"]) == 1 and not plan["openings"]:
+            walls_by_id = {wall["id"]: wall for wall in plan["walls"]}
+            join = plan["joins"][0]
+            if set(walls_by_id) == {join["wall_a_id"], join["wall_b_id"]} and \
+                    len({wall["layer"] for wall in plan["walls"]}) == 1:
+                commands.extend(_orthogonal_union_commands(join, walls_by_id, nodes, origin))
+                wall_parts = 8
+                wall_status = "compiled_orthogonal_union_two_walls"
+        elif len(plan["walls"]) == 1 and not plan["openings"]:
             commands.extend(_single_wall_commands(plan["walls"][0], nodes, origin))
             wall_parts = 4
             wall_status = "compiled_single_unopened_wall"
@@ -720,7 +768,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             opening["kind"] != "clear" for opening in plan["openings"]) and \
             wall_status not in {"compiled_single_door_wall", "compiled_single_window_wall"}:
         missing.add("opening_compilation")
-    if plan["schema_version"] == "planspec-5" and plan["joins"]:
+    if plan["schema_version"] == "planspec-5" and plan["joins"] and \
+            wall_status != "compiled_orthogonal_union_two_walls":
         missing.add("join_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")

@@ -55,6 +55,11 @@ function Wall-Point($a, $ux, $uy, $nx, $ny, $distance, $side) {
               ($a[1] + $uy * $distance + $ny * $side), 0.0)
 }
 
+function Join-Point($junction, $u, $v, $s, $t) {
+    return ,@(($junction[0] + $u[0] * $s + $v[0] * $t),
+              ($junction[1] + $u[1] * $s + $v[1] * $t), 0.0)
+}
+
 $runId = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-autocad-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $output = Join-Path $repo (Join-Path 'target\mcp-external' $runId)
 New-Item -ItemType Directory -Path $output -ErrorAction Stop | Out-Null
@@ -321,7 +326,8 @@ try {
                                   'synthetic-wall.planspec.json',
                                   'synthetic-wall-gap.planspec.json',
                                   'synthetic-door-swing.planspec.json',
-                                  'synthetic-window.planspec.json')) {
+                                  'synthetic-window.planspec.json',
+                                  'synthetic-wall-join.planspec.json')) {
             $geometrySourceValid = $false
         } else {
             $fixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $fixtureName)
@@ -592,6 +598,55 @@ try {
                     }
                 }
             }
+            if ($fixture.schema_version -eq 'planspec-5' -and
+                $fixture.walls.Count -eq 2 -and $fixture.joins.Count -eq 1 -and
+                $fixture.openings.Count -eq 0) {
+                $join = $fixture.joins[0]
+                $wallById = @{}
+                foreach ($wall in $fixture.walls) { $wallById[$wall.id] = $wall }
+                $first = $wallById[$join.wall_a_id]
+                $second = $wallById[$join.wall_b_id]
+                $junction = $nodes[$first.($join.wall_a_end)]
+                $farAKey = if ($join.wall_a_end -eq 'end') { 'start' } else { 'end' }
+                $farBKey = if ($join.wall_b_end -eq 'end') { 'start' } else { 'end' }
+                $farA = $nodes[$first.$farAKey]
+                $farB = $nodes[$second.$farBKey]
+                $av = @(($farA[0] - $junction[0]), ($farA[1] - $junction[1]))
+                $bv = @(($farB[0] - $junction[0]), ($farB[1] - $junction[1]))
+                $lengthA = [Math]::Sqrt($av[0] * $av[0] + $av[1] * $av[1])
+                $lengthB = [Math]::Sqrt($bv[0] * $bv[0] + $bv[1] * $bv[1])
+                $u = @(($av[0] / $lengthA), ($av[1] / $lengthA))
+                $v = @(($bv[0] / $lengthB), ($bv[1] / $lengthB))
+                $half = [double]$first.thickness_m / 2.0
+                $local = @(
+                    @(0.0, -$half), @($lengthA, -$half), @($lengthA, $half),
+                    @($half, $half), @($half, $lengthB), @(-$half, $lengthB),
+                    @(-$half, 0.0), @(0.0, 0.0)
+                )
+                for ($index = 0; $index -lt 8; $index++) {
+                    $startLocal = $local[$index]
+                    $endLocal = $local[($index + 1) % 8]
+                    $expectedStart = Join-Point $junction $u $v $startLocal[0] $startLocal[1]
+                    $expectedEnd = Join-Point $junction $u $v $endLocal[0] $endLocal[1]
+                    $partId = '{0}__outline_{1}' -f $join.id, $index
+                    $handle = [string]$richSourceReport.planspec.handles_by_id.($partId)
+                    $row = if ($handle) { $entityByHandle[$handle] } else { $null }
+                    $observedStart = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                    $observedEnd = if ($row) { Read-DxfPoint $row[16] } else { $null }
+                    $matched = $row -and $row[1] -eq 'LINE' -and $row[3] -eq $first.layer -and
+                        (((Same-Point $expectedStart $observedStart) -and
+                          (Same-Point $expectedEnd $observedEnd)) -or
+                         ((Same-Point $expectedStart $observedEnd) -and
+                          (Same-Point $expectedEnd $observedStart)))
+                    $geometryComparison += [ordered]@{
+                        planspec_id = $partId; source_id = $join.id; kind = 'WALL_UNION_EDGE'
+                        handle = $handle; expected_layer = $first.layer
+                        expected_start = $expectedStart; expected_end = $expectedEnd
+                        autocad_start = $observedStart; autocad_end = $observedEnd
+                        matched_1e_6 = [bool]$matched
+                    }
+                }
+            }
         }
     }
     $geometryMismatch = ($geometrySourceValid -eq $false) -or
@@ -599,11 +654,12 @@ try {
     $wallModelCountMatch = $null
     if ($richSourceReport -and $richSourceReport.planspec.fixture -in
             @('synthetic-wall.planspec.json', 'synthetic-wall-gap.planspec.json',
-              'synthetic-door-swing.planspec.json', 'synthetic-window.planspec.json')) {
+              'synthetic-door-swing.planspec.json', 'synthetic-window.planspec.json',
+              'synthetic-wall-join.planspec.json')) {
         $wallModelCountMatch = $declaredCount -eq $geometryComparison.Count
     }
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-7'
+        schema_version = 'mcp-autocad-audit-l4-8'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion

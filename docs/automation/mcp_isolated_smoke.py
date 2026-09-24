@@ -83,7 +83,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
               "output": str(output)}
     if plan_fixture not in {"synthetic-room", "synthetic-layer", "synthetic-contour",
                             "synthetic-wall", "synthetic-wall-gap", "synthetic-door-swing",
-                            "synthetic-window"}:
+                            "synthetic-window", "synthetic-wall-join"}:
         raise ValueError("Only versioned synthetic PlanSpec fixtures are allowed")
     fixtures = Path(__file__).resolve().parent / "masterplan/fixtures"
     fixture = fixtures / f"{plan_fixture}.planspec.json"
@@ -95,7 +95,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
     compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")),
                        capabilities=set(manifest["verified_capabilities"]) if manifest else None)
     expected_count = 14 if plan_fixture in {"synthetic-door-swing", "synthetic-window"} else \
-        8 if plan_fixture == "synthetic-wall-gap" else \
+        8 if plan_fixture in {"synthetic-wall-gap", "synthetic-wall-join"} else \
         4 if plan_fixture in {"synthetic-contour", "synthetic-wall"} else 3
     if not compiled["executable"] or len(compiled["commands"]) != expected_count:
         raise ProtocolError("Synthetic PlanSpec has unsupported or missing commands")
@@ -521,7 +521,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                 raise ProtocolError("Edited associative dimension changed after DWG reopen")
             report["association_fixture"]["roundtrip_measurement"] = restored_assoc_measure
         if plan_fixture in {"synthetic-wall", "synthetic-wall-gap", "synthetic-door-swing",
-                            "synthetic-window"}:
+                            "synthetic-window", "synthetic-wall-join"}:
             zoom = client.tool("ocs_execute", {"ocs_session_id": session,
                 "request": {"op": "run", "request_id": "l2-zoom-extents-" + uuid.uuid4().hex,
                             "cmd": "ZOOM EXTENTS"}})
