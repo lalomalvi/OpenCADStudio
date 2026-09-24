@@ -146,7 +146,42 @@ class PlanSpecTests(unittest.TestCase):
         self.assertIn(["cross", "wall-a"], report["interior_crossings"])
         self.assertIn(["tee", "wall-a"], report["t_junctions"])
         self.assertGreater(len(report["open_line_endpoints"]), 0)
-        self.assertEqual(report["scope"], "2d_lines_and_duplicate_circles_no_contour_semantics")
+        self.assertEqual(report["scope"], "2d_line_circle_primitives_no_contour_semantics")
+
+    def test_geometry_qa_classifies_line_circle_and_circle_circle_contacts(self):
+        value = plan()
+        value["lines"] = value["lines"][:1]
+        value["nodes"].extend([
+            {"id": "on", "x": 1, "y": 0, "source": SOURCE},
+            {"id": "above", "x": 1, "y": 1, "source": SOURCE},
+            {"id": "edge", "x": 3.5, "y": 0, "source": SOURCE},
+            {"id": "near", "x": 1.5, "y": 0, "source": SOURCE},
+            {"id": "touch", "x": 2, "y": 0, "source": SOURCE},
+            {"id": "far", "x": 10, "y": 0, "source": SOURCE}])
+        value["circles"] = [
+            {"id": identifier, "center": center, "radius": radius,
+             "layer": "0", "source": SOURCE}
+            for identifier, center, radius in (
+                ("c-secant", "on", 0.5), ("c-tangent", "above", 1),
+                ("c-endpoint", "edge", 1), ("c-overlap", "near", 0.5),
+                ("c-touch", "touch", 0.5), ("c-away", "far", 0.5))]
+        report = module.analyze_geometry(value)
+        self.assertEqual(report["schema_version"], "planspec-geometry-qa-2")
+        self.assertIn({"line_id": "wall-a", "circle_id": "c-secant", "kind": "secant"},
+                      report["line_circle_intersections"])
+        self.assertIn({"line_id": "wall-a", "circle_id": "c-tangent", "kind": "tangent"},
+                      report["line_circle_intersections"])
+        self.assertIn({"line_id": "wall-a", "circle_id": "c-endpoint", "kind": "one_on_segment"},
+                      report["line_circle_intersections"])
+        self.assertNotIn("c-away", [item["circle_id"] for item in report["line_circle_intersections"]])
+        self.assertIn({"circle_ids": ["c-overlap", "c-secant"], "kind": "secant"},
+                      report["circle_circle_intersections"])
+        self.assertIn({"circle_ids": ["c-secant", "c-touch"], "kind": "tangent"},
+                      report["circle_circle_intersections"])
+        reverse = deepcopy(value)
+        reverse["nodes"].reverse()
+        reverse["circles"].reverse()
+        self.assertEqual(report, module.analyze_geometry(reverse))
 
     def test_v2_explicit_contour_preserves_compiled_geometry(self):
         value = plan()

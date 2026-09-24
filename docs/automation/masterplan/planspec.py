@@ -522,7 +522,7 @@ def validate(plan: dict[str, Any]) -> None:
 
 
 def analyze_geometry(plan: dict[str, Any]) -> dict[str, Any]:
-    """Report exact 2D line conflicts without guessing architectural intent.
+    """Report 2D primitive intersections without guessing architectural intent.
 
     PlanSpec v1 has no wall/contour identity. Open endpoints and crossings are
     review candidates, not proof of an erroneous wall or doorway.
@@ -577,13 +577,45 @@ def analyze_geometry(plan: dict[str, Any]) -> dict[str, Any]:
     circle_duplicates = [[first_id, second_id]
                          for (first_id, a, radius_a), (second_id, b, radius_b)
                          in combinations(circles, 2) if a == b and radius_a == radius_b]
-    issues = duplicates or overlaps or crossings or t_junctions or open_endpoints or circle_duplicates
-    return {"schema_version": "planspec-geometry-qa-1",
+    line_circle_intersections = []
+    for line_id, a, b, _ in segments:
+        vx, vy = b[0] - a[0], b[1] - a[1]
+        length_squared = vx * vx + vy * vy
+        for circle_id, center, radius in circles:
+            wx, wy = a[0] - center[0], a[1] - center[1]
+            projection = -(vx * wx + vy * wy) / length_squared
+            discriminant = (vx * wx + vy * wy) ** 2 - length_squared * (wx * wx + wy * wy - radius * radius)
+            if discriminant < 0:
+                continue
+            root = discriminant.sqrt()
+            parameters = {(projection * length_squared + sign * root) / length_squared
+                          for sign in (-1, 1)}
+            count = sum(Decimal(0) <= t <= Decimal(1) for t in parameters)
+            if count:
+                line_circle_intersections.append({"line_id": line_id, "circle_id": circle_id,
+                                                  "kind": "tangent" if discriminant == 0 else
+                                                          "one_on_segment" if count == 1 else "secant"})
+    circle_circle_intersections = []
+    for (first_id, a, first_radius), (second_id, b, second_radius) in combinations(circles, 2):
+        distance_squared = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
+        if distance_squared == 0:
+            continue
+        outer = (first_radius + second_radius) ** 2
+        inner = (first_radius - second_radius) ** 2
+        if inner <= distance_squared <= outer:
+            circle_circle_intersections.append({"circle_ids": [first_id, second_id],
+                                                "kind": "tangent" if distance_squared in (inner, outer)
+                                                        else "secant"})
+    issues = (duplicates or overlaps or crossings or t_junctions or open_endpoints or
+              circle_duplicates or line_circle_intersections or circle_circle_intersections)
+    return {"schema_version": "planspec-geometry-qa-2",
             "status": "review_required" if issues else "clear",
             "duplicate_lines": duplicates, "duplicate_circles": circle_duplicates,
             "overlapping_lines": overlaps, "interior_crossings": crossings,
             "t_junctions": t_junctions, "open_line_endpoints": open_endpoints,
-            "scope": "2d_lines_and_duplicate_circles_no_contour_semantics"}
+            "line_circle_intersections": line_circle_intersections,
+            "circle_circle_intersections": circle_circle_intersections,
+            "scope": "2d_line_circle_primitives_no_contour_semantics"}
 
 
 def _coordinate(value: Decimal) -> str:
