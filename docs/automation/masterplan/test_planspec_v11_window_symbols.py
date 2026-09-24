@@ -44,6 +44,38 @@ def fixture():
                 "source": SOURCE}]}
 
 
+def with_reversed_second_window():
+    plan = fixture()
+    plan["nodes"].extend([
+        {"id": "i", "x": 2, "y": 2, "source": SOURCE},
+        {"id": "j", "x": 1, "y": 2, "source": SOURCE},
+        {"id": "k", "x": 2, "y": 1.9, "source": SOURCE},
+        {"id": "l", "x": 1, "y": 1.9, "source": SOURCE},
+    ])
+    plan["lines"] = [line for line in plan["lines"] if line["id"] != "top"]
+    def line(name, start, end, layer="0"):
+        return {"id": name, "start": start, "end": end, "layer": layer,
+                "source": SOURCE}
+    plan["lines"].extend([
+        line("top-left", "e", "i"), line("top-outer", "i", "j", "A-WINDOW"),
+        line("top-right", "j", "f"), line("top-inner", "k", "l", "A-WINDOW"),
+        line("top-jamb-left", "i", "k", "A-WINDOW"),
+        line("top-jamb-right", "j", "l", "A-WINDOW"),
+    ])
+    contour = plan["topology"]["contours"][0]["line_ids"]
+    contour[contour.index("top"):contour.index("top")+1] = [
+        "top-left", "top-outer", "top-right"]
+    plan["window_symbols"].append({
+        "id": "top-window", "left_wall_line_id": "top-left",
+        "right_wall_line_id": "top-right", "outer_rail_line_id": "top-outer",
+        "inner_rail_line_id": "top-inner", "left_jamb_line_id": "top-jamb-left",
+        "right_jamb_line_id": "top-jamb-right", "layer": "A-WINDOW",
+        "elevation_status": "unverified", "frame_profile_status": "schematic",
+        "source": SOURCE,
+    })
+    return plan
+
+
 class PlanSpecV11WindowTests(unittest.TestCase):
     def test_valid_window_has_clear_gap_and_four_frame_lines(self):
         result = dry_run(fixture(), capabilities={"layer_assignment"})
@@ -90,6 +122,22 @@ class PlanSpecV11WindowTests(unittest.TestCase):
         plan["window_symbols"][0]["elevation_status"] = "verified"
         with self.assertRaises(PlanError):
             dry_run(plan, capabilities={"layer_assignment"})
+
+    def test_two_windows_with_reversed_host_direction(self):
+        result = dry_run(with_reversed_second_window(),
+                         capabilities={"layer_assignment"})
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["window_symbol_qa"]["status"], "clear")
+
+    def test_second_window_intrusion_blocks_both_window_plan(self):
+        plan = with_reversed_second_window()
+        plan["lines"].append({"id": "top-bridge", "start": "i", "end": "j",
+                              "layer": "0", "source": SOURCE})
+        result = dry_run(plan, capabilities={"layer_assignment"})
+        self.assertFalse(result["executable"])
+        self.assertEqual(result["window_symbol_qa"]["gap_intersections"],
+                         [{"window_id": "top-window", "line_id": "top-bridge",
+                           "kind": "gap_intrusion"}])
 
 
 if __name__ == "__main__":

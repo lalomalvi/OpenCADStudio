@@ -65,3 +65,4 @@ Una versión candidata requiere todos los gates técnicos y de fidelidad de su a
 [M5-BLOCK-CONTENT-L4-V1.md](M5-BLOCK-CONTENT-L4-V1.md): definición interna de un bloque sintético, unidades métricas y dos INSERT cotejados con AutoCAD. El estado vigente y los pendientes están en el checkpoint 125.
 [M7-APARTAMENTO-VENTANA-NORTE-V1.md](M7-APARTAMENTO-VENTANA-NORTE-V1.md): observación Luna de una ventana, primer intento visual insuficiente y segundo marco esquemático cotejado con AutoCAD. El checkpoint 126 conserva ambos runs.
 [M4-PLANSPEC-V11-SIMBOLO-VENTANA.md](M4-PLANSPEC-V11-SIMBOLO-VENTANA.md): contrato tipado 2D de ventana, QA de hueco y run 40/40 en AutoCAD. El checkpoint 127 registra sus límites.
+[M7-APARTAMENTO-DOS-VENTANAS-V1.md](M7-APARTAMENTO-DOS-VENTANAS-V1.md): segunda ventana observada por Luna, dos símbolos tipados en un plano parcial y AutoCAD 45/45. El checkpoint 128 conserva evidencia y pendientes.
