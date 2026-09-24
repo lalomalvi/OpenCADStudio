@@ -1,7 +1,7 @@
-"""PlanSpec v1/v2/v3: strict validation and deterministic CAD command dry-run.
+"""PlanSpec v1–v4: strict validation and deterministic CAD command dry-run.
 
-Only line and circle commands are compiled in this first scope. Dimensions are
-validated but reported as unsupported until native dimension semantics are proven.
+Lines, circles, and one straight wall with clear gaps compile in this scope.
+Native dimensions and symbolic doors/windows remain unsupported by the compiler.
 """
 
 from __future__ import annotations
@@ -66,12 +66,12 @@ def _text_dimension(value: Any) -> Decimal:
 
 def _validate_basic(plan: dict[str, Any]) -> None:
     if not isinstance(plan, dict) or plan.get("schema_version") not in {
-            "planspec-1", "planspec-2", "planspec-3"}:
+            "planspec-1", "planspec-2", "planspec-3", "planspec-4"}:
         raise PlanError("PlanSpec version unsupported")
     fields = {"schema_version", "units", "origin", "nodes", "lines", "circles", "dimensions"}
-    if plan["schema_version"] in {"planspec-2", "planspec-3"}:
+    if plan["schema_version"] in {"planspec-2", "planspec-3", "planspec-4"}:
         fields.add("topology")
-    if plan["schema_version"] == "planspec-3":
+    if plan["schema_version"] in {"planspec-3", "planspec-4"}:
         fields.update({"walls", "openings"})
     _keys(plan, fields, "plan")
     if plan["units"] != "m":
@@ -126,7 +126,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                             Decimal(str(math.hypot(float(b[0] - a[0]), float(b[1] - a[1])))))
                 if abs(distance - value) > Decimal("0.001"):
                     raise PlanError(f"Dimension {name} differs from referenced geometry")
-    if plan["schema_version"] in {"planspec-2", "planspec-3"}:
+    if plan["schema_version"] in {"planspec-2", "planspec-3", "planspec-4"}:
         _keys(plan["topology"], {"contours"}, "topology")
         if not isinstance(plan["topology"]["contours"], list):
             raise PlanError("Contour collection must be an array")
@@ -148,7 +148,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
             if any(line_id not in line_ids
                    for line_id in contour["line_ids"]):
                 raise PlanError("Contour has a dangling line reference")
-    if plan["schema_version"] == "planspec-3":
+    if plan["schema_version"] in {"planspec-3", "planspec-4"}:
         if not isinstance(plan["walls"], list) or not isinstance(plan["openings"], list):
             raise PlanError("Wall and opening collections must be arrays")
         walls: dict[str, dict] = {}
@@ -168,7 +168,15 @@ def _validate_basic(plan: dict[str, Any]) -> None:
             _source(wall["source"], "wall.source")
             walls[name] = wall
         for opening in plan["openings"]:
-            _keys(opening, {"id", "wall_id", "offset_m", "width_m", "kind", "source"}, "opening")
+            if not isinstance(opening, dict):
+                raise PlanError("opening: expected object")
+            fields = {"id", "wall_id", "offset_m", "width_m", "kind", "source"}
+            if plan["schema_version"] == "planspec-4":
+                if opening.get("kind") == "door":
+                    fields.add("swing")
+                elif opening.get("kind") == "window":
+                    fields.add("elevation")
+            _keys(opening, fields, "opening")
             name = _id(opening["id"], "opening")
             if name in ids:
                 raise PlanError("Duplicate PlanSpec ID")
@@ -180,12 +188,29 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                     _number(opening["width_m"], "opening.width_m") <= 0:
                 raise PlanError("Opening reference, kind or dimensions are invalid")
             _source(opening["source"], "opening.source")
+            if plan["schema_version"] == "planspec-4":
+                if opening["kind"] == "door":
+                    swing = opening["swing"]
+                    _keys(swing, {"hinge", "side", "angle_deg"}, "door.swing")
+                    if not isinstance(swing["hinge"], str) or \
+                            swing["hinge"] not in {"start", "end"} or \
+                            not isinstance(swing["side"], str) or \
+                            swing["side"] not in {"left", "right"} or \
+                            type(swing["angle_deg"]) is not int or swing["angle_deg"] != 90:
+                        raise PlanError("Door swing requires explicit hinge, side and 90 degrees")
+                elif opening["kind"] == "window":
+                    elevation = opening["elevation"]
+                    _keys(elevation, {"sill_m", "head_m"}, "window.elevation")
+                    sill = _number(elevation["sill_m"], "window.elevation.sill_m")
+                    head = _number(elevation["head_m"], "window.elevation.head_m")
+                    if sill < 0 or head <= sill:
+                        raise PlanError("Window sill/head elevation is invalid")
 
 
 def analyze_architecture(plan: dict[str, Any]) -> dict[str, Any]:
-    """Validate wall/opening identity and spacing; no wall CAD is emitted yet."""
+    """Validate wall/opening identity and spacing before any CAD command is emitted."""
     _validate_basic(plan)
-    if plan["schema_version"] != "planspec-3":
+    if plan["schema_version"] not in {"planspec-3", "planspec-4"}:
         return {"schema_version": "planspec-architecture-1", "status": "unavailable",
                 "walls": [], "openings": [], "scope": "no_explicit_walls_in_v1_v2"}
     nodes = {node["id"]: (_number(node["x"], "node.x"),
@@ -213,7 +238,9 @@ def analyze_architecture(plan: dict[str, Any]) -> dict[str, Any]:
         opening_results.append({"id": opening["id"], "wall_id": wall_id,
                                 "kind": opening["kind"],
                                 "offset_m": format(start, "f"),
-                                "width_m": format(end - start, "f")})
+                                "width_m": format(end - start, "f"),
+                                **({"swing": opening["swing"]} if "swing" in opening else {}),
+                                **({"elevation": opening["elevation"]} if "elevation" in opening else {})})
     for wall_id, intervals in openings_by_wall.items():
         intervals.sort()
         for first, second in zip(intervals, intervals[1:]):
@@ -530,7 +557,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                          "layer": circle["layer"]})
     wall_parts = 0
     wall_status = "not_applicable"
-    if plan["schema_version"] == "planspec-3" and plan["walls"]:
+    if plan["schema_version"] in {"planspec-3", "planspec-4"} and plan["walls"]:
         wall_status = "unsupported"
         if len(plan["walls"]) == 1 and not plan["openings"]:
             commands.extend(_single_wall_commands(plan["walls"][0], nodes, origin))
@@ -563,7 +590,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         missing.add("native_dimension")
     if wall_status == "unsupported":
         missing.add("wall_compilation")
-    if plan["schema_version"] == "planspec-3" and any(
+    if plan["schema_version"] in {"planspec-3", "planspec-4"} and any(
             opening["kind"] != "clear" for opening in plan["openings"]):
         missing.add("opening_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):

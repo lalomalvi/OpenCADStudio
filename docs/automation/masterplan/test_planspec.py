@@ -1,5 +1,7 @@
 import importlib.util
+import json
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -270,6 +272,48 @@ class PlanSpecTests(unittest.TestCase):
         self.assertFalse(module.dry_run(value)["executable"])
         self.assertEqual(module.dry_run(value)["unsupported"],
                          ["opening_compilation", "wall_compilation"])
+
+    def test_v4_door_swing_is_explicit_and_not_silently_compiled(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertEqual(result["architecture"]["openings"][0]["swing"],
+                         {"hinge": "start", "side": "left", "angle_deg": 90})
+        self.assertEqual(result["unsupported"], ["opening_compilation", "wall_compilation"])
+        self.assertFalse(result["executable"])
+        self.assertFalse(any(item.get("source_id") == "door-south" for item in result["commands"]))
+        for bad in ({"hinge": "middle", "side": "left", "angle_deg": 90},
+                    {"hinge": "start", "side": "inside", "angle_deg": 90},
+                    {"hinge": "start", "side": "left", "angle_deg": 120},
+                    {"hinge": "start", "side": "left", "angle_deg": "90"}):
+            changed = deepcopy(value)
+            changed["openings"][0]["swing"] = bad
+            with self.assertRaises(module.PlanError):
+                module.validate(changed)
+        changed = deepcopy(value)
+        del changed["openings"][0]["swing"]
+        with self.assertRaises(module.PlanError):
+            module.validate(changed)
+
+    def test_v4_window_elevation_and_kind_specific_fields(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        opening = value["openings"][0]
+        opening["kind"] = "window"
+        opening["elevation"] = {"sill_m": 0.8, "head_m": 2.1}
+        del opening["swing"]
+        result = module.dry_run(value)
+        self.assertEqual(result["architecture"]["openings"][0]["elevation"],
+                         {"sill_m": 0.8, "head_m": 2.1})
+        self.assertFalse(result["executable"])
+        for sill, head in ((-0.1, 2.1), (1.2, 1.2), (2.2, 1.2)):
+            changed = deepcopy(value)
+            changed["openings"][0]["elevation"] = {"sill_m": sill, "head_m": head}
+            with self.assertRaises(module.PlanError):
+                module.validate(changed)
+        opening["kind"] = "clear"
+        with self.assertRaises(module.PlanError):
+            module.validate(value)
 
 
 if __name__ == "__main__":
