@@ -17,6 +17,10 @@ AutoCAD Core Console sobre una copia sintética auditó 0 errores/0 correcciones
 
 La captura CAD es un **esqueleto parcial**. Faltan tabiques horizontales segmentados por huecos, puertas/ventanas, baño/cocina, cotas asociadas a esta planta, semántica de espesor y mobiliario. La revisión visual es del asistente, no L5 humana. La telemetría JSONL de Codex CLI no certifica identidad efectiva ni da recibo directo de Responses. Dos nuevos prompts fallaron incluso bajo supervisión; ningún dato justifica la aceptación de M7 o M8.
 
+### Exploración horizontal posterior
+
+Con el corte de tabiques verticales ya publicado, se congeló un recorte de fuente 3× (`x=610..1140`, `y=665..845`) y cinco bandas horizontales visibles para un nuevo ensayo exploratorio con Luna. Freeze SHA `0FEC7C311E666856230E8A170CFAD1C3C0C12D0DEE5CF4427A2B457C7457E159`; recorte SHA `76E8AD8A1A441C9D7190683F8F5EA3A68EEB5CA9667C7EFB289549921513594F`. Luna devolvió **18** segmentos; ninguno coincidió en ambos extremos con las cinco bandas congeladas a 10 px. El segmento `h9` declaró orientación horizontal pero tenía extremos verticales. Otros cruzaban huecos o seguían tramas de piso. Reporte SHA `79E9D434F7DC72B32A2600C750D31A827F34071FB42A08D56B61EFAB542CC43B`, estado `failed_source_gate_no_cad`. No se generó ni editó DWG. Esta es evidencia de fallo del enfoque de descubrimiento libre sobre un recorte con tramas; no se altera el resultado del esqueleto de tres tabiques.
+
 ## Continuación concreta
 
 Congelar en una nueva versión el oráculo para las bandas horizontales y los huecos de esta misma imagen antes del próximo modelo; separar una línea por cada tramo sólido. Comprobar cruce de aberturas y solape con el perímetro antes de CAD, conservar toda abstención y comparar por fuente, captura y AutoCAD. La cohorte de cinco imágenes sigue siendo desarrollo; no pedir otra imagen ni API. Mantener pendientes L5, uso/modelo directo, plano integral y comparación baseline/candidato.
