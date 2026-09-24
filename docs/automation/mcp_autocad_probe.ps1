@@ -115,6 +115,10 @@ $lispText = @"
                 (ocs_value ocs_data 13) "|" (ocs_value ocs_data 14) "|"
                 (ocs_value ocs_data 52) "|" (ocs_value ocs_data 11) "|"
                 (ocs_value ocs_data 40) "|" (ocs_angle ocs_data 51)) ocs_file)
+      (if (= (cdr (assoc 0 ocs_data)) "TEXT")
+        (write-line (strcat "TEXTDATA|" (ocs_value ocs_data 5) "|"
+                            (ocs_value ocs_data 1) "|"
+                            (ocs_value ocs_data 7)) ocs_file))
       (if (= (cdr (assoc 0 ocs_data)) "DIMENSION")
         (progn
           (setq ocs_style (tblsearch "DIMSTYLE" (cdr (assoc 3 ocs_data))))
@@ -274,6 +278,8 @@ try {
     $plotProfileComparison = @()
     $plotGeometryComparison = @()
     $plotSourceValid = $null
+    $plotContentComparison = @()
+    $plotContentSourceValid = $null
     $modelLayoutFields = @{}
     if ($censusDone) {
         $layoutLine = $lines | Where-Object { $_.StartsWith('MODELLAYOUT|') } |
@@ -347,6 +353,85 @@ try {
                     matched = $row -and $row[1] -eq 'LINE' -and
                         (Same-Point $line.start $start) -and (Same-Point $line.end $end)
                 }
+            }
+        }
+        if ($sourceReport.schema_version -eq 'mcp-metric-content-l2-1' -and
+            $sourceReport.status -eq 'passed' -and
+            $sourceReport.verified_dwg.sha256 -eq $before) {
+            $expectedCommands = @('SETVAR INSUNITS 6','LINE 0,0 4,0','LINE 4,0 4,1',
+                'DIMSTYLE NEW OCS_PRINT_TEST',
+                'DIMSTYLE SET OCS_PRINT_TEST dimtxt 0.2',
+                'DIMSTYLE SET OCS_PRINT_TEST dimasz 0.08',
+                'DIMSTYLE SET OCS_PRINT_TEST dimgap 0.03',
+                'DIMSTYLE SET OCS_PRINT_TEST dimscale 1',
+                'DIMSTYLE SET OCS_PRINT_TEST dimlfac 1','CDIMSTY OCS_PRINT_TEST',
+                'TEXT 0.5,0.5 0.2 0 TEST123','DIMLINEAR 0,0 4,0 2,-0.5')
+            $plotContentSourceValid = $sourceReport.handles.Count -eq 4 -and
+                $sourceReport.reopened_entities.Count -eq 4 -and
+                ((@($sourceReport.commands) -join ';') -ceq ($expectedCommands -join ';')) -and
+                $sourceReport.creation.completed_commands -eq $expectedCommands.Count
+            $handles = @($sourceReport.handles)
+            if ($plotContentSourceValid) {
+                for ($index = 0; $index -lt 2; $index++) {
+                    $handle = [string]$handles[$index]
+                    $source = $sourceReport.reopened_entities[$index]
+                    $row = $entityByHandle[$handle]
+                    $matched = $source.type -eq 'Line' -and $source.handle -eq $handle -and
+                        $row -and $row[1] -eq 'LINE' -and
+                        (Same-Point $source.start (Read-DxfPoint $row[9])) -and
+                        (Same-Point $source.end (Read-DxfPoint $row[16]))
+                    $plotContentComparison += [ordered]@{kind='line'; handle=$handle;
+                        expected_start=$source.start; expected_end=$source.end;
+                        autocad_start=if ($row) { Read-DxfPoint $row[9] } else { $null };
+                        autocad_end=if ($row) { Read-DxfPoint $row[16] } else { $null };
+                        matched=[bool]$matched}
+                }
+                $textHandle = [string]$handles[2]
+                $textSource = $sourceReport.reopened_entities[2]
+                $textRow = $entityByHandle[$textHandle]
+                $textLine = $lines | Where-Object { $_.StartsWith("TEXTDATA|$textHandle|") } |
+                    Select-Object -First 1
+                $textParts = if ($textLine) { $textLine -split '\|' } else { @() }
+                $textPoint = @($textSource.properties.insertion_point.x,
+                    $textSource.properties.insertion_point.y,
+                    $textSource.properties.insertion_point.z)
+                $textMatch = $textSource.type -eq 'Text' -and
+                    $textSource.handle -eq $textHandle -and $textRow -and
+                    $textRow[1] -eq 'TEXT' -and
+                    (Same-Point $textPoint (Read-DxfPoint $textRow[9])) -and
+                    [Math]::Abs([double]$textSource.properties.height -
+                        [double](Read-DxfNumber $textRow[17])) -le 1e-6 -and
+                    $textParts.Count -eq 4 -and
+                    $textParts[2] -ceq $textSource.properties.value -and
+                    $textParts[3] -ceq $textSource.properties.style
+                $plotContentComparison += [ordered]@{kind='text';handle=$textHandle;
+                    expected=$textSource.properties.value;
+                    autocad=if ($textParts.Count -eq 4) { $textParts[2] } else { $null };
+                    matched=[bool]$textMatch}
+                $dimHandle = [string]$handles[3]
+                $dimSource = $sourceReport.reopened_entities[3]
+                $dimRow = $entityByHandle[$dimHandle]
+                $dimStyle = $dimensionStyles[$dimHandle]
+                $base = $dimSource.properties.Linear.base
+                $dimMatch = $dimSource.type -eq 'Dimension' -and
+                    $dimSource.handle -eq $dimHandle -and $dimRow -and
+                    $dimRow[1] -eq 'DIMENSION' -and
+                    [Math]::Abs([double](Read-DxfNumber $dimRow[4]) - 4.0) -le 1e-6 -and
+                    (Same-Point @(0.0,0.0,0.0) (Read-DxfPoint $dimRow[13])) -and
+                    (Same-Point @(4.0,0.0,0.0) (Read-DxfPoint $dimRow[14])) -and
+                    $base.actual_measurement -eq 4.0 -and
+                    $base.style_name -ceq 'OCS_PRINT_TEST' -and
+                    $dimStyle.name -ceq 'OCS_PRINT_TEST' -and
+                    $dimStyle.text_height_m -eq 0.2 -and
+                    $dimStyle.arrow_size_m -eq 0.08 -and
+                    $dimStyle.gap_m -eq 0.03 -and
+                    $dimStyle.scale -eq 1.0 -and
+                    $dimStyle.measurement_factor -eq 1.0
+                $plotContentComparison += [ordered]@{kind='dimension';handle=$dimHandle;
+                    expected_measurement=4.0;
+                    autocad_measurement=if ($dimRow) { Read-DxfNumber $dimRow[4] } else { $null };
+                    expected_style='OCS_PRINT_TEST';autocad_style=$dimStyle;
+                    matched=[bool]$dimMatch}
             }
         }
         if ($sourceReport.schema_version -eq 'mcp-wall-length-l2-1' -and
@@ -652,6 +737,11 @@ try {
         ($plotSourceValid -eq $true -and
          ($plotProfileComparison.Count -ne 16 -or $plotGeometryComparison.Count -ne 2 -or
           $declaredCount -ne 2))
+    $plotContentMismatch = $plotContentSourceValid -eq $false -or
+        @($plotContentComparison | Where-Object { -not $_.matched }).Count -gt 0 -or
+        ($plotContentSourceValid -eq $true -and
+         ($plotContentComparison.Count -ne 4 -or $declaredCount -ne 4 -or
+          $types.LINE -ne 2 -or $types.TEXT -ne 1 -or $types.DIMENSION -ne 1))
     $propertyComparison = @()
     if ($richSourceReport) {
         $hatch = $richSourceReport.hatch_fixture
@@ -1086,7 +1176,7 @@ try {
         $wallModelCountMatch = $declaredCount -eq ($geometryComparison.Count + 1)
     }
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-12'
+        schema_version = 'mcp-autocad-audit-l4-13'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion
@@ -1119,6 +1209,8 @@ try {
         plot_source_valid = $plotSourceValid
         plot_profile_comparison = $plotProfileComparison
         plot_geometry_comparison = $plotGeometryComparison
+        plot_content_source_valid = $plotContentSourceValid
+        plot_content_comparison = $plotContentComparison
         property_comparison = $propertyComparison
         geometry_source_valid = $geometrySourceValid
         source_report_match = $sourceReportMatch
@@ -1129,7 +1221,7 @@ try {
                               $faceFixtureMismatch -or
                               $axisDefinitionMismatch -or $axisStyleMismatch -or $axisFixtureMismatch -or
                               $propertyMismatch -or $geometryMismatch -or $lengthMismatch -or
-                              $plotMismatch -or
+                              $plotMismatch -or $plotContentMismatch -or
                               $wallModelCountMatch -eq $false) {
             'mismatch'
         } elseif ($expected.Count -gt 0 -or $faceReferenceComparison.Count -gt 0 -or
@@ -1139,7 +1231,8 @@ try {
                   $axisStyleComparison.Count -gt 0 -or
                   $propertyComparison.Count -gt 0 -or
                   $geometryComparison.Count -gt 0 -or $lengthGeometryComparison.Count -gt 0 -or
-                  $plotProfileComparison.Count -gt 0) {
+                  $plotProfileComparison.Count -gt 0 -or
+                  $plotContentComparison.Count -gt 0) {
             'matched_scoped'
         } else { 'unknown' }
         census_done = $censusDone
@@ -1157,7 +1250,7 @@ try {
                   $faceFixtureMismatch -or
                   $axisDefinitionMismatch -or $axisStyleMismatch -or $axisFixtureMismatch -or
                   $propertyMismatch -or $geometryMismatch -or $lengthMismatch -or
-                  $plotMismatch -or
+                  $plotMismatch -or $plotContentMismatch -or
                   $wallModelCountMatch -eq $false) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {
             'partial_abnormal_exit'

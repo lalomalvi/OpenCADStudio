@@ -1,0 +1,11 @@
+# QA de contenido PDF métrico, alcance sintético v1
+
+El arnés `docs/automation/mcp_metric_content_smoke.py` crea en GUI aislada dos LINE de 4×1 m, TEXT `TEST123` de altura 0.2 m y una DIMLINEAR de 4 m. Antes de acotar define el estilo local `OCS_PRINT_TEST` con altura de cota 0.2 m, flecha 0.08 m, separación 0.03 m, escala y factor de medida 1. Guarda/reabre DWG, lee las cuatro entidades por handle y luego exporta dos PDF A4 horizontal con perfiles Model persistidos a 1:100 y 1:50, cada uno con `require_page_setup=true`.
+
+El oráculo L2 verifica hash MCP/local, página física, siete componentes de glifos para `TEST123`, un componente para la cifra de cota, separaciones y dimensiones de píxeles a 100 dpi. La longitud principal de 4 m ocupa 158 px a 1:100 y 316 px a 1:50; el texto pasa de 9 a 18 px de alto. Compara con `4·1000/N` mm, tolerancia de raster de tres píxeles, y con el factor 2 entre escalas. Es una prueba de geometría visible para este fixture, no un juicio humano de legibilidad.
+
+`mcp_autocad_probe.ps1` L4-13 coteja por handle dos LINE, texto exacto/inserción/altura/estilo y cota 4 m con puntos y cinco parámetros de estilo. Exige Model4, INSUNITS6, AUDIT0/0, SHA de DWG intacto y hash del reporte L2 esperado. Una copia sintética del reporte con texto esperado adulterado debe dar `semantic_mismatch`; el DWG se conserva. La sonda conserva compatibilidad con fixtures anteriores.
+
+Dependencias del arnés: Python con Pillow y pypdf, `pdftoppm`, `target/debug/OpenCADStudio.exe`. La sonda L4 requiere PowerShell 7 y AutoCAD Core Console 2025. Ejemplo: `python docs/automation/mcp_metric_content_smoke.py`; luego `pwsh -NoProfile -File docs/automation/mcp_autocad_probe.ps1 -SyntheticDwg <DWG sintético bajo target/mcp-isolated> -ExpectedInsunits 6 -ExpectedSourceReportSha256 <SHA-256 del reporte L2>`.
+
+Límite observado: el PDF dibuja los glifos vectorialmente, pero `pypdf.extract_text()` devuelve vacío en ambas escalas. Este gate no acredita texto seleccionable/buscable, CTB/plumas, grosores distintos, fuentes alternativas, cotas de un plano completo, impresora real ni L5 humana. El primer intento con estilo por defecto produjo una cifra de cota desproporcionada y solapada; el contrato exige el estilo explícito y conserva ese intento fallido como evidencia.
