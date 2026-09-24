@@ -30,6 +30,14 @@ def verify_owned_cad_evidence(path: Path) -> dict:
             "m7-owned-cad-evidence-1" or report.get("status") != "passed_l2_internal" \
             or report.get("audit_ok") is not True:
         raise CadExecutionError("Owned CAD evidence schema is invalid")
+    handles = report.get("handles_by_id")
+    if handles is not None and (not isinstance(handles, dict) or
+            len(handles) != report.get("added_entities") or
+            any(not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", key)
+                or not isinstance(value, str) or not re.fullmatch(r"[0-9A-Fa-f]{1,32}", value)
+                for key, value in handles.items()) or
+            len(set(handles.values())) != len(handles)):
+        raise CadExecutionError("PlanSpec handle map is invalid")
     ref = report.get("dwg")
     if not isinstance(ref, dict) or set(ref) != {"file", "sha256", "bytes"} or \
             not isinstance(ref["file"], str) or Path(ref["file"]).name != ref["file"] or \
@@ -157,6 +165,22 @@ class OwnedCadExecutor:
         if script.get("completed_commands") != len(steps) or \
                 script.get("added_entities") != len(entities):
             raise CadExecutionError("CAD script result differs from PlanSpec")
+        changes = script.get("changes")
+        if not isinstance(changes, list):
+            raise CadExecutionError("CAD script omitted entity handle changes")
+        handles = {}
+        for index, step in enumerate(steps):
+            planspec_id = step.get("planspec_id")
+            if planspec_id is None:
+                continue
+            created = [item.get("handle") for item in changes
+                       if isinstance(item, dict) and item.get("step") == index and
+                       item.get("kind") == "Added" and isinstance(item.get("handle"), str)]
+            if len(created) != 1 or planspec_id in handles:
+                raise CadExecutionError("PlanSpec command did not map to one CAD handle")
+            handles[planspec_id] = created[0]
+        if len(handles) != len(entities) or len(set(handles.values())) != len(handles):
+            raise CadExecutionError("PlanSpec handle map differs from entity count")
         audit = self.client.tool("ocs_read", {"ocs_session_id": session,
                                                "op": "audit", "parameters": {
             "target_format": "dwg", "target_version": "2018"}})
@@ -180,6 +204,7 @@ class OwnedCadExecutor:
                   "commands_sha256": compiled["commands_sha256"],
                   "completed_commands": script["completed_commands"],
                   "added_entities": script["added_entities"],
+                  "handles_by_id": handles,
                   "audit_ok": True,
                   "dwg": {"file": dwg.name, "sha256": actual_sha,
                           "bytes": dwg.stat().st_size}}

@@ -21,9 +21,10 @@ class FakeGui:
 
 
 class FakeClient:
-    def __init__(self, binary, entity_count, *, dirty=False, script_timeout=False):
+    def __init__(self, binary, entity_count, steps, *, dirty=False, script_timeout=False):
         self.binary = binary
         self.entity_count = entity_count
+        self.steps = steps
         self.dirty = dirty
         self.script_timeout = script_timeout
         self.calls = []
@@ -50,7 +51,10 @@ class FakeClient:
             if self.script_timeout:
                 raise TimeoutError("synthetic lost reply")
             return {"completed_commands": len(arguments["request"]["commands"]),
-                    "added_entities": self.entity_count}
+                    "added_entities": self.entity_count,
+                    "changes": [{"step": index, "kind": "Added", "handle": f"{index + 1:X}"}
+                                for index, step in enumerate(self.steps)
+                                if step.get("planspec_id") is not None]}
         if op == "audit":
             return {"ok": True}
         if op == "run" and arguments["request"].get("cmd") == "ZOOM EXTENTS":
@@ -86,7 +90,8 @@ class OwnedCadExecutorTests(unittest.TestCase):
         invocation = Invocation("baseline", "case-0", 1, "request-1", source,
                                 protocol, binary, "gpt-6-luna", "medium",
                                 sha(source), sha(protocol), sha(binary))
-        client = FakeClient(binary, len(compiled["commands"]), **client_options)
+        client = FakeClient(binary, len(compiled["commands"]),
+                            compiled["execution_steps"], **client_options)
         return OwnedCadExecutor(client, FakeGui(), binary, root), invocation, compiled, client
 
     def test_owned_identity_script_audit_and_verified_save(self):
@@ -96,6 +101,7 @@ class OwnedCadExecutorTests(unittest.TestCase):
             report = json.loads(evidence.read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "passed_l2_internal")
             self.assertEqual(report["commands_sha256"], compiled["commands_sha256"])
+            self.assertEqual(len(report["handles_by_id"]), len(compiled["commands"]))
             self.assertEqual(verify_owned_cad_evidence(evidence), report)
             self.assertEqual(client.calls,
                              ["handshake", "ocs_sessions", "state", "new", "state",
@@ -111,6 +117,17 @@ class OwnedCadExecutorTests(unittest.TestCase):
             report = json.loads(evidence.read_text(encoding="utf-8"))
             (evidence.parent / report["dwg"]["file"]).write_bytes(b"tampered")
             with self.assertRaisesRegex(CadExecutionError, "changed"):
+                verify_owned_cad_evidence(evidence)
+
+    def test_duplicate_handle_map_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executor, invocation, compiled, _ = self.setup_case(directory)
+            evidence = executor(invocation, compiled)
+            report = json.loads(evidence.read_text(encoding="utf-8"))
+            ids = sorted(report["handles_by_id"])
+            report["handles_by_id"][ids[1]] = report["handles_by_id"][ids[0]]
+            evidence.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(CadExecutionError, "handle map"):
                 verify_owned_cad_evidence(evidence)
 
     def test_fenced_capture_is_bound_and_tamper_detected(self):
