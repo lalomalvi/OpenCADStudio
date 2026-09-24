@@ -6,7 +6,9 @@ from pathlib import Path
 from PIL import Image
 
 from artifact_evidence import EvidenceError, artifact_ref, verify_ref
-from region_evidence import build_regions, projected_door_regions, verify_regions
+from region_evidence import (build_regions, projected_anchor_regions,
+                             projected_door_regions, verify_anchor_regions,
+                             verify_regions)
 
 
 class RegionEvidenceTests(unittest.TestCase):
@@ -88,6 +90,56 @@ class RegionEvidenceTests(unittest.TestCase):
         self.report.write_text(json.dumps(report), encoding="utf-8")
         with self.assertRaisesRegex(EvidenceError, "does not belong"):
             projected_door_regions(self.report)
+
+    def test_arbitrary_visible_anchor_group_is_fenced_and_cropped(self):
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        report["capture_projection"] = {
+            "contract": "viewport-rte-pixels-1", "document_id": 5,
+            "geometry_revision": 8, "camera_revision": 2,
+            "landmarks_cad": [{"id": "edge-a", "point": [0, 0, 0]},
+                              {"id": "edge-b", "point": [1, 0, 0]},
+                              {"id": "edge-c", "point": [1, 1, 0]}],
+            "landmarks_px": [{"id": "edge-a", "pixel": [2.2, 2.4], "inside": True},
+                             {"id": "edge-b", "pixel": [8.1, 2.4], "inside": True},
+                             {"id": "edge-c", "pixel": [8.1, 7.2], "inside": True}],
+            "pixel_probes": [{"id": name, "visible": True}
+                             for name in ("edge-a", "edge-b", "edge-c")]}
+        self.report.write_text(json.dumps(report), encoding="utf-8")
+        groups = [{"label": "synthetic-zone",
+                   "landmark_ids": ["edge-a", "edge-b", "edge-c"]}]
+        regions = projected_anchor_regions(self.report, groups, margin_px=1)
+        self.assertEqual(regions, [{"label": "synthetic-zone",
+                                    "rect_px": [1, 1, 11, 10]}])
+        build_regions(self.report, regions)
+        manifest_path = self.root / "regions/manifest.json"
+        verify_anchor_regions(self.report, groups, manifest_path, margin_px=1)
+        with self.assertRaisesRegex(EvidenceError, "anchor groups"):
+            verify_anchor_regions(
+                self.report, [{"label": "synthetic-zone",
+                               "landmark_ids": ["edge-a", "edge-b"]}],
+                manifest_path, margin_px=1)
+        report["capture_projection"]["pixel_probes"][1]["visible"] = False
+        self.report.write_text(json.dumps(report), encoding="utf-8")
+        with self.assertRaisesRegex(EvidenceError, "hidden"):
+            projected_anchor_regions(self.report, groups)
+
+    def test_anchor_group_rejects_unknown_and_duplicate_ids(self):
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        report["capture_projection"] = {
+            "contract": "viewport-rte-pixels-1", "document_id": 5,
+            "geometry_revision": 8, "camera_revision": 2,
+            "landmarks_cad": [{"id": "a", "point": [0, 0, 0]},
+                              {"id": "b", "point": [1, 0, 0]}],
+            "landmarks_px": [{"id": "a", "pixel": [2, 2], "inside": True},
+                             {"id": "b", "pixel": [8, 2], "inside": True}],
+            "pixel_probes": [{"id": "a", "visible": True},
+                             {"id": "b", "visible": True}]}
+        self.report.write_text(json.dumps(report), encoding="utf-8")
+        for names in (["a", "missing"], ["a", "a"], ["a", []]):
+            with self.assertRaises(EvidenceError):
+                projected_anchor_regions(
+                    self.report, [{"label": "zone", "landmark_ids": names}])
+        self.assertFalse((self.root / "regions").exists())
 
 
 if __name__ == "__main__":

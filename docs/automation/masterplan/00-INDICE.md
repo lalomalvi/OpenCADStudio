@@ -10,6 +10,7 @@ La prueba Luna real vía plan de Codex CLI y sus límites de procedencia están 
 La separación de evidencia por gate para los cinco casos se documenta en [M7-CINCO-CASOS-GATES-V1.md](M7-CINCO-CASOS-GATES-V1.md); ningún caso obtiene aceptación M7 por el contraste geométrico acotado.
 El ensayo de mediciones tipadas y compilación determinista de una retícula de dos recintos está en [M7-MEDICIONES-TIPADAS-RETICULA-V1.md](M7-MEDICIONES-TIPADAS-RETICULA-V1.md); tampoco concede aceptación M7.
 Las abstenciones al distinguir cotas horizontales apiladas y el contrato tipado correspondiente están en [M7-COTAS-APILADAS-DESARROLLO-V1.md](M7-COTAS-APILADAS-DESARROLLO-V1.md).
+La selección trazable de recortes visuales por grupos de anclas CAD ya proyectadas está en [M6-RECORTES-POR-ANCLAS-V1.md](M6-RECORTES-POR-ANCLAS-V1.md).
 Convertir el ensayo Luna → MCP → OpenCADStudio en un flujo reproducible, medible y recuperable que genere CAD editable con precisión declarada. Este plan abarca arranque, transporte, ejecución, evidencia, consumo, semántica CAD, evaluación e integración. El programa probado fue OpenCADStudio; LibreCAD no participó.
 
 ## Lectura y autoridad
