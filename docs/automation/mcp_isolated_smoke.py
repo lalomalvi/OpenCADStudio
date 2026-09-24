@@ -104,6 +104,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                           "commands_sha256": compiled["commands_sha256"],
                           "topology": compiled["topology"],
                           "architecture": compiled["architecture"],
+                          "source_bounds": compiled["source_bounds"],
                           "wall_compilation": compiled["wall_compilation"],
                           "dwg_unit_profile": compiled["dwg_unit_profile"],
                           "command_count": len(compiled["commands"]),

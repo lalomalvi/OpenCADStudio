@@ -539,7 +539,21 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual(float(result["source_bounds"]["annotation_reference_bounds_m"]["max_x"]), 5)
         fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
         door = module.dry_run(json.loads(fixture.read_text(encoding="utf-8")))
-        self.assertIn("door_swing_extrema", door["source_bounds"]["unresolved"])
+        self.assertNotIn("door_swing_extrema", door["source_bounds"]["unresolved"])
+
+    def test_rotated_door_bounds_include_cardinal_arc_extremum(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        value["lines"] = []
+        value["topology"]["contours"] = []
+        value["nodes"][1].update(x=2, y=2)
+        value["openings"][0].update(offset_m=0.1, width_m=2.4)
+        result = module.dry_run(value)
+        bounds = result["source_bounds"]["architecture_bounds_m"]
+        expected_cardinal_y = (0.1 + 0.1) / (2 ** 0.5) + 2.4
+        self.assertAlmostEqual(float(bounds["max_y"]), expected_cardinal_y, places=9)
+        self.assertLess(float(bounds["min_x"]), -1.5)
+        self.assertEqual(result["source_bounds"]["unresolved"], [])
 
     def test_v7_readable_style_changes_steps_without_moving_dimension(self):
         fixtures = Path(__file__).with_name("fixtures")

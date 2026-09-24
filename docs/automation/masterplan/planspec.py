@@ -777,6 +777,39 @@ def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
     return commands
 
 
+def _door_swing_extrema(wall: dict, door: dict,
+                        nodes: dict[str, tuple[Decimal, Decimal]]) -> list[tuple[Decimal, Decimal]]:
+    """Quarter-circle endpoints and included cardinal extrema in wall coordinates."""
+    a, b = nodes[wall["start"]], nodes[wall["end"]]
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = (dx * dx + dy * dy).sqrt()
+    ux, uy = dx / length, dy / length
+    normal = (-uy, ux)
+    width = _number(door["width_m"], "door.width_m")
+    offset = _number(door["offset_m"], "door.offset_m")
+    from_start = door["swing"]["hinge"] == "start"
+    side = 1 if door["swing"]["side"] == "left" else -1
+    distance = offset if from_start else offset + width
+    half = _number(wall["thickness_m"], "wall.thickness_m") / 2
+    hinge = (a[0] + ux * distance + normal[0] * half * side,
+             a[1] + uy * distance + normal[1] * half * side)
+    along = (ux if from_start else -ux, uy if from_start else -uy)
+    outward = (normal[0] * side, normal[1] * side)
+    closed = (hinge[0] + along[0] * width, hinge[1] + along[1] * width)
+    opened = (hinge[0] + outward[0] * width, hinge[1] + outward[1] * width)
+    start_angle = math.atan2(float(along[1]), float(along[0]))
+    ccw = along[0] * outward[1] - along[1] * outward[0] > 0
+    quarter = math.pi / 2
+    points = [hinge, closed, opened]
+    for index, direction in enumerate(((1, 0), (0, 1), (-1, 0), (0, -1))):
+        angle = index * quarter
+        delta = ((angle - start_angle) if ccw else (start_angle - angle)) % (2 * math.pi)
+        if delta <= quarter + 1e-12:
+            points.append((hinge[0] + width * direction[0],
+                           hinge[1] + width * direction[1]))
+    return points
+
+
 def _source_bounds(plan: dict[str, Any], nodes: dict[str, tuple[Decimal, Decimal]],
                    origin: tuple[Decimal, Decimal], dimension_status: str) -> dict[str, Any]:
     """Separate 2D source footprints from dimension references, excluding glyph extents."""
@@ -804,8 +837,13 @@ def _source_bounds(plan: dict[str, Any], nodes: dict[str, tuple[Decimal, Decimal
                 for sign in (-1, 1):
                     add(architecture, (endpoint[0] + sign * normal[0],
                                        endpoint[1] + sign * normal[1]))
-        if any(opening["kind"] == "door" for opening in plan["openings"]):
-            unresolved.append("door_swing_extrema")
+        walls = {wall["id"]: wall for wall in plan["walls"]}
+        for opening in plan["openings"]:
+            if opening["kind"] == "door" and "swing" in opening:
+                for point in _door_swing_extrema(walls[opening["wall_id"]], opening, nodes):
+                    add(architecture, point)
+            elif opening["kind"] == "door":
+                unresolved.append("door_swing_without_v4_contract")
     for dimension in plan["dimensions"]:
         add(annotation, nodes[dimension["start"]])
         add(annotation, nodes[dimension["end"]])
