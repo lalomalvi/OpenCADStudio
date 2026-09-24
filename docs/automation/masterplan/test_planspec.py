@@ -554,6 +554,32 @@ class PlanSpecTests(unittest.TestCase):
         changed["joins"][0]["wall_a_id"] = "missing"
         with self.assertRaisesRegex(module.PlanError, "reference"):
             module.validate(changed)
+
+    def test_v5_joined_wall_one_door_preserves_gap_jamb_and_swing(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-joined-door.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8-sig"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_joined_wall_single_door", "generated_parts": 14})
+        commands = {item["planspec_id"]: item["command"] for item in result["commands"]}
+        self.assertEqual(len(commands), 14)
+        self.assertEqual(commands["door-horizontal__jamb_start"],
+                         "LINE 1.9,-0.1 1.9,0.1")
+        self.assertEqual(commands["door-horizontal__jamb_end"],
+                         "LINE 1,-0.1 1,0.1")
+        self.assertEqual(commands["door-horizontal__leaf_open"],
+                         "LINE 1,0.1 1,1")
+        self.assertTrue(commands["door-horizontal__swing_arc"].startswith("ARC 1.9,0.1 "))
+        self.assertNotIn("join-corner__outline_0", commands)
+        self.assertNotIn("join-corner__outline_2", commands)
+        near_join = deepcopy(value)
+        near_join["openings"][0]["offset_m"] = 3
+        with self.assertRaisesRegex(module.PlanError, "clear distance from join"):
+            module.dry_run(near_join)
+        wrong_wall = deepcopy(value)
+        wrong_wall["openings"][0]["wall_id"] = "wall-vertical"
+        self.assertFalse(module.dry_run(wrong_wall)["executable"])
         changed = deepcopy(value)
         changed["nodes"][2]["y"] = 0.05
         with self.assertRaisesRegex(module.PlanError, "too short"):

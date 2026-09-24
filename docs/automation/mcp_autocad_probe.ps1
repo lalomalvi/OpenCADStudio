@@ -952,6 +952,7 @@ try {
                                   'synthetic-two-door-wall-v8.planspec.json',
                                   'synthetic-window.planspec.json',
                                   'synthetic-wall-join.planspec.json',
+                                  'synthetic-joined-door.planspec.json',
                                   'synthetic-wall-face-dimension-readable-v7.planspec.json',
                                   'synthetic-wall-face-dimension-vertical-v7.planspec.json',
                                   'synthetic-wall-axis-span-v8.planspec.json',
@@ -1242,7 +1243,7 @@ try {
             }
             if ($fixture.schema_version -eq 'planspec-5' -and
                 $fixture.walls.Count -eq 2 -and $fixture.joins.Count -eq 1 -and
-                $fixture.openings.Count -eq 0) {
+                $fixture.openings.Count -le 1) {
                 $join = $fixture.joins[0]
                 $wallById = @{}
                 foreach ($wall in $fixture.walls) { $wallById[$wall.id] = $wall }
@@ -1265,12 +1266,46 @@ try {
                     @($half, $half), @($half, $lengthB), @(-$half, $lengthB),
                     @(-$half, 0.0), @(0.0, 0.0)
                 )
+                $door = if ($fixture.openings.Count -eq 1) { $fixture.openings[0] } else { $null }
+                if ($door) {
+                    $gapStart = if ($join.wall_a_end -eq 'end') {
+                        $lengthA - [double]$door.offset_m - [double]$door.width_m
+                    } else { [double]$door.offset_m }
+                    $gapEnd = $gapStart + [double]$door.width_m
+                }
+                $expectedSegments = @()
                 for ($index = 0; $index -lt 8; $index++) {
                     $startLocal = $local[$index]
                     $endLocal = $local[($index + 1) % 8]
-                    $expectedStart = Join-Point $junction $u $v $startLocal[0] $startLocal[1]
-                    $expectedEnd = Join-Point $junction $u $v $endLocal[0] $endLocal[1]
-                    $partId = '{0}__outline_{1}' -f $join.id, $index
+                    if ($door -and $index -eq 0) {
+                        $expectedSegments += [ordered]@{ part = 'outline_0_before'; source = $first.id
+                            start = $startLocal; end = @($gapStart, -$half) }
+                        $expectedSegments += [ordered]@{ part = 'outline_0_after'; source = $first.id
+                            start = @($gapEnd, -$half); end = $endLocal }
+                    } elseif ($door -and $index -eq 2) {
+                        $expectedSegments += [ordered]@{ part = 'outline_2_before'; source = $first.id
+                            start = $startLocal; end = @($gapEnd, $half) }
+                        $expectedSegments += [ordered]@{ part = 'outline_2_after'; source = $first.id
+                            start = @($gapStart, $half); end = $endLocal }
+                    } else {
+                        $owner = if ($index -lt 3) { $first.id } elseif ($index -lt 6) {
+                            $second.id } else { $join.id }
+                        $expectedSegments += [ordered]@{ part = "outline_$index"; source = $owner
+                            start = $startLocal; end = $endLocal }
+                    }
+                }
+                if ($door) {
+                    foreach ($jamb in @(@('jamb_start', $gapStart), @('jamb_end', $gapEnd))) {
+                        $expectedSegments += [ordered]@{ part = [string]$jamb[0]; source = $door.id
+                            start = @([double]$jamb[1], -$half); end = @([double]$jamb[1], $half) }
+                    }
+                }
+                foreach ($segment in $expectedSegments) {
+                    $expectedStart = Join-Point $junction $u $v $segment.start[0] $segment.start[1]
+                    $expectedEnd = Join-Point $junction $u $v $segment.end[0] $segment.end[1]
+                    $partId = if ($segment.source -eq $door.id -and $door) {
+                        '{0}__{1}' -f $door.id, $segment.part
+                    } else { '{0}__{1}' -f $join.id, $segment.part }
                     $handle = [string]$richSourceReport.planspec.handles_by_id.($partId)
                     $row = if ($handle) { $entityByHandle[$handle] } else { $null }
                     $observedStart = if ($row) { Read-DxfPoint $row[9] } else { $null }
@@ -1281,12 +1316,69 @@ try {
                          ((Same-Point $expectedStart $observedEnd) -and
                           (Same-Point $expectedEnd $observedStart)))
                     $geometryComparison += [ordered]@{
-                        planspec_id = $partId; source_id = $join.id; kind = 'WALL_UNION_EDGE'
+                        planspec_id = $partId; source_id = $segment.source; kind = 'WALL_UNION_EDGE'
                         handle = $handle; expected_layer = $first.layer
                         expected_start = $expectedStart; expected_end = $expectedEnd
                         autocad_start = $observedStart; autocad_end = $observedEnd
                         matched_1e_6 = [bool]$matched
                     }
+                }
+                if ($door) {
+                    $wallStart = $nodes[$first.start]
+                    $wallEnd = $nodes[$first.end]
+                    $wallDx = $wallEnd[0] - $wallStart[0]
+                    $wallDy = $wallEnd[1] - $wallStart[1]
+                    $wallLength = [Math]::Sqrt($wallDx * $wallDx + $wallDy * $wallDy)
+                    $uxDoor = $wallDx / $wallLength
+                    $uyDoor = $wallDy / $wallLength
+                    $width = [double]$door.width_m
+                    $offset = [double]$door.offset_m
+                    $side = if ($door.swing.side -eq 'left') { 1.0 } else { -1.0 }
+                    $hingeAtStart = $door.swing.hinge -eq 'start'
+                    $distance = if ($hingeAtStart) { $offset } else { $offset + $width }
+                    $hinge = Wall-Point $wallStart $uxDoor $uyDoor (-$uyDoor * $half) ($uxDoor * $half) $distance $side
+                    $direction = if ($hingeAtStart) { 1.0 } else { -1.0 }
+                    $closed = @(($hinge[0] + $direction * $uxDoor * $width),
+                                ($hinge[1] + $direction * $uyDoor * $width), 0.0)
+                    $opened = @(($hinge[0] - $uyDoor * $side * $width),
+                                ($hinge[1] + $uxDoor * $side * $width), 0.0)
+                    $leafId = '{0}__leaf_open' -f $door.id
+                    $leafHandle = [string]$richSourceReport.planspec.handles_by_id.($leafId)
+                    $leafRow = if ($leafHandle) { $entityByHandle[$leafHandle] } else { $null }
+                    $leafStart = if ($leafRow) { Read-DxfPoint $leafRow[9] } else { $null }
+                    $leafEnd = if ($leafRow) { Read-DxfPoint $leafRow[16] } else { $null }
+                    $leafMatched = $leafRow -and $leafRow[1] -eq 'LINE' -and $leafRow[3] -eq $first.layer -and
+                        (((Same-Point $hinge $leafStart) -and (Same-Point $opened $leafEnd)) -or
+                         ((Same-Point $hinge $leafEnd) -and (Same-Point $opened $leafStart)))
+                    $geometryComparison += [ordered]@{ planspec_id = $leafId; source_id = $door.id
+                        kind = 'DOOR_LEAF'; handle = $leafHandle; expected_layer = $first.layer
+                        expected_start = $hinge; expected_end = $opened
+                        autocad_start = $leafStart; autocad_end = $leafEnd; matched_1e_6 = [bool]$leafMatched }
+                    $arcId = '{0}__swing_arc' -f $door.id
+                    $arcHandle = [string]$richSourceReport.planspec.handles_by_id.($arcId)
+                    $arcRow = if ($arcHandle) { $entityByHandle[$arcHandle] } else { $null }
+                    $arcCenter = if ($arcRow) { Read-DxfPoint $arcRow[9] } else { $null }
+                    $arcRadius = if ($arcRow) { Read-DxfNumber $arcRow[17] } else { $null }
+                    $arcStart = if ($arcRow) { Read-DxfNumber $arcRow[11] } else { $null }
+                    $arcEnd = if ($arcRow) { Read-DxfNumber $arcRow[18] } else { $null }
+                    $turn = 2 * [Math]::PI
+                    $expectedStartAngle = ([Math]::Atan2(($closed[1] - $hinge[1]),
+                        ($closed[0] - $hinge[0])) + $turn) % $turn
+                    $expectedEndAngle = ([Math]::Atan2(($opened[1] - $hinge[1]),
+                        ($opened[0] - $hinge[0])) + $turn) % $turn
+                    $arcMatched = $arcRow -and $arcRow[1] -eq 'ARC' -and $arcRow[3] -eq $first.layer -and
+                        (Same-Point $hinge $arcCenter) -and $null -ne $arcRadius -and
+                        [Math]::Abs($arcRadius - $width) -le 1e-6 -and
+                        $null -ne $arcStart -and $null -ne $arcEnd -and
+                        (Same-Angle $expectedStartAngle $arcStart) -and
+                        (Same-Angle $expectedEndAngle $arcEnd)
+                    $geometryComparison += [ordered]@{ planspec_id = $arcId; source_id = $door.id
+                        kind = 'DOOR_SWING_ARC'; handle = $arcHandle; expected_layer = $first.layer
+                        expected_center = $hinge; expected_radius = $width; angle_unit = 'radians'
+                        expected_start_angle = $expectedStartAngle; expected_end_angle = $expectedEndAngle
+                        autocad_center = $arcCenter; autocad_radius = $arcRadius
+                        autocad_start_angle = $arcStart; autocad_end_angle = $arcEnd
+                        matched_1e_6 = [bool]$arcMatched }
                 }
             }
         }
@@ -1297,7 +1389,7 @@ try {
     if ($richSourceReport -and $richSourceReport.planspec.fixture -in
             @('synthetic-wall.planspec.json', 'synthetic-wall-gap.planspec.json',
               'synthetic-door-swing.planspec.json', 'synthetic-window.planspec.json',
-              'synthetic-wall-join.planspec.json',
+              'synthetic-wall-join.planspec.json', 'synthetic-joined-door.planspec.json',
               'synthetic-two-door-wall-v8.planspec.json',
               'synthetic-wall-axis-span-v8.planspec.json',
               'synthetic-wall-axis-span-vertical-v8.planspec.json',

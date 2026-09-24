@@ -818,7 +818,8 @@ def _single_window_symbol_commands(wall: dict, window: dict, nodes: dict,
 
 
 def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
-                               origin: tuple[Decimal, Decimal]) -> list[dict]:
+                               origin: tuple[Decimal, Decimal],
+                               door: dict | None = None) -> list[dict]:
     """Outline the union of two perpendicular end-connected wall rectangles."""
     first, second = walls[join["wall_a_id"]], walls[join["wall_b_id"]]
     junction = nodes[first[join["wall_a_end"]]]
@@ -838,6 +839,18 @@ def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
              (-half, Decimal(0)), (Decimal(0), Decimal(0))]
     owners = [first["id"]] * 3 + [second["id"]] * 3 + [join["id"]] * 2
 
+    gap = None
+    if door is not None:
+        offset = _number(door["offset_m"], "door.offset_m")
+        width = _number(door["width_m"], "door.width_m")
+        start = (length_a - offset - width if join["wall_a_end"] == "end" else offset)
+        end = start + width
+        # Keep the whole quarter-circle away from the perpendicular wall and
+        # retain nonzero spans on both faces after coordinate quantization.
+        if start <= half + width or end >= length_a:
+            raise PlanError("Joined wall door needs clear distance from join and far endpoint")
+        gap = (start, end)
+
     def xy(point: tuple[Decimal, Decimal]) -> str:
         x = junction[0] + u[0] * point[0] + v[0] * point[1] + origin[0]
         y = junction[1] + u[1] * point[0] + v[1] * point[1] + origin[1]
@@ -848,11 +861,28 @@ def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
         raise PlanError("Joined wall outline collapses at compiler precision")
     commands = []
     for index, (start, end) in enumerate(zip(vertices, vertices[1:] + vertices[:1])):
-        if start == end:
-            raise PlanError("Joined wall edge collapses at compiler precision")
-        commands.append({"planspec_id": f"{join['id']}__outline_{index}",
-                         "source_id": owners[index], "part": f"outline_{index}",
-                         "command": f"LINE {start} {end}", "layer": first["layer"]})
+        segments = [(f"outline_{index}", start, end)]
+        if gap is not None and index == 0:
+            segments = [("outline_0_before", start, xy((gap[0], -half))),
+                        ("outline_0_after", xy((gap[1], -half)), end)]
+        elif gap is not None and index == 2:
+            segments = [("outline_2_before", start, xy((gap[1], half))),
+                        ("outline_2_after", xy((gap[0], half)), end)]
+        for part, segment_start, segment_end in segments:
+            if segment_start == segment_end:
+                raise PlanError("Joined wall edge collapses at compiler precision")
+            commands.append({"planspec_id": f"{join['id']}__{part}",
+                             "source_id": owners[index], "part": part,
+                             "command": f"LINE {segment_start} {segment_end}",
+                             "layer": first["layer"]})
+    if gap is not None:
+        for part, distance in (("jamb_start", gap[0]), ("jamb_end", gap[1])):
+            start, end = xy((distance, -half)), xy((distance, half))
+            if start == end:
+                raise PlanError("Joined wall door jamb collapses at compiler precision")
+            commands.append({"planspec_id": f"{door['id']}__{part}",
+                             "source_id": door["id"], "part": part,
+                             "command": f"LINE {start} {end}", "layer": first["layer"]})
     return commands
 
 
@@ -1104,14 +1134,23 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and plan["walls"]:
         wall_status = "unsupported"
         if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and len(plan["walls"]) == 2 and \
-                len(plan["joins"]) == 1 and not plan["openings"]:
+                len(plan["joins"]) == 1 and len(plan["openings"]) <= 1:
             walls_by_id = {wall["id"]: wall for wall in plan["walls"]}
             join = plan["joins"][0]
+            door = plan["openings"][0] if plan["openings"] else None
             if set(walls_by_id) == {join["wall_a_id"], join["wall_b_id"]} and \
-                    len({wall["layer"] for wall in plan["walls"]}) == 1:
-                commands.extend(_orthogonal_union_commands(join, walls_by_id, nodes, origin))
-                wall_parts = 8
-                wall_status = "compiled_orthogonal_union_two_walls"
+                    len({wall["layer"] for wall in plan["walls"]}) == 1 and \
+                    (door is None or (door["kind"] == "door" and
+                                      door["wall_id"] == join["wall_a_id"])):
+                commands.extend(_orthogonal_union_commands(join, walls_by_id, nodes, origin, door))
+                if door is not None:
+                    commands.extend(_single_door_symbol_commands(
+                        walls_by_id[join["wall_a_id"]], door, nodes, origin,
+                        arc_midpoint_places=9 if plan["schema_version"] in
+                        {"planspec-8", "planspec-9"} else 6))
+                wall_parts = 14 if door is not None else 8
+                wall_status = ("compiled_joined_wall_single_door" if door is not None else
+                               "compiled_orthogonal_union_two_walls")
         elif len(plan["walls"]) == 1 and not plan["openings"]:
             commands.extend(_single_wall_commands(plan["walls"][0], nodes, origin))
             wall_parts = 4
@@ -1283,10 +1322,12 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and any(
             opening["kind"] != "clear" for opening in plan["openings"]) and \
             wall_status not in {"compiled_single_door_wall", "compiled_multi_door_wall",
+                                "compiled_joined_wall_single_door",
                                 "compiled_single_window_wall"}:
         missing.add("opening_compilation")
     if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and plan["joins"] and \
-            wall_status != "compiled_orthogonal_union_two_walls":
+            wall_status not in {"compiled_orthogonal_union_two_walls",
+                                "compiled_joined_wall_single_door"}:
         missing.add("join_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")
