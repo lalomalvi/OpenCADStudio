@@ -512,10 +512,34 @@ class PlanSpecTests(unittest.TestCase):
                           "scope": "2d_dimension_line_position_only_no_text_extents"})
         self.assertEqual(result["commands"][-1]["command"],
                          "DIMLINEAR 2,0.1 2,-0.1 4.5,0")
+        bounds = result["source_bounds"]
+        self.assertEqual(bounds["scope"],
+                         "2d_source_footprints_no_text_arrow_or_rendered_bounds")
+        self.assertEqual({key: float(number) for key, number in
+                          bounds["architecture_bounds_m"].items()},
+                         {"min_x": 0, "min_y": -0.1, "max_x": 4, "max_y": 0.1})
+        self.assertEqual({key: float(number) for key, number in
+                          bounds["annotation_reference_bounds_m"].items()},
+                         {"min_x": 2, "min_y": -0.1, "max_x": 4.5, "max_y": 0.1})
+        self.assertEqual(bounds["unresolved"], [])
         changed = deepcopy(value)
         changed["dimension_placements"][0]["offset_m"] = 0
         with self.assertRaises(module.PlanError):
             module.validate(changed)
+
+    def test_source_bounds_do_not_merge_uncompiled_annotation_into_architecture(self):
+        value = plan()
+        value["dimensions"] = [{"id": "length", "start": "a", "end": "c",
+                                "axis": "x", "reference_type": "axis", "value": 5,
+                                "text": "5.00 m", "source": SOURCE}]
+        result = module.dry_run(value)
+        self.assertEqual(result["source_bounds"]["unresolved"],
+                         ["dimension_placement_or_rendered_extents"])
+        self.assertEqual(float(result["source_bounds"]["architecture_bounds_m"]["max_x"]), 5)
+        self.assertEqual(float(result["source_bounds"]["annotation_reference_bounds_m"]["max_x"]), 5)
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        door = module.dry_run(json.loads(fixture.read_text(encoding="utf-8")))
+        self.assertIn("door_swing_extrema", door["source_bounds"]["unresolved"])
 
 
 if __name__ == "__main__":

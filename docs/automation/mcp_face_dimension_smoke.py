@@ -75,6 +75,7 @@ def main():
                            "command_count": len(compiled["commands"]),
                            "step_count": len(compiled["execution_steps"]),
                            "dimension_placement_qa": compiled["dimension_placement_qa"],
+                           "source_bounds": compiled["source_bounds"],
                            "dimension_style": plan["dimension_style"]},
               "output": str(output)}
     gui = subprocess.Popen([str(server), "--new-instance"], cwd=repo, env=environment,

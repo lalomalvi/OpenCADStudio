@@ -777,6 +777,60 @@ def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
     return commands
 
 
+def _source_bounds(plan: dict[str, Any], nodes: dict[str, tuple[Decimal, Decimal]],
+                   origin: tuple[Decimal, Decimal], dimension_status: str) -> dict[str, Any]:
+    """Separate 2D source footprints from dimension references, excluding glyph extents."""
+    architecture: list[tuple[Decimal, Decimal]] = []
+    annotation: list[tuple[Decimal, Decimal]] = []
+    unresolved: list[str] = []
+    def add(target, point):
+        target.append((point[0] + origin[0], point[1] + origin[1]))
+    for line in plan["lines"]:
+        add(architecture, nodes[line["start"]])
+        add(architecture, nodes[line["end"]])
+    for circle in plan["circles"]:
+        center = nodes[circle["center"]]
+        radius = _number(circle["radius"], "circle.radius")
+        add(architecture, (center[0] - radius, center[1] - radius))
+        add(architecture, (center[0] + radius, center[1] + radius))
+    if "walls" in plan:
+        for wall in plan["walls"]:
+            a, b = nodes[wall["start"]], nodes[wall["end"]]
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            length = (dx * dx + dy * dy).sqrt()
+            half = _number(wall["thickness_m"], "wall.thickness_m") / 2
+            normal = (-dy * half / length, dx * half / length)
+            for endpoint in (a, b):
+                for sign in (-1, 1):
+                    add(architecture, (endpoint[0] + sign * normal[0],
+                                       endpoint[1] + sign * normal[1]))
+        if any(opening["kind"] == "door" for opening in plan["openings"]):
+            unresolved.append("door_swing_extrema")
+    for dimension in plan["dimensions"]:
+        add(annotation, nodes[dimension["start"]])
+        add(annotation, nodes[dimension["end"]])
+    if dimension_status == "compiled_single_horizontal_face_thickness":
+        dimension = plan["dimensions"][0]
+        placement = plan["dimension_placements"][0]
+        a, b = nodes[dimension["start"]], nodes[dimension["end"]]
+        add(annotation, (a[0] + _number(placement["offset_m"], "offset_m"),
+                         (a[1] + b[1]) / 2))
+    elif plan["dimensions"]:
+        unresolved.append("dimension_placement_or_rendered_extents")
+    def box(points):
+        if not points:
+            return None
+        return {"min_x": format(min(point[0] for point in points), "f"),
+                "min_y": format(min(point[1] for point in points), "f"),
+                "max_x": format(max(point[0] for point in points), "f"),
+                "max_y": format(max(point[1] for point in points), "f")}
+    return {"schema_version": "planspec-source-bounds-1",
+            "architecture_bounds_m": box(architecture),
+            "annotation_reference_bounds_m": box(annotation),
+            "unresolved": sorted(unresolved),
+            "scope": "2d_source_footprints_no_text_arrow_or_rendered_bounds"}
+
+
 def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
     dimension_graph = analyze_dimension_graph(plan)
@@ -919,6 +973,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")
     unsupported = sorted(missing)
+    source_bounds = _source_bounds(plan, nodes, origin, dimension_status)
     quality_blockers = (["dimension_line_inside_wall_bounds"]
                         if dimension_placement_qa["status"] == "inside_wall_bounds" else [])
     wire = json.dumps(execution, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -932,6 +987,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             "dimension_compilation": {"status": dimension_status,
                                       "generated_parts": 1 if dimension_status.startswith("compiled_") else 0},
             "dimension_placement_qa": dimension_placement_qa,
+            "source_bounds": source_bounds,
             "geometry_qa": geometry_qa,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
             "unsupported": unsupported, "quality_blockers": quality_blockers,
