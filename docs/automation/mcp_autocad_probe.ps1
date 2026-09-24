@@ -104,6 +104,27 @@ $lispText = @"
   (write-line (strcat "LAYERSTATE|OCS_DIM_REF|"
                       (ocs_value ocs_dim_ref_layer 62) "|"
                       (ocs_value ocs_dim_ref_layer 70)) ocs_file))
+(setq ocs_symbol_block (tblobjname "BLOCK" "MCP-SYMBOL"))
+(if ocs_symbol_block
+  (progn
+    (setq ocs_symbol_data (entget ocs_symbol_block))
+    (write-line (strcat "BLOCKDEF|MCP-SYMBOL|"
+                        (ocs_value ocs_symbol_data 5) "|"
+                        (ocs_point ocs_symbol_data 10) "|"
+                        (ocs_value ocs_symbol_data 70)) ocs_file)
+    (setq ocs_symbol_child (entnext ocs_symbol_block))
+    (setq ocs_symbol_index 0)
+    (while (and ocs_symbol_child (< ocs_symbol_index 100)
+                (/= (cdr (assoc 0 (entget ocs_symbol_child))) "ENDBLK"))
+      (setq ocs_symbol_entity (entget ocs_symbol_child))
+      (write-line (strcat "BLOCKENTITY|MCP-SYMBOL|"
+                          (ocs_value ocs_symbol_entity 0) "|"
+                          (ocs_value ocs_symbol_entity 5) "|"
+                          (ocs_value ocs_symbol_entity 8) "|"
+                          (ocs_point ocs_symbol_entity 10) "|"
+                          (ocs_point ocs_symbol_entity 11)) ocs_file)
+      (setq ocs_symbol_child (entnext ocs_symbol_child))
+      (setq ocs_symbol_index (1+ ocs_symbol_index)))))
 (foreach ocs_layer_name '("A-THIN" "A-THICK")
   (setq ocs_layer_entity (tblobjname "LAYER" ocs_layer_name))
   (setq ocs_layer_data (if ocs_layer_entity (entget ocs_layer_entity) nil))
@@ -254,7 +275,31 @@ try {
     $dimensionReferences = @()
     $dimensionStyles = @{}
     $layerStates = @{}
+    $blockDefinitions = @{}
     if ($censusDone) {
+        foreach ($row in @($lines | Where-Object { $_.StartsWith('BLOCKDEF|') })) {
+            $parts = $row -split '\|'
+            if ($parts.Count -eq 5 -and -not $blockDefinitions.ContainsKey($parts[1])) {
+                $blockDefinitions[$parts[1]] = [ordered]@{
+                    handle = $parts[2]
+                    base_point = Read-DxfPoint $parts[3]
+                    flags = Read-DxfNumber $parts[4]
+                    entities = @()
+                }
+            }
+        }
+        foreach ($row in @($lines | Where-Object { $_.StartsWith('BLOCKENTITY|') })) {
+            $parts = $row -split '\|'
+            if ($parts.Count -eq 7 -and $blockDefinitions.ContainsKey($parts[1])) {
+                $blockDefinitions[$parts[1]].entities += [ordered]@{
+                    type = $parts[2]
+                    handle = $parts[3]
+                    layer = $parts[4]
+                    start_point = Read-DxfPoint $parts[5]
+                    end_point = Read-DxfPoint $parts[6]
+                }
+            }
+        }
         foreach ($row in @($lines | Where-Object { $_.StartsWith('LAYERSTATE|') })) {
             $parts = $row -split '\|'
             if ($parts.Count -eq 4 -and -not $layerStates.ContainsKey($parts[1])) {
@@ -1638,6 +1683,7 @@ try {
         dimension_measurements = $dimensionMeasurements
         dimension_styles = $dimensionStyles
         layer_states = $layerStates
+        block_definitions = $blockDefinitions
         dimension_comparison = $dimensionComparison
         face_reference_comparison = $faceReferenceComparison
         face_style_comparison = $faceStyleComparison

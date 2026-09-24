@@ -173,6 +173,13 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         state = read_state(client, session)
         if not isinstance(state.get("document_id"), int):
             raise ProtocolError("New synthetic document was not activated")
+        if semantic:
+            units = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "run_script", "request_id": "l2-units-" + uuid.uuid4().hex,
+                            "strict": True, "commands": ["SETVAR INSUNITS 6"]}})
+            if units.get("completed_commands") != 1:
+                raise ProtocolError("Synthetic semantic fixture did not set INSUNITS=6")
+            report["semantic_insunits"] = 6
         script_started_ns = time.monotonic_ns()
         script = client.tool("ocs_execute", {"ocs_session_id": session,
             "request": {"op": "run_script", "request_id": "l2-script-" + uuid.uuid4().hex,

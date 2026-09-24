@@ -60,3 +60,6 @@ Unidades, permisos, validación, límites, identidad de sesión y recuperación 
 
 ## Definición de terminado
 Una versión candidata requiere todos los gates técnicos y de fidelidad de su alcance aprobados, costo y latencia medidos, limitaciones explícitas, evidencia reproducible, revisión del diff, publicación en el fork correcto y checkpoint suficiente para continuar sin esta conversación. Una única reconstrucción no permite declarar compatibilidad universal.
+
+## Evidencia reciente
+[M5-BLOCK-CONTENT-L4-V1.md](M5-BLOCK-CONTENT-L4-V1.md): definición interna de un bloque sintético, unidades métricas y dos INSERT cotejados con AutoCAD. El estado vigente y los pendientes están en el checkpoint 125.
