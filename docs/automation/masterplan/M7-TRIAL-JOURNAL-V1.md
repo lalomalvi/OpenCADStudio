@@ -9,3 +9,5 @@ Los resultados registran `completed`, `failed`, `partial` o `uncertain`, modelo 
 La cuenta y el estado se consultan con `snapshot()`; una casilla consumida jamás se reabre con un ID nuevo. Antes de ejecutar M7 real faltan: seis imágenes/oráculos revisados, integración con el invocador Luna y supervisor, uso medido, resultados CAD independientes, revisión humana y comparación estadística limitada por muestra.
 
 Adenda posterior: [M7-INVOCATION-GATE-V1.md](M7-INVOCATION-GATE-V1.md) conecta la reserva a un callback de invocación única L0. El callback real Luna/supervisor sigue pendiente; el uso declarado por el adaptador no es telemetría de proveedor verificada.
+
+Adenda M3: `reserve` devuelve también hashes congelados de imagen, protocolo y binario; `verify_pending` relee bajo candado el journal/identidades y exige la misma casilla e ID antes de llamar al adaptador Luna de [M3-LUNA-ONCE-ADAPTER-V1.md](M3-LUNA-ONCE-ADAPTER-V1.md). La verificación previa a la llamada no convierte un resultado posterior incierto en seguro de repetir.

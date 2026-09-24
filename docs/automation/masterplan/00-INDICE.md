@@ -5,7 +5,7 @@ Actualización M0/M1: ver [M0-INTEGRACION.md](M0-INTEGRACION.md), [BASELINE.json
 
 ## Propósito
 
-El recibo L0 de identidad/uso tomado de objetos Responses API se documenta en [M3-DIRECT-RESPONSE-RECEIPT-V1.md](M3-DIRECT-RESPONSE-RECEIPT-V1.md). No acredita aún una invocación Luna real.
+El recibo L0 de identidad/uso tomado de objetos Responses API se documenta en [M3-DIRECT-RESPONSE-RECEIPT-V1.md](M3-DIRECT-RESPONSE-RECEIPT-V1.md), y la creación única de Luna en [M3-LUNA-ONCE-ADAPTER-V1.md](M3-LUNA-ONCE-ADAPTER-V1.md). Ninguno acredita aún una invocación Luna real.
 Convertir el ensayo Luna → MCP → OpenCADStudio en un flujo reproducible, medible y recuperable que genere CAD editable con precisión declarada. Este plan abarca arranque, transporte, ejecución, evidencia, consumo, semántica CAD, evaluación e integración. El programa probado fue OpenCADStudio; LibreCAD no participó.
 
 ## Lectura y autoridad

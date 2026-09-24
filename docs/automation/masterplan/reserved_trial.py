@@ -243,7 +243,10 @@ class TrialJournal:
                                "request_sha256": _digest(request_id.encode("utf-8")),
                                "source_sha256": case["source"]["sha256"]})
         return {"status": "reserved", "arm": arm, "case_id": case_id,
-                "repetition": repetition, "journal_sha256": _file_sha(self.path)}
+                "repetition": repetition, "journal_sha256": _file_sha(self.path),
+                "source_sha256": case["source"]["sha256"],
+                "protocol_sha256": start["arm_contracts"][arm]["protocol_sha256"],
+                "cad_binary_sha256": start["arm_contracts"][arm]["cad_binary_sha256"]}
 
     @_locked
     def record_result(self, arm: str, case_id: str, repetition: int, request_id: str,
@@ -288,6 +291,27 @@ class TrialJournal:
                                "evidence_file": evidence_file,
                                "evidence_sha256": evidence_sha})
         return {"status": "recorded", "disposition": disposition,
+                "journal_sha256": _file_sha(self.path)}
+
+    @_locked
+    def verify_pending(self, arm: str, case_id: str, repetition: int,
+                       request_id: str) -> dict:
+        """Read-only proof that this exact reserved request is still pending."""
+        if not self.path.is_file():
+            raise TrialError("No matching pending request for model invocation")
+        start, cohort = self._identity()
+        records, slots, pending = self._read(start, cohort)
+        slot = (arm, case_id, repetition)
+        expected_request = (_digest(request_id.encode("utf-8"))
+                            if isinstance(request_id, str) and _ID.fullmatch(request_id)
+                            else None)
+        if pending != slot or slots.get(slot, {}).get("event") != "intent" or \
+                slots[slot]["request_sha256"] != expected_request:
+            raise TrialError("No matching pending request for model invocation")
+        return {"source_sha256": slots[slot]["source_sha256"],
+                "protocol_sha256": start["arm_contracts"][arm]["protocol_sha256"],
+                "cad_binary_sha256": start["arm_contracts"][arm]["cad_binary_sha256"],
+                "requested_model": start["requested_model"], "effort": start["effort"],
                 "journal_sha256": _file_sha(self.path)}
 
     @_locked

@@ -33,6 +33,9 @@ class Invocation:
     cad_binary_path: Path
     requested_model: str
     effort: str
+    source_sha256: str
+    protocol_sha256: str
+    cad_binary_sha256: str
 
 
 @dataclass(frozen=True)
@@ -116,7 +119,9 @@ def run_once(journal: TrialJournal, arm: str, case_id: str, repetition: int,
         raise InvocationUncertain("Trial slot was not freshly reserved")
     invocation = Invocation(arm, case_id, repetition, request_id,
                             journal.image_paths[case_id], journal.arm_protocols[arm],
-                            journal.arm_binaries[arm], journal.requested_model, journal.effort)
+                            journal.arm_binaries[arm], journal.requested_model, journal.effort,
+                            reserved["source_sha256"], reserved["protocol_sha256"],
+                            reserved["cad_binary_sha256"])
     root = journal.path.parent.resolve(strict=True)
     try:
         observed = invoke(invocation)
