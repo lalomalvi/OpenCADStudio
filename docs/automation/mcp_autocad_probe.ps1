@@ -111,6 +111,19 @@ $lispText = @"
           (write-line (strcat "DIMREACTOR|" (ocs_value ocs_data 5) "|"
                               (vl-princ-to-string
                                 (entget (cdr (assoc 330 ocs_data))))) ocs_file)
+          (setq ocs_reactor (entget (cdr (assoc 330 ocs_data))))
+          (setq ocs_ref_index 0)
+          (setq ocs_ref_snap -1)
+          (foreach ocs_pair ocs_reactor
+            (if (= (car ocs_pair) 72) (setq ocs_ref_snap (cdr ocs_pair)))
+            (if (= (car ocs_pair) 331)
+              (progn
+                (write-line
+                  (strcat "DIMREF|" (ocs_value ocs_data 5) "|"
+                          (itoa ocs_ref_index) "|"
+                          (vl-princ-to-string (cdr (assoc 5 (entget (cdr ocs_pair))))) "|"
+                          (itoa ocs_ref_snap)) ocs_file)
+                (setq ocs_ref_index (1+ ocs_ref_index)))))
           (setq ocs_ext (cdr (assoc 360 ocs_data)))
           (if ocs_ext
             (progn
@@ -190,6 +203,16 @@ try {
     $types = @{}
     $dimensionMeasurements = @{}
     $entityByHandle = @{}
+    $dimensionReferences = @()
+    if ($censusDone) {
+        foreach ($row in @($lines | Where-Object { $_.StartsWith('DIMREF|') })) {
+            $parts = $row -split '\|'
+            if ($parts.Count -eq 5) {
+                $dimensionReferences += [ordered]@{ dimension = $parts[1]; index = [int]$parts[2];
+                    source = $parts[3]; osnap = [int]$parts[4] }
+            }
+        }
+    }
     foreach ($row in $entityRows) {
         $parts = $row -split '\|'
         $kind = $parts[1]
@@ -206,6 +229,7 @@ try {
         }
     }
     $expected = @{}
+    $faceReferenceComparison = @()
     $richSourceReport = $null
     $sourceReportMatch = $null
     $sourceReportPath = Join-Path ([IO.Path]::GetDirectoryName($drawing)) 'report.json'
@@ -213,7 +237,34 @@ try {
         $sourceReport = Get-Content -LiteralPath $sourceReportPath -Raw | ConvertFrom-Json
         $sourceReportMatch = $sourceReport.status -eq 'passed' -and
             ($sourceReport.verified_output.sha256 -eq $before -or
+             $sourceReport.first_save.sha256 -eq $before -or
              $sourceReport.second_save.sha256 -eq $before)
+        if ($sourceReport.schema_version -eq 'mcp-face-dimension-l2-1' -and
+            $sourceReport.status -eq 'passed' -and $sourceReport.handles.dimension) {
+            if ($sourceReport.first_save.sha256 -eq $before) {
+                $expected[$sourceReport.handles.dimension] =
+                    [double]$sourceReport.measurements_m.initial
+            } elseif ($sourceReport.second_save.sha256 -eq $before) {
+                $expected[$sourceReport.handles.dimension] =
+                    [double]$sourceReport.measurements_m.edited
+            }
+            foreach ($item in @(@{ index = 0; source = $sourceReport.handles.upper },
+                                @{ index = 1; source = $sourceReport.handles.lower })) {
+                $observedRef = @($dimensionReferences | Where-Object {
+                    $_.dimension -eq $sourceReport.handles.dimension -and
+                    $_.index -eq $item.index })
+                $faceReferenceComparison += [ordered]@{
+                    dimension = $sourceReport.handles.dimension
+                    index = $item.index
+                    expected_source = $item.source
+                    observed_source = if ($observedRef.Count -eq 1) { $observedRef[0].source } else { $null }
+                    observed_osnap = if ($observedRef.Count -eq 1) { $observedRef[0].osnap } else { $null }
+                    matched = $observedRef.Count -eq 1 -and
+                              $observedRef[0].source -eq $item.source -and
+                              $observedRef[0].osnap -eq 2
+                }
+            }
+        }
         if ($sourceReport.status -eq 'passed' -and
             $sourceReport.verified_output.sha256 -eq $before) {
             $richSourceReport = $sourceReport
@@ -255,6 +306,7 @@ try {
         }
     }
     $dimensionMismatch = @($dimensionComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
+    $faceReferenceMismatch = @($faceReferenceComparison | Where-Object { -not $_.matched }).Count -gt 0
     $propertyComparison = @()
     if ($richSourceReport) {
         $hatch = $richSourceReport.hatch_fixture
@@ -659,7 +711,7 @@ try {
         $wallModelCountMatch = $declaredCount -eq $geometryComparison.Count
     }
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-8'
+        schema_version = 'mcp-autocad-audit-l4-9'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion
@@ -679,16 +731,19 @@ try {
         model_types = $types
         dimension_measurements = $dimensionMeasurements
         dimension_comparison = $dimensionComparison
+        face_reference_comparison = $faceReferenceComparison
         property_comparison = $propertyComparison
         geometry_source_valid = $geometrySourceValid
         source_report_match = $sourceReportMatch
         wall_model_count_match = $wallModelCountMatch
         geometry_comparison = $geometryComparison
         semantic_verdict = if ($sourceReportMatch -eq $false -or $dimensionMismatch -or
+                              $faceReferenceMismatch -or
                               $propertyMismatch -or $geometryMismatch -or
                               $wallModelCountMatch -eq $false) {
             'mismatch'
-        } elseif ($expected.Count -gt 0 -or $propertyComparison.Count -gt 0 -or
+        } elseif ($expected.Count -gt 0 -or $faceReferenceComparison.Count -gt 0 -or
+                  $propertyComparison.Count -gt 0 -or
                   $geometryComparison.Count -gt 0) {
             'matched_scoped'
         } else { 'unknown' }
@@ -703,6 +758,7 @@ try {
                       ($null -ne $ExpectedInsunits -and $insunits -ne $ExpectedInsunits)) {
             'failed'
         } elseif ($sourceReportMatch -eq $false -or $dimensionMismatch -or
+                  $faceReferenceMismatch -or
                   $propertyMismatch -or $geometryMismatch -or
                   $wallModelCountMatch -eq $false) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {

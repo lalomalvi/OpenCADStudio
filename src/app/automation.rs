@@ -1449,6 +1449,41 @@ mod tests {
     }
 
     #[test]
+    fn typed_face_midpoints_create_associative_native_dimension() {
+        use acadrust::entities::Dimension;
+        use acadrust::EntityType;
+        use crate::scene::ChangeKind;
+
+        let mut app = OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        for command in ["LINE 0,0.1 4,0.1", "LINE 0,-0.1 4,-0.1",
+                        "DIMLINEAR 2,0.1 2,-0.1 2.5,0"] {
+            let result = app.automation_op(&serde_json::json!({"op":"run","cmd":command}).to_string());
+            assert_eq!(result["ok"], true, "{command}: {result}");
+        }
+        let scene = &mut app.tabs[app.active_tab].scene;
+        let lines: Vec<_> = scene.document.entities().filter_map(|entity| match entity {
+            EntityType::Line(line) => Some((line.common.handle, line.start.y)),
+            _ => None,
+        }).collect();
+        let dimension = scene.document.entities().find_map(|entity| match entity {
+            EntityType::Dimension(dimension) => Some(dimension.base().common.handle),
+            _ => None,
+        }).expect("native dimension");
+        assert_eq!(lines.len(), 2);
+        let upper = lines.iter().find(|(_, y)| *y > 0.0).unwrap().0;
+        let lower = lines.iter().find(|(_, y)| *y < 0.0).unwrap().0;
+        assert_eq!(scene.dimension_association_sources(dimension), vec![upper, lower]);
+        let Some(EntityType::Line(line)) = scene.document.get_entity_mut(upper) else { panic!() };
+        line.start.y = 0.15;
+        line.end.y = 0.15;
+        scene.bump_entities(&[(upper, ChangeKind::Modified)]);
+        let Some(EntityType::Dimension(Dimension::Linear(updated))) =
+            scene.document.get_entity(dimension) else { panic!() };
+        assert!((updated.measurement() - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
     fn explicit_target_version_parser_never_silently_defaults() {
         assert_eq!(
             crate::io::parse_target_version("R14").unwrap(),
