@@ -59,6 +59,7 @@ const EXECUTE_OPS: &[&str] = &[
     "property",
     "set_properties",
     "edit_wall_thickness",
+    "edit_wall_length",
     "action",
     "embed_image",
     "save",
@@ -1308,6 +1309,13 @@ fn validate_execute_request(request: &Value, op: &str) -> Result<(), String> {
             || request["new_thickness_m"].as_f64().is_none() => {
             missing("edge_handles or thickness", r#"{"op":"edit_wall_thickness","edge_handles":["64","65","66","67"],"expected_thickness_m":0.2,"new_thickness_m":0.25}"#)
         }
+        "edit_wall_length" if request["edge_handles"].as_array().is_none_or(|edges| edges.len() != 4)
+            || request["dimension_handle"].as_str().is_none()
+            || request["expected_length_m"].as_f64().is_none()
+            || request["new_length_m"].as_f64().is_none()
+            || request["expected_thickness_m"].as_f64().is_none() => {
+            missing("wall edges, dimension or length", r#"{"op":"edit_wall_length","edge_handles":["64","65","66","67"],"dimension_handle":"68","expected_length_m":4,"new_length_m":4.5,"expected_thickness_m":0.2}"#)
+        }
         "action" => match request["name"].as_str() {
             Some(name) if crate::app::automation_action_names().contains(&name) => Ok(()),
             Some(name) => Err(format!(
@@ -1656,7 +1664,7 @@ fn execute_request_schema() -> Value {
             "point":point,
             "space":{"type":"string","enum":["wcs","ucs","relative"],"default":"wcs","description":"Coordinate space for point input."},
             "handle":handle.clone(),
-            "handles":{"type":"array","items":handle,"description":"Entity handles to select."},
+            "handles":{"type":"array","items":handle.clone(),"description":"Entity handles to select."},
             "type":{"type":"string","description":"Entity type filter for select."},
             "layer":{"type":"string","description":"Layer filter for select."},
             "clear":{"type":"boolean","description":"Clear the current selection before applying select filters."},
@@ -1667,6 +1675,9 @@ fn execute_request_schema() -> Value {
             "edge_handles":{"type":"array","minItems":4,"maxItems":4,"uniqueItems":true,"items":handle.clone(),"description":"Four LINE handles in closed contour order: first face, end cap, opposite face, start cap."},
             "expected_thickness_m":{"type":"number","minimum":0.01,"maximum":10},
             "new_thickness_m":{"type":"number","minimum":0.01,"maximum":10},
+            "dimension_handle":handle.clone(),
+            "expected_length_m":{"type":"number","minimum":0.1,"maximum":1000},
+            "new_length_m":{"type":"number","minimum":0.1,"maximum":1000},
             "name":{"type":"string","enum":crate::app::automation_action_names(),"description":"UI action returned by ocs_read commands."},
             "steps":{"type":"array","minItems":1,"maxItems":MAX_BATCH_STEPS,"description":"Sequential editor operations executed with fresh state and idempotency keys. Execution stops at the first failure; completed_steps says what committed.","items":batch_step_schema()},
             "commands":{"type":"array","minItems":1,"maxItems":MAX_SCRIPT_COMMANDS,"description":"Complete one-line CAD commands for a resumable high-volume drawing script. Read command manifests first; points use x,y or x,y,z.","items":{"type":"string","minLength":1,"maxLength":MAX_SCRIPT_COMMAND_BYTES}},
@@ -1701,6 +1712,7 @@ fn execute_request_schema() -> Value {
             {"properties":{"op":{"const":"property"}},"required":["field","value"]},
             {"properties":{"op":{"const":"set_properties"}},"required":["collection","updates"]},
             {"properties":{"op":{"const":"edit_wall_thickness"}},"required":["edge_handles","expected_thickness_m","new_thickness_m","document_id","revision"]},
+            {"properties":{"op":{"const":"edit_wall_length"}},"required":["edge_handles","dimension_handle","expected_length_m","new_length_m","expected_thickness_m","document_id","revision"]},
             {"properties":{"op":{"const":"action"}},"required":["name"]},
             {"properties":{"op":{"const":"embed_image"}},"required":["path"]},
             {"properties":{"op":{"const":"save"}}},
@@ -2458,6 +2470,23 @@ mod tests {
         let schema = execute_request_schema();
         assert_eq!(schema["properties"]["edge_handles"]["minItems"], 4);
         assert_eq!(schema["properties"]["edge_handles"]["uniqueItems"], true);
+    }
+
+    #[test]
+    fn wall_length_edit_requires_associated_dimension_and_stale_guards() {
+        let request = json!({"op":"edit_wall_length","request_id":"length-1",
+            "document_id":1,"revision":2,"edge_handles":["64","65","66","67"],
+            "dimension_handle":"68","expected_length_m":4.0,"new_length_m":4.5,
+            "expected_thickness_m":0.2});
+        assert!(EXECUTE_OPS.contains(&"edit_wall_length"));
+        assert!(!BATCH_STEP_OPS.contains(&"edit_wall_length"));
+        assert!(validate_execute_request(&request, "edit_wall_length").is_ok());
+        let mut invalid = request.clone();
+        invalid.as_object_mut().unwrap().remove("dimension_handle");
+        assert!(validate_execute_request(&invalid, "edit_wall_length").is_err());
+        let schema = execute_request_schema();
+        assert_eq!(schema["properties"]["dimension_handle"]["type"], "string");
+        assert_eq!(schema["properties"]["new_length_m"]["maximum"], 1000);
     }
 
     #[test]

@@ -264,6 +264,8 @@ try {
     $axisDefinitionComparison = @()
     $axisStyleComparison = @()
     $axisFixtureValid = $null
+    $lengthGeometryComparison = @()
+    $lengthFixtureValid = $null
     $richSourceReport = $null
     $sourceReportMatch = $null
     $sourceReportPath = Join-Path ([IO.Path]::GetDirectoryName($drawing)) 'report.json'
@@ -273,6 +275,52 @@ try {
             ($sourceReport.verified_output.sha256 -eq $before -or
              $sourceReport.first_save.sha256 -eq $before -or
              $sourceReport.second_save.sha256 -eq $before)
+        if ($sourceReport.schema_version -eq 'mcp-wall-length-l2-1' -and
+            $sourceReport.status -eq 'passed' -and
+            ($sourceReport.first_save.sha256 -eq $before -or
+             $sourceReport.second_save.sha256 -eq $before)) {
+            $fixtureName = [string]$sourceReport.planspec.fixture
+            $lengthFixtureValid = $fixtureName -in @(
+                'synthetic-wall-axis-endpoints-v9.planspec.json',
+                'synthetic-wall-aligned-endpoints-v9.planspec.json')
+            if ($lengthFixtureValid) {
+                $fixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $fixtureName)
+                $lengthFixtureValid = (Get-FileHash -LiteralPath $fixturePath -Algorithm SHA256).Hash -eq
+                    $sourceReport.planspec.fixture_sha256
+            }
+            $wall = if ($sourceReport.first_save.sha256 -eq $before) {
+                $sourceReport.wall_before
+            } else { $sourceReport.wall_after }
+            $expected[$sourceReport.handles.dimension] = if ($sourceReport.first_save.sha256 -eq $before) {
+                [double]$sourceReport.measurements_m.initial
+            } else { [double]$sourceReport.measurements_m.edited }
+            for ($index = 0; $index -lt 4; $index++) {
+                $handle = [string]$sourceReport.handles.wall_edges[$index]
+                $row = $entityByHandle[$handle]
+                $start = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                $end = if ($row) { Read-DxfPoint $row[16] } else { $null }
+                $lengthGeometryComparison += [ordered]@{
+                    handle = $handle; expected_start = $wall.points[$index][0]
+                    expected_end = $wall.points[$index][1]; autocad_start = $start
+                    autocad_end = $end; matched = $row -and $row[1] -eq 'LINE' -and
+                        (Same-Point $wall.points[$index][0] $start) -and
+                        (Same-Point $wall.points[$index][1] $end)
+                }
+            }
+            foreach ($item in @(@{ index = 0; source = $sourceReport.handles.start_cap },
+                                @{ index = 1; source = $sourceReport.handles.end_cap })) {
+                $observedRef = @($dimensionReferences | Where-Object {
+                    $_.dimension -eq $sourceReport.handles.dimension -and $_.index -eq $item.index })
+                $faceReferenceComparison += [ordered]@{
+                    dimension = $sourceReport.handles.dimension; index = $item.index
+                    expected_source = $item.source
+                    observed_source = if ($observedRef.Count -eq 1) { $observedRef[0].source } else { $null }
+                    observed_osnap = if ($observedRef.Count -eq 1) { $observedRef[0].osnap } else { $null }
+                    matched = $observedRef.Count -eq 1 -and
+                        $observedRef[0].source -eq $item.source -and $observedRef[0].osnap -eq 2
+                }
+            }
+        }
         if ($sourceReport.schema_version -in @('mcp-face-dimension-l2-1',
                                                'mcp-wall-thickness-l2-1') -and
             $sourceReport.status -eq 'passed' -and $sourceReport.handles.dimension) {
@@ -521,6 +569,9 @@ try {
     $axisDefinitionMismatch = @($axisDefinitionComparison | Where-Object { -not $_.matched }).Count -gt 0
     $axisStyleMismatch = @($axisStyleComparison | Where-Object { -not $_.matched }).Count -gt 0
     $axisFixtureMismatch = $axisFixtureValid -eq $false
+    $lengthMismatch = $lengthFixtureValid -eq $false -or
+        @($lengthGeometryComparison | Where-Object { -not $_.matched }).Count -gt 0 -or
+        ($lengthGeometryComparison.Count -gt 0 -and $declaredCount -ne 5)
     $propertyComparison = @()
     if ($richSourceReport) {
         $hatch = $richSourceReport.hatch_fixture
@@ -982,6 +1033,8 @@ try {
         axis_definition_comparison = $axisDefinitionComparison
         axis_style_comparison = $axisStyleComparison
         axis_fixture_valid = $axisFixtureValid
+        length_fixture_valid = $lengthFixtureValid
+        length_geometry_comparison = $lengthGeometryComparison
         property_comparison = $propertyComparison
         geometry_source_valid = $geometrySourceValid
         source_report_match = $sourceReportMatch
@@ -991,7 +1044,7 @@ try {
                               $faceReferenceMismatch -or $faceStyleMismatch -or $facePlacementMismatch -or
                               $faceFixtureMismatch -or
                               $axisDefinitionMismatch -or $axisStyleMismatch -or $axisFixtureMismatch -or
-                              $propertyMismatch -or $geometryMismatch -or
+                              $propertyMismatch -or $geometryMismatch -or $lengthMismatch -or
                               $wallModelCountMatch -eq $false) {
             'mismatch'
         } elseif ($expected.Count -gt 0 -or $faceReferenceComparison.Count -gt 0 -or
@@ -1000,7 +1053,7 @@ try {
                   $axisDefinitionComparison.Count -gt 0 -or
                   $axisStyleComparison.Count -gt 0 -or
                   $propertyComparison.Count -gt 0 -or
-                  $geometryComparison.Count -gt 0) {
+                  $geometryComparison.Count -gt 0 -or $lengthGeometryComparison.Count -gt 0) {
             'matched_scoped'
         } else { 'unknown' }
         census_done = $censusDone
@@ -1017,7 +1070,7 @@ try {
                   $faceReferenceMismatch -or $faceStyleMismatch -or $facePlacementMismatch -or
                   $faceFixtureMismatch -or
                   $axisDefinitionMismatch -or $axisStyleMismatch -or $axisFixtureMismatch -or
-                  $propertyMismatch -or $geometryMismatch -or
+                  $propertyMismatch -or $geometryMismatch -or $lengthMismatch -or
                   $wallModelCountMatch -eq $false) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {
             'partial_abnormal_exit'
