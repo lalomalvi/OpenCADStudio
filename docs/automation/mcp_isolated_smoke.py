@@ -87,6 +87,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                             "synthetic-wall", "synthetic-wall-gap", "synthetic-door-swing",
                             "synthetic-window", "synthetic-wall-join",
                             "synthetic-joined-door",
+                            "synthetic-joined-door-second",
                             "synthetic-two-door-wall-v8",
                             "synthetic-wall-axis-span-v8",
                             "synthetic-wall-axis-span-vertical-v8",
@@ -104,7 +105,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                        capabilities=set(manifest["verified_capabilities"]) if manifest else None)
     expected_count = 20 if plan_fixture == "synthetic-two-door-wall-v8" else \
         14 if plan_fixture in {"synthetic-door-swing", "synthetic-window",
-                              "synthetic-joined-door"} else \
+                              "synthetic-joined-door", "synthetic-joined-door-second"} else \
         8 if plan_fixture in {"synthetic-wall-gap", "synthetic-wall-join"} else \
         5 if plan_fixture in {"synthetic-wall-axis-span-v8",
                               "synthetic-wall-axis-span-vertical-v8",
@@ -579,6 +580,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         if plan_fixture in {"synthetic-wall", "synthetic-wall-gap", "synthetic-door-swing",
                             "synthetic-window", "synthetic-wall-join",
                             "synthetic-joined-door",
+                            "synthetic-joined-door-second",
                             "synthetic-two-door-wall-v8", "synthetic-wall-axis-span-v8",
                             "synthetic-wall-axis-span-vertical-v8",
                             "synthetic-wall-axis-endpoints-v9",
@@ -593,7 +595,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             # ZOOM updates the drawing view and marks the working tab dirty.
             # Save that isolated tab again so shutdown never discards it.
             framed_path = (output / "synthetic-reopened-framed.dwg" if axis_fixture else
-                           output / "synthetic-session.dwg")
+                           output / "synthetic-framed.dwg")
             client.tool("ocs_execute", {"ocs_session_id": session,
                 "request": {"op": "save", "request_id": "l2-framed-save-" + uuid.uuid4().hex,
                             "path": str(framed_path),

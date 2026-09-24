@@ -577,9 +577,21 @@ class PlanSpecTests(unittest.TestCase):
         near_join["openings"][0]["offset_m"] = 3
         with self.assertRaisesRegex(module.PlanError, "clear distance from join"):
             module.dry_run(near_join)
-        wrong_wall = deepcopy(value)
-        wrong_wall["openings"][0]["wall_id"] = "wall-vertical"
-        self.assertFalse(module.dry_run(wrong_wall)["executable"])
+        second = json.loads((fixture.with_name("synthetic-joined-door-second.planspec.json"))
+                            .read_text(encoding="utf-8"))
+        second_result = module.dry_run(second)
+        self.assertTrue(second_result["executable"])
+        self.assertEqual(second_result["wall_compilation"]["generated_parts"], 14)
+        second_commands = {item["planspec_id"]: item["command"]
+                           for item in second_result["commands"]}
+        self.assertEqual(second_commands["door-vertical__jamb_start"],
+                         "LINE 4.1,1.1 3.9,1.1")
+        self.assertEqual(second_commands["door-vertical__leaf_open"],
+                         "LINE 4.1,1.1 5,1.1")
+        near_second_join = deepcopy(second)
+        near_second_join["openings"][0]["offset_m"] = 0.5
+        with self.assertRaisesRegex(module.PlanError, "clear distance from join"):
+            module.dry_run(near_second_join)
         changed = deepcopy(value)
         changed["nodes"][2]["y"] = 0.05
         with self.assertRaisesRegex(module.PlanError, "too short"):

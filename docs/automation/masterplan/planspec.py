@@ -840,14 +840,18 @@ def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
     owners = [first["id"]] * 3 + [second["id"]] * 3 + [join["id"]] * 2
 
     gap = None
+    door_on_second = False
     if door is not None:
+        door_on_second = door["wall_id"] == second["id"]
+        target_length = length_b if door_on_second else length_a
+        target_join_end = join["wall_b_end"] if door_on_second else join["wall_a_end"]
         offset = _number(door["offset_m"], "door.offset_m")
         width = _number(door["width_m"], "door.width_m")
-        start = (length_a - offset - width if join["wall_a_end"] == "end" else offset)
+        start = (target_length - offset - width if target_join_end == "end" else offset)
         end = start + width
         # Keep the whole quarter-circle away from the perpendicular wall and
         # retain nonzero spans on both faces after coordinate quantization.
-        if start <= half + width or end >= length_a:
+        if start <= half + width or end >= target_length:
             raise PlanError("Joined wall door needs clear distance from join and far endpoint")
         gap = (start, end)
 
@@ -862,12 +866,18 @@ def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
     commands = []
     for index, (start, end) in enumerate(zip(vertices, vertices[1:] + vertices[:1])):
         segments = [(f"outline_{index}", start, end)]
-        if gap is not None and index == 0:
+        if gap is not None and not door_on_second and index == 0:
             segments = [("outline_0_before", start, xy((gap[0], -half))),
                         ("outline_0_after", xy((gap[1], -half)), end)]
-        elif gap is not None and index == 2:
+        elif gap is not None and not door_on_second and index == 2:
             segments = [("outline_2_before", start, xy((gap[1], half))),
                         ("outline_2_after", xy((gap[0], half)), end)]
+        elif gap is not None and door_on_second and index == 3:
+            segments = [("outline_3_before", start, xy((half, gap[0]))),
+                        ("outline_3_after", xy((half, gap[1])), end)]
+        elif gap is not None and door_on_second and index == 5:
+            segments = [("outline_5_before", start, xy((-half, gap[1]))),
+                        ("outline_5_after", xy((-half, gap[0])), end)]
         for part, segment_start, segment_end in segments:
             if segment_start == segment_end:
                 raise PlanError("Joined wall edge collapses at compiler precision")
@@ -877,7 +887,8 @@ def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
                              "layer": first["layer"]})
     if gap is not None:
         for part, distance in (("jamb_start", gap[0]), ("jamb_end", gap[1])):
-            start, end = xy((distance, -half)), xy((distance, half))
+            start, end = ((xy((-half, distance)), xy((half, distance))) if door_on_second else
+                          (xy((distance, -half)), xy((distance, half))))
             if start == end:
                 raise PlanError("Joined wall door jamb collapses at compiler precision")
             commands.append({"planspec_id": f"{door['id']}__{part}",
@@ -1141,11 +1152,12 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             if set(walls_by_id) == {join["wall_a_id"], join["wall_b_id"]} and \
                     len({wall["layer"] for wall in plan["walls"]}) == 1 and \
                     (door is None or (door["kind"] == "door" and
-                                      door["wall_id"] == join["wall_a_id"])):
+                                      door["wall_id"] in {join["wall_a_id"],
+                                                          join["wall_b_id"]})):
                 commands.extend(_orthogonal_union_commands(join, walls_by_id, nodes, origin, door))
                 if door is not None:
                     commands.extend(_single_door_symbol_commands(
-                        walls_by_id[join["wall_a_id"]], door, nodes, origin,
+                        walls_by_id[door["wall_id"]], door, nodes, origin,
                         arc_midpoint_places=9 if plan["schema_version"] in
                         {"planspec-8", "planspec-9"} else 6))
                 wall_parts = 14 if door is not None else 8
