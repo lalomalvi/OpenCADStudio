@@ -5,12 +5,12 @@ Corte sintético L2 del 2026-09-23. Binario debug SHA-256 `0F9F4E42870D4AC5EDBD4
 | Necesidad M5 | Comando registrado | Generación mediante PlanSpec | Ejecución MCP L2 | Persistencia/semántica |
 |---|---|---|---|---|
 | Capas | `LAYER`, `CLAYER` | unsupported para capa distinta de `0` | no probada | pending |
-| Polilínea cerrada | `PLINE` | no implementada | no probada | pending |
-| Arco nativo | `ARC` | no implementada | no probada | pending |
+| Polilínea cerrada | `PLINE` | no implementada | passed scoped L2 | `is_closed=true`, tres vértices y tipo Polyline tras reapertura interna; grosor/uniones pending |
+| Arco nativo | `ARC` | no implementada | passed scoped L2 | radio 5, tipo Arc tras reapertura interna; ángulos completos/edición pending |
 | Cota lineal/alineada | `DIMLINEAR`, `DIMALIGNED` | validación de longitud; compilación unsupported | no probada | asociatividad pending |
 | Bloque/instancia | `BLOCK`, `INSERT` | no implementada | no probada | unidades/rotación pending |
 | Relleno | `HATCH` | no implementada | no probada | contorno/guardado pending |
 | Plantilla de página | `PSETUPIN` | no implementada | no probada | es importación de page setup, no sustituye perfil métrico |
 | Línea/círculo | `LINE`, `CIRCLE` | implementada, capa `0` | tres entidades L2 | audit/save_verified interno passed scoped |
 
-La presencia en el catálogo acredita registro del nombre en ese build. El manifiesto de comandos ofrece categoría, selección y orientación de sintaxis, pero no demuestra que `run_script` pueda completar todas las variantes ni que el DWG guardado preserve asociatividad, propiedades o interoperabilidad. El siguiente gate es un fixture pequeño por capacidad con comando, cambio de handle, auditoría y comparación pre/post guardado; las cotas requieren mover referencia y observar actualización antes de afirmar asociatividad. No crear funciones duplicadas hasta completar ese gate.
+La presencia en el catálogo acredita registro del nombre en ese build. ARC y PLINE tienen ahora fixture L2 (`mcp_native_primitives_smoke.py`): crearon entidades con handles únicos, consulta de geometría, auditoría y guardado verificado con reapertura interna de tipos. Eso no acredita ángulos/propiedades completas, motor externo, asociatividad ni semántica de los demás comandos. El siguiente gate es un fixture pequeño por capacidad con comando, cambio de handle, auditoría y comparación geométrica pre/post guardado; las cotas requieren mover referencia y observar actualización antes de afirmar asociatividad. No crear funciones duplicadas hasta completar ese gate.

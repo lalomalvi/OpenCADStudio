@@ -31,7 +31,7 @@ def read_state(client: Client, session: str, *, timeout: float = 10.0) -> dict:
             time.sleep(0.2)
 
 
-def main() -> None:
+def main(*, semantic: bool = False) -> None:
     server = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/OpenCADStudio.exe").resolve()
     if not server.is_file():
         raise FileNotFoundError(server)
@@ -104,6 +104,32 @@ def main() -> None:
         if len(set(handles.values())) != len(handles):
             raise ProtocolError("PlanSpec handles are not unique")
         report["planspec"]["handles_by_id"] = handles
+        if semantic:
+            native = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "run_script", "request_id": "l2-native-" + uuid.uuid4().hex,
+                            "strict": True, "commands": ["ARC 0,0 5,5 10,0",
+                                                          "PLINE 20,0 24,0 24,4 C"]}})
+            if native.get("completed_commands") != 2 or native.get("added_entities") != 2:
+                raise ProtocolError("Native ARC/PLINE fixture did not create two entities")
+            native_handles = [change["handle"] for change in native.get("changes", [])
+                              if change.get("kind") == "Added" and isinstance(change.get("handle"), str)]
+            if len(native_handles) != 2 or len(set(native_handles)) != 2:
+                raise ProtocolError("Native fixture handles are absent or duplicated")
+            queried = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                            "parameters": {"handles": native_handles, "detail": "full"}})
+            by_type = {entity["type"]: entity for entity in queried.get("entities", [])}
+            if set(by_type) != {"Arc", "Polyline"}:
+                raise ProtocolError("Native fixture degraded to unexpected entity types")
+            arc = by_type["Arc"]
+            if abs(arc.get("radius", 0) - 5) > 1e-6 or len(by_type["Polyline"].get("vertices", [])) != 3:
+                raise ProtocolError("Native primitive geometry differs from fixture")
+            if by_type["Polyline"].get("properties", {}).get("is_closed") is not True:
+                raise ProtocolError("Native polyline is not closed")
+            report["native_primitives"] = {"handles": native_handles,
+                                           "types": sorted(by_type),
+                                           "arc_radius": arc["radius"],
+                                           "polyline_vertices": len(by_type["Polyline"]["vertices"]),
+                                           "polyline_closed": True}
         audit = client.tool("ocs_read", {"ocs_session_id": session, "op": "audit",
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
@@ -115,6 +141,11 @@ def main() -> None:
         verified = saved.get("result", saved)
         if verified.get("verified") is not True or not destination.is_file():
             raise ProtocolError("Synthetic verified save failed")
+        if semantic:
+            by_type = verified.get("manifest", {}).get("by_type", {})
+            if by_type.get("Arc") != 1 or by_type.get("Polyline") != 1:
+                raise ProtocolError("Native primitives did not survive internal DWG reopen")
+            report["native_primitives"]["reopened_types"] = {"Arc": 1, "Polyline": 1}
         actual_hash = hashlib.sha256(destination.read_bytes()).hexdigest().upper()
         if verified["sha256"].upper() != actual_hash:
             raise ProtocolError("Synthetic output hash differs from backend report")

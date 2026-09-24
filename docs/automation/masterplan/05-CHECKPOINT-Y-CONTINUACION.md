@@ -177,3 +177,13 @@ El décimo corte se publicó en `origin/codex/mcp-planspec-l2` con commit `c20eb
 ### Prompt de continuidad desde el undécimo corte
 
 Reverifica SHA remoto de `codex/mcp-cad-capability-census` y árbol limpio. Aplica la matriz del censo para probar capacidades M5 con fixtures sintéticos independientes, sin duplicar comandos existentes. Cierra M3/M4 y M6 con evidencia de ejecución, guardado y QA; prepara M7/M8 conforme a sus gates. Preserva el DWG y ensayos históricos; nada de archivos privados en Git ni push a upstream.
+
+## Duodécimo corte ARC/PLINE nativos — 2026-09-23, en progreso
+
+El undécimo corte se publicó en `origin/codex/mcp-cad-capability-census` con commit `fd9b0060` (verificar SHA completo remoto). La rama `codex/mcp-native-primitives-l2` añadió `mcp_native_primitives_smoke.py`, que reutiliza el perfil aislado del smoke PlanSpec y ejecuta `ARC 0,0 5,5 10,0` y `PLINE 20,0 24,0 24,4 C` tras los tres comandos de base. El primer L2 `target/mcp-isolated/20260923-212827-86ae5b24/report.json` pasó y mostró Arc radio 5 y Polyline de tres vértices con `is_closed=true`; el reporte inicial conservó demasiadas propiedades de la polilínea sintética. Se redujo a campos de aceptación concretos. El L2 final `target/mcp-isolated/20260923-212856-14636786/report.json` pasó con handles `67`/`68`, tipos nativos, auditoría, DWG sintético guardado y tipos Arc/Polyline presentes en el manifiesto de reapertura interna. El PID salió. Ambos reportes siguen en `target` y no se añaden a Git.
+
+M5.2 se acepta **solo** para creación nativa y tipo persistido internamente en este fixture. No se verificaron espesor, uniones, exactitud completa de ángulos, asociatividad ni motor externo. El compilador PlanSpec aún no emite ARC/PLINE. El DWG del usuario permanece intacto.
+
+### Prompt de continuidad desde el duodécimo corte
+
+Verifica SHA remoto, Git y pruebas. Extiende PlanSpec para producir ARC/PLINE mediante capacidades demostradas; prueba espesores/uniones y persistencia geométrica real. Sigue con cotas, bloques, HATCH, capas y plantilla métrica en fixtures sintéticos. Completa M3/M6 antes de evaluar M7; mantén gates de motor externo y revisión humana. Nada de DWG privado ni upstream.
