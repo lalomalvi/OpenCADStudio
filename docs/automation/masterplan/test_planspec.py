@@ -28,6 +28,7 @@ class PlanSpecTests(unittest.TestCase):
         reversed_plan["lines"].reverse()
         reversed_plan["nodes"].reverse()
         self.assertEqual(first["commands_sha256"], module.dry_run(reversed_plan)["commands_sha256"])
+        self.assertEqual(first["geometry_qa"], module.dry_run(reversed_plan)["geometry_qa"])
         self.assertEqual(first["commands"][0]["command"], "LINE 0,0 2.5,0")
         self.assertTrue(first["executable"])
 
@@ -111,6 +112,37 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual([item["command"] for item in compiled["execution_steps"]],
                          ["LAYER NEW A-WALL", "CLAYER A-WALL", "LINE 0,0 2.5,0",
                           "CLAYER 0", "LINE 2.5,0 5,0"])
+
+    def test_geometry_qa_detects_reversed_duplicate_overlap_and_open_ends(self):
+        value = plan()
+        value["lines"].extend([
+            {"id": "wall-reversed", "start": "b", "end": "a", "layer": "0", "source": SOURCE},
+            {"id": "wall-overlap", "start": "a", "end": "c", "layer": "0", "source": SOURCE}])
+        value["circles"] = [
+            {"id": "circle-a", "center": "a", "radius": 1, "layer": "0", "source": SOURCE},
+            {"id": "circle-b", "center": "a", "radius": 1, "layer": "0", "source": SOURCE}]
+        report = module.dry_run(value)["geometry_qa"]
+        self.assertEqual(report["status"], "review_required")
+        self.assertIn(["wall-a", "wall-reversed"], report["duplicate_lines"])
+        self.assertIn(["wall-a", "wall-overlap"], report["overlapping_lines"])
+        self.assertEqual(report["duplicate_circles"], [["circle-a", "circle-b"]])
+        self.assertEqual(report["open_line_endpoints"], [])
+
+    def test_geometry_qa_separates_crossing_t_junction_and_open_chain(self):
+        value = plan()
+        value["nodes"].extend([
+            {"id": "d", "x": 1, "y": -1, "source": SOURCE},
+            {"id": "e", "x": 1, "y": 1, "source": SOURCE},
+            {"id": "f", "x": 1.25, "y": 1, "source": SOURCE},
+            {"id": "g", "x": 1.25, "y": 0, "source": SOURCE}])
+        value["lines"].extend([
+            {"id": "cross", "start": "d", "end": "e", "layer": "0", "source": SOURCE},
+            {"id": "tee", "start": "g", "end": "f", "layer": "0", "source": SOURCE}])
+        report = module.analyze_geometry(value)
+        self.assertIn(["cross", "wall-a"], report["interior_crossings"])
+        self.assertIn(["tee", "wall-a"], report["t_junctions"])
+        self.assertGreater(len(report["open_line_endpoints"]), 0)
+        self.assertEqual(report["scope"], "2d_lines_and_duplicate_circles_no_contour_semantics")
 
 
 if __name__ == "__main__":

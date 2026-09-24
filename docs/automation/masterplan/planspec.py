@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 from decimal import Decimal, InvalidOperation
+from itertools import combinations
 from typing import Any
 
 
@@ -184,6 +185,71 @@ def validate(plan: dict[str, Any]) -> None:
         raise PlanError(f"Dimension chain conflict: {ids}")
 
 
+def analyze_geometry(plan: dict[str, Any]) -> dict[str, Any]:
+    """Report exact 2D line conflicts without guessing architectural intent.
+
+    PlanSpec v1 has no wall/contour identity. Open endpoints and crossings are
+    review candidates, not proof of an erroneous wall or doorway.
+    """
+    _validate_basic(plan)
+    nodes = {node["id"]: (_number(node["x"], "node.x"),
+                          _number(node["y"], "node.y")) for node in plan["nodes"]}
+    segments = [(item["id"], nodes[item["start"]], nodes[item["end"]], item["layer"])
+                for item in sorted(plan["lines"], key=lambda item: item["id"])]
+
+    def orient(a: tuple[Decimal, Decimal], b: tuple[Decimal, Decimal],
+               c: tuple[Decimal, Decimal]) -> Decimal:
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    def interior(point: tuple[Decimal, Decimal], a: tuple[Decimal, Decimal],
+                 b: tuple[Decimal, Decimal]) -> bool:
+        return point != a and point != b and orient(a, b, point) == 0 and \
+            min(a[0], b[0]) <= point[0] <= max(a[0], b[0]) and \
+            min(a[1], b[1]) <= point[1] <= max(a[1], b[1])
+
+    duplicates: list[list[str]] = []
+    overlaps: list[list[str]] = []
+    crossings: list[list[str]] = []
+    t_junctions: list[list[str]] = []
+    for (first_id, a, b, _), (second_id, c, d, _) in combinations(segments, 2):
+        pair = [first_id, second_id]
+        if {a, b} == {c, d}:
+            duplicates.append(pair)
+            continue
+        ab_c, ab_d = orient(a, b, c), orient(a, b, d)
+        cd_a, cd_b = orient(c, d, a), orient(c, d, b)
+        if ab_c == ab_d == cd_a == cd_b == 0:
+            axis = 0 if a[0] != b[0] else 1
+            if max(min(a[axis], b[axis]), min(c[axis], d[axis])) < \
+                    min(max(a[axis], b[axis]), max(c[axis], d[axis])):
+                overlaps.append(pair)
+        elif ab_c * ab_d < 0 and cd_a * cd_b < 0:
+            crossings.append(pair)
+        elif any((interior(point, start, end) for point, start, end in
+                  ((a, c, d), (b, c, d), (c, a, b), (d, a, b)))):
+            t_junctions.append(pair)
+
+    degrees: dict[tuple[Decimal, Decimal], int] = {}
+    for _, a, b, _ in segments:
+        degrees[a] = degrees.get(a, 0) + 1
+        degrees[b] = degrees.get(b, 0) + 1
+    open_endpoints = [{"x": format(point[0], "f"), "y": format(point[1], "f")}
+                      for point, degree in sorted(degrees.items()) if degree == 1]
+    circles = [(item["id"], nodes[item["center"]],
+                _number(item["radius"], "circle.radius"))
+               for item in sorted(plan["circles"], key=lambda item: item["id"])]
+    circle_duplicates = [[first_id, second_id]
+                         for (first_id, a, radius_a), (second_id, b, radius_b)
+                         in combinations(circles, 2) if a == b and radius_a == radius_b]
+    issues = duplicates or overlaps or crossings or t_junctions or open_endpoints or circle_duplicates
+    return {"schema_version": "planspec-geometry-qa-1",
+            "status": "review_required" if issues else "clear",
+            "duplicate_lines": duplicates, "duplicate_circles": circle_duplicates,
+            "overlapping_lines": overlaps, "interior_crossings": crossings,
+            "t_junctions": t_junctions, "open_line_endpoints": open_endpoints,
+            "scope": "2d_lines_and_duplicate_circles_no_contour_semantics"}
+
+
 def _coordinate(value: Decimal) -> str:
     if abs(value) > Decimal("1000000"):
         raise PlanError("Coordinate exceeds compiler range")
@@ -198,6 +264,7 @@ def _coordinate(value: Decimal) -> str:
 def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
     dimension_graph = analyze_dimension_graph(plan)
+    geometry_qa = analyze_geometry(plan)
     nodes = {node["id"]: (_number(node["x"], "x"), _number(node["y"], "y"))
              for node in plan["nodes"]}
     origin = (_number(plan["origin"]["x"], "origin.x"),
@@ -238,6 +305,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     return {"schema_version": "planspec-dry-run-1", "commands": commands,
             "execution_steps": execution,
             "dimension_graph": dimension_graph,
+            "geometry_qa": geometry_qa,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
             "unsupported": unsupported, "executable": not unsupported,
             "note": "Nonzero layers require layer_assignment in a manifest verified for this build"}
