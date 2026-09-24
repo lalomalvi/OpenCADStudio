@@ -375,7 +375,9 @@ try {
             $axisFixtureName = [string]$sourceReport.planspec.fixture
             $axisFixtureValid = $axisFixtureName -in @(
                 'synthetic-wall-axis-span-v8.planspec.json',
-                'synthetic-wall-axis-span-vertical-v8.planspec.json')
+                'synthetic-wall-axis-span-vertical-v8.planspec.json',
+                'synthetic-wall-axis-endpoints-v9.planspec.json',
+                'synthetic-wall-aligned-endpoints-v9.planspec.json')
             if ($axisFixtureValid) {
                 $axisFixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $axisFixtureName)
                 $axisFixtureValid = (Get-FileHash -LiteralPath $axisFixturePath -Algorithm SHA256).Hash -eq
@@ -384,10 +386,18 @@ try {
             if ($axisFixtureValid) {
                 $axisFixture = Get-Content -LiteralPath $axisFixturePath -Raw | ConvertFrom-Json
                 $spec = $axisFixture.dimensions[0]
+                $expectedKind = if ($spec.axis -eq 'aligned') { 'Aligned' } else { 'Linear' }
+                $kindMatches = if ($axisFixture.schema_version -eq 'planspec-9') {
+                    $sourceReport.axis_dimension.kind -eq $expectedKind
+                } else {
+                    $null -eq $sourceReport.axis_dimension.kind -or
+                    $sourceReport.axis_dimension.kind -eq $expectedKind
+                }
                 $axisFixtureValid = $axisHandle -eq
                     [string]$sourceReport.planspec.handles_by_id.($spec.id) -and
                     [Math]::Abs([double]$sourceReport.axis_dimension.roundtrip_measurement -
-                                [double]$spec.value) -le 1e-6
+                                [double]$spec.value) -le 1e-6 -and
+                    $kindMatches
                 foreach ($field in @('name', 'text_height_m', 'arrow_size_m', 'gap_m',
                                      'scale', 'measurement_factor')) {
                     $fixtureValue = $axisFixture.dimension_style.$field
@@ -404,6 +414,7 @@ try {
                               ([double]$endNode.y + [double]$axisFixture.origin.y), 0.0)
                 $offset = [double]$axisFixture.dimension_placements[0].offset_m
                 $isHorizontal = $spec.axis -eq 'x'
+                $isAligned = $spec.axis -eq 'aligned'
                 $lineCoordinate = if ($isHorizontal) { $startPoint[1] + $offset } else {
                     $startPoint[0] - $offset }
                 $rotation = if ($isHorizontal) { 0.0 } else { [Math]::PI / 2.0 }
@@ -414,18 +425,34 @@ try {
                 $definition = if ($row) { Read-DxfPoint $row[9] } else { $null }
                 $observedRotation = if ($row) { Read-DxfNumber $row[11] } else { $null }
                 $observedLine = if ($definition) { $definition[$(if ($isHorizontal) { 1 } else { 0 })] } else { $null }
+                if ($isAligned) {
+                    $dx = $endPoint[0] - $startPoint[0]
+                    $dy = $endPoint[1] - $startPoint[1]
+                    $length = [Math]::Sqrt($dx * $dx + $dy * $dy)
+                    $normalX = -$dy / $length
+                    $normalY = $dx / $length
+                    $lineCoordinate = $offset
+                    $observedLine = if ($definition) {
+                        ($definition[0] - $startPoint[0]) * $normalX +
+                        ($definition[1] - $startPoint[1]) * $normalY
+                    } else { $null }
+                    # DIMALIGNED orientation is defined by DXF13/14; its DXF50
+                    # can be zero and is not an angular acceptance oracle.
+                    $rotation = $null
+                }
                 $axisDefinitionComparison += [ordered]@{
                     dimension = $axisHandle; expected_start = $startPoint; expected_end = $endPoint
                     autocad_start = $observedStart; autocad_end = $observedEnd
                     expected_line_coordinate = $lineCoordinate; autocad_line_coordinate = $observedLine
                     expected_rotation_rad = $rotation; autocad_rotation_rad = $observedRotation
+                    orientation_basis = if ($isAligned) { 'dxf_13_14' } else { 'dxf_50' }
                     matched = $row -and $row[1] -eq 'DIMENSION' -and
                         (Same-Point $startPoint $observedStart) -and
                         (Same-Point $endPoint $observedEnd) -and
                         $null -ne $observedLine -and
                         [Math]::Abs($lineCoordinate - $observedLine) -le 1e-6 -and
-                        $null -ne $observedRotation -and
-                        [Math]::Abs($rotation - $observedRotation) -le 1e-6
+                        ($isAligned -or ($null -ne $observedRotation -and
+                            [Math]::Abs($rotation - $observedRotation) -le 1e-6))
                 }
             }
             $axisStyle = $sourceReport.axis_dimension.dimension_style
@@ -571,7 +598,9 @@ try {
                                   'synthetic-wall-face-dimension-readable-v7.planspec.json',
                                   'synthetic-wall-face-dimension-vertical-v7.planspec.json',
                                   'synthetic-wall-axis-span-v8.planspec.json',
-                                  'synthetic-wall-axis-span-vertical-v8.planspec.json')) {
+                                  'synthetic-wall-axis-span-vertical-v8.planspec.json',
+                                  'synthetic-wall-axis-endpoints-v9.planspec.json',
+                                  'synthetic-wall-aligned-endpoints-v9.planspec.json')) {
             $geometrySourceValid = $false
         } else {
             $fixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $fixtureName)
@@ -629,7 +658,7 @@ try {
                     matched_1e_6 = [bool]$matched
                 }
             }
-            if ($fixture.schema_version -in @('planspec-3', 'planspec-7', 'planspec-8') -and
+            if ($fixture.schema_version -in @('planspec-3', 'planspec-7', 'planspec-8', 'planspec-9') -and
                 $fixture.walls.Count -eq 1 -and $fixture.openings.Count -eq 0) {
                 $wall = $fixture.walls[0]
                 $a = $nodes[$wall.start]
@@ -914,7 +943,9 @@ try {
               'synthetic-wall-join.planspec.json',
               'synthetic-two-door-wall-v8.planspec.json',
               'synthetic-wall-axis-span-v8.planspec.json',
-              'synthetic-wall-axis-span-vertical-v8.planspec.json')) {
+              'synthetic-wall-axis-span-vertical-v8.planspec.json',
+              'synthetic-wall-axis-endpoints-v9.planspec.json',
+              'synthetic-wall-aligned-endpoints-v9.planspec.json')) {
         $wallModelCountMatch = $declaredCount -eq $geometryComparison.Count
     }
     if ($richSourceReport.axis_dimension.handle) {

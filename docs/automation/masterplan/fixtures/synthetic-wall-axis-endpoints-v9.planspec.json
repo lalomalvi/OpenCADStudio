@@ -1,0 +1,168 @@
+{
+  "schema_version": "planspec-9",
+  "units": "m",
+  "origin": {
+    "x": 0,
+    "y": 0
+  },
+  "nodes": [
+    {
+      "id": "wall-start",
+      "x": 0,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "wall-end",
+      "x": 4,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "axis-a",
+      "x": 0,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "axis-b",
+      "x": 4,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "lines": [],
+  "circles": [],
+  "dimensions": [
+    {
+      "id": "axis-span",
+      "start": "axis-a",
+      "end": "axis-b",
+      "axis": "x",
+      "reference_type": "axis",
+      "value": 4,
+      "text": "4.00 m",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "topology": {
+    "contours": []
+  },
+  "walls": [
+    {
+      "id": "wall-1",
+      "start": "wall-start",
+      "end": "wall-end",
+      "thickness_m": 0.2,
+      "layer": "0",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "openings": [],
+  "joins": [],
+  "dimension_bindings": [
+    {
+      "dimension_id": "axis-span",
+      "start_ref": {
+        "wall_id": "wall-1",
+        "side": "axis",
+        "station_m": 0
+      },
+      "end_ref": {
+        "wall_id": "wall-1",
+        "side": "axis",
+        "station_m": 4
+      },
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "dimension_style": {
+    "name": "OCS_AXIS_METRIC",
+    "text_height_m": 0.035,
+    "arrow_size_m": 0.02,
+    "gap_m": 0.01,
+    "scale": 1,
+    "measurement_factor": 1
+  },
+  "dimension_placements": [
+    {
+      "dimension_id": "axis-span",
+      "offset_m": 0.5,
+      "layer": "0",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "obstacles": []
+}

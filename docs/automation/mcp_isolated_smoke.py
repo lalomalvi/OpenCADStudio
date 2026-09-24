@@ -88,7 +88,9 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                             "synthetic-window", "synthetic-wall-join",
                             "synthetic-two-door-wall-v8",
                             "synthetic-wall-axis-span-v8",
-                            "synthetic-wall-axis-span-vertical-v8"}:
+                            "synthetic-wall-axis-span-vertical-v8",
+                            "synthetic-wall-axis-endpoints-v9",
+                            "synthetic-wall-aligned-endpoints-v9"}:
         raise ValueError("Only versioned synthetic PlanSpec fixtures are allowed")
     fixtures = Path(__file__).resolve().parent / "masterplan/fixtures"
     fixture = fixtures / f"{plan_fixture}.planspec.json"
@@ -103,7 +105,9 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         14 if plan_fixture in {"synthetic-door-swing", "synthetic-window"} else \
         8 if plan_fixture in {"synthetic-wall-gap", "synthetic-wall-join"} else \
         5 if plan_fixture in {"synthetic-wall-axis-span-v8",
-                              "synthetic-wall-axis-span-vertical-v8"} else \
+                              "synthetic-wall-axis-span-vertical-v8",
+                              "synthetic-wall-axis-endpoints-v9",
+                              "synthetic-wall-aligned-endpoints-v9"} else \
         4 if plan_fixture in {"synthetic-contour", "synthetic-wall"} else 3
     if not compiled["executable"] or len(compiled["commands"]) != expected_count:
         raise ProtocolError("Synthetic PlanSpec has unsupported or missing commands")
@@ -207,18 +211,25 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             raise ProtocolError("PlanSpec entity layer differs from compiled layer")
         report["planspec"]["layers_by_id"] = expected_layers
         axis_fixture = plan_fixture in {"synthetic-wall-axis-span-v8",
-                                        "synthetic-wall-axis-span-vertical-v8"}
+                                        "synthetic-wall-axis-span-vertical-v8",
+                                        "synthetic-wall-axis-endpoints-v9",
+                                        "synthetic-wall-aligned-endpoints-v9"}
         if axis_fixture:
+            expected_measure = (5.0 if plan_fixture == "synthetic-wall-aligned-endpoints-v9" else
+                                4.0 if plan_fixture == "synthetic-wall-axis-endpoints-v9" else 3.0)
+            dimension_kind = ("Aligned" if plan_fixture ==
+                              "synthetic-wall-aligned-endpoints-v9" else "Linear")
             queried = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
                 "parameters": {"handle": handles["axis-span"], "detail": "full"}})
             entity = queried.get("entities", [{}])[0]
-            measured = (entity.get("properties", {}).get("Linear", {})
+            measured = (entity.get("properties", {}).get(dimension_kind, {})
                         .get("base", {}).get("actual_measurement"))
             if entity.get("type") != "Dimension" or not isinstance(measured, (int, float)) or \
-                    abs(measured - 3.0) > 1e-6:
+                    abs(measured - expected_measure) > 1e-6:
                 raise ProtocolError("Axis span native dimension differs from PlanSpec")
             report["axis_dimension"] = {"handle": handles["axis-span"],
                                          "actual_measurement": measured,
+                                         "kind": dimension_kind,
                                          "dimension_compilation": compiled["dimension_compilation"],
                                          "dimension_placement_qa": compiled["dimension_placement_qa"],
                                          "dimension_style": json.loads(fixture.read_text(encoding="utf-8"))
@@ -485,11 +496,11 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             reopened = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
                 "parameters": {"handle": handles["axis-span"], "detail": "full"}})
             restored = reopened.get("entities", [{}])[0]
-            reopened_measure = (restored.get("properties", {}).get("Linear", {})
+            reopened_measure = (restored.get("properties", {}).get(dimension_kind, {})
                                 .get("base", {}).get("actual_measurement"))
             if restored.get("type") != "Dimension" or \
                     not isinstance(reopened_measure, (int, float)) or \
-                    abs(reopened_measure - 3.0) > 1e-6:
+                    abs(reopened_measure - expected_measure) > 1e-6:
                 raise ProtocolError("Axis span dimension changed after DWG reopen")
             report["axis_dimension"]["roundtrip_measurement"] = reopened_measure
         if semantic:
@@ -566,7 +577,9 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         if plan_fixture in {"synthetic-wall", "synthetic-wall-gap", "synthetic-door-swing",
                             "synthetic-window", "synthetic-wall-join",
                             "synthetic-two-door-wall-v8", "synthetic-wall-axis-span-v8",
-                            "synthetic-wall-axis-span-vertical-v8"}:
+                            "synthetic-wall-axis-span-vertical-v8",
+                            "synthetic-wall-axis-endpoints-v9",
+                            "synthetic-wall-aligned-endpoints-v9"}:
             zoom = client.tool("ocs_execute", {"ocs_session_id": session,
                 "request": {"op": "run", "request_id": "l2-zoom-extents-" + uuid.uuid4().hex,
                             "cmd": "ZOOM EXTENTS"}})

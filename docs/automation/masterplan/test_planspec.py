@@ -744,6 +744,49 @@ class PlanSpecTests(unittest.TestCase):
             with self.assertRaises(module.PlanError):
                 module.validate(swapped)
 
+    def test_v9_axis_endpoints_and_aligned_wall_dimension(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        schema = json.loads((Path(__file__).with_name("planspec-9.schema.json"))
+                            .read_text(encoding="utf-8"))
+        self.assertEqual(schema["properties"]["schema_version"]["const"], "planspec-9")
+        self.assertIn("obstacles", schema["required"])
+        horizontal = json.loads((fixtures / "synthetic-wall-axis-endpoints-v9.planspec.json")
+                                .read_text(encoding="utf-8"))
+        aligned = json.loads((fixtures / "synthetic-wall-aligned-endpoints-v9.planspec.json")
+                             .read_text(encoding="utf-8"))
+        first = module.dry_run(horizontal)
+        self.assertTrue(first["executable"])
+        self.assertEqual(first["commands"][-1]["command"],
+                         "DIMLINEAR 0,0 4,0 2,0.5")
+        self.assertEqual(first["dimension_graph"]["status"], "satisfied")
+        second = module.dry_run(aligned)
+        self.assertTrue(second["executable"])
+        self.assertEqual(second["commands"][-1]["command"],
+                         "DIMALIGNED 0,0 3,4 1.1,2.3")
+        self.assertEqual(second["dimension_graph"]["direct_bound_aligned"],
+                         ["axis-span"])
+        self.assertEqual(second["dimension_graph"]["unresolved_aligned"], [])
+        self.assertEqual(second["source_bounds"]["unresolved"], [])
+        reverse = deepcopy(aligned)
+        reverse["walls"][0]["start"], reverse["walls"][0]["end"] = (
+            reverse["walls"][0]["end"], reverse["walls"][0]["start"])
+        reverse["dimensions"][0]["start"], reverse["dimensions"][0]["end"] = (
+            reverse["dimensions"][0]["end"], reverse["dimensions"][0]["start"])
+        self.assertEqual(module.dry_run(reverse)["commands"][-1]["command"],
+                         "DIMALIGNED 3,4 0,0 1.9,1.7")
+        old = deepcopy(horizontal)
+        old["schema_version"] = "planspec-8"
+        with self.assertRaisesRegex(module.PlanError, "outside the open wall span"):
+            module.validate(old)
+        inside = deepcopy(aligned)
+        inside["dimension_placements"][0]["offset_m"] = 0.05
+        self.assertEqual(module.dry_run(inside)["quality_blockers"],
+                         ["dimension_line_inside_wall_bounds"])
+        wrong = deepcopy(aligned)
+        next(node for node in wrong["nodes"] if node["id"] == "wall-end")["x"] = 3.1
+        with self.assertRaises(module.PlanError):
+            module.validate(wrong)
+
     def test_source_bounds_do_not_merge_uncompiled_annotation_into_architecture(self):
         value = plan()
         value["dimensions"] = [{"id": "length", "start": "a", "end": "c",
