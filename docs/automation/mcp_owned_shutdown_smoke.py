@@ -1,5 +1,6 @@
 """L2 owned lifecycle: launch and close only a fresh synthetic GUI profile."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -36,6 +37,18 @@ def main() -> None:
                              "started_at_unix_ms": selected.get("process_started_at_unix_ms")}
         if selected.get("executable_path") != str(server):
             raise ProtocolError("Owned GUI executable differs from tested build")
+        catalog = client.tool("ocs_read", {"ocs_session_id": session, "op": "commands",
+                                           "parameters": {"limit": 1000}})
+        available = set(catalog.get("commands", []))
+        requested = ("ARC", "PLINE", "DIMLINEAR", "DIMALIGNED", "BLOCK", "INSERT",
+                     "HATCH", "LAYER", "CLAYER", "PSETUPIN")
+        report["capability_census"] = {
+            "registered_count": catalog.get("count"),
+            "commands_sha256": hashlib.sha256("\n".join(sorted(available)).encode()).hexdigest(),
+            "candidates": {name: {"registered": name in available} for name in requested},
+        }
+        if catalog.get("count") != len(available):
+            raise ProtocolError("Command catalog was truncated")
         time.sleep(2.2)
         live = client.ready_session(session_id=session, wait_for_existing=True, timeout=10)
         if live.get("heartbeat_age_ms") is None or live["heartbeat_age_ms"] > 5000:

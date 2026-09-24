@@ -167,3 +167,13 @@ El L2 confirma ese subconjunto geométrico en el mismo motor y formato DWG; no d
 ### Prompt de continuidad desde el décimo corte
 
 Verifica SHA publicado del corte PlanSpec y árbol limpio. Continúa M3 con telemetría por fase y evidencia automática real, M4 con grafo de cotas y capacidades por build; censa M5 antes de implementar semántica. Luego M6 QA geométrica/persistencia y M7/M8 con gates de motor externo/casos reservados/revisión humana. Usa solo fixtures sintéticos hasta nueva autorización; no publiques datos privados ni envíes nada a `upstream`.
+
+## Undécimo corte censo M5 — 2026-09-23, en progreso
+
+El décimo corte se publicó en `origin/codex/mcp-planspec-l2` con commit `c20eb1ea` (verificar SHA completo remoto). La rama `codex/mcp-cad-capability-census` añadió consulta del catálogo en un perfil aislado, sin editar el DWG del usuario. El L2 final `target/mcp-isolated/20260923-212518-owned-3061d305/owned-report.json` pasó: catálogo completo de 634 nombres, SHA `19a7dd4115908496fe8d2d2f56859fadb7ddd3128de79cfa4be6cb20e4940243`, diez candidatos M5 registrados, cierre propio y 28 eventos RPC sanitizados. El primer L2 `20260923-212453-owned-f4a97cc4` también pasó pero consultó `PSETUP`, nombre inexistente; la corrección es `PSETUPIN`, importación de page setup. Ambos reportes se conservan.
+
+`M5-CENSO-CAPACIDADES.md` separa registro, compilación PlanSpec, ejecución MCP y persistencia/semántica. ARC, PLINE, DIMLINEAR/DIMALIGNED, BLOCK/INSERT, HATCH, LAYER/CLAYER y PSETUPIN están registrados; **ninguna** de sus semánticas M5 se acepta por ese hecho. Los fixtures de capacidad, reapertura y asociatividad siguen pendientes. M5 censo pasó solo para ese build.
+
+### Prompt de continuidad desde el undécimo corte
+
+Reverifica SHA remoto de `codex/mcp-cad-capability-census` y árbol limpio. Aplica la matriz del censo para probar capacidades M5 con fixtures sintéticos independientes, sin duplicar comandos existentes. Cierra M3/M4 y M6 con evidencia de ejecución, guardado y QA; prepara M7/M8 conforme a sus gates. Preserva el DWG y ensayos históricos; nada de archivos privados en Git ni push a upstream.
