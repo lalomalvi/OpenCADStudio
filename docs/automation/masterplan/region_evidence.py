@@ -86,7 +86,9 @@ def verify_regions(run_report: Path, manifest_path: Path) -> None:
     report = json.loads(run_report.read_text(encoding="utf-8"))
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     parent = report.get("capture_artifact")
-    if (manifest.get("schema_version") != "m6-region-evidence-1" or
+    if (report.get("status") != "passed" or
+            report.get("capture_overlay_policy") != "drawing_only" or
+            manifest.get("schema_version") != "m6-region-evidence-1" or
             manifest.get("parent") != parent or
             manifest.get("parent_report_sha256") != hashlib.sha256(run_report.read_bytes()).hexdigest() or
             manifest.get("human_review_status") != "pending" or
@@ -96,16 +98,36 @@ def verify_regions(run_report: Path, manifest_path: Path) -> None:
                 ("document_id", "geometry_revision", "camera_revision")}
     verify_ref(root, parent, **identity)
     children = manifest.get("regions")
-    if not isinstance(children, list) or not children:
+    if not isinstance(children, list) or not 1 <= len(children) <= 12:
         raise EvidenceError("Region manifest has no children")
-    for child in children:
-        label, rect, reference = child["label"], child["rect_px"], child["artifact"]
-        if (reference.get("path") != f"{manifest_path.parent.name}/{label}.png" or
-                reference.get("region") != f"pixel_crop:{label}" or
-                reference.get("width") != rect[2] - rect[0] or
-                reference.get("height") != rect[3] - rect[1]):
-            raise EvidenceError("Region child identity or size differs")
-        verify_ref(root, reference, **identity)
+    labels = set()
+    with Image.open(root / parent["path"]) as source:
+        source.load()
+        for child in children:
+            if not isinstance(child, dict) or set(child) != {"label", "rect_px", "artifact"}:
+                raise EvidenceError("Region child has unsupported fields")
+            label, rect, reference = child["label"], child["rect_px"], child["artifact"]
+            if not isinstance(label, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,48}", label) \
+                    or label in labels or not isinstance(rect, list) or len(rect) != 4 \
+                    or any(type(n) is not int for n in rect):
+                raise EvidenceError("Region label or rectangle differs")
+            left, top, right, bottom = rect
+            if not (0 <= left < right <= parent["width"] and
+                    0 <= top < bottom <= parent["height"]):
+                raise EvidenceError("Region rectangle escapes the parent")
+            labels.add(label)
+            if (reference.get("path") != f"{manifest_path.parent.name}/{label}.png" or
+                    reference.get("region") != f"pixel_crop:{label}" or
+                    reference.get("width") != right - left or
+                    reference.get("height") != bottom - top):
+                raise EvidenceError("Region child identity or size differs")
+            verify_ref(root, reference, **identity)
+            with Image.open(root / reference["path"]) as cropped:
+                cropped.load()
+                if (cropped.format != "PNG" or
+                        cropped.convert("RGBA").tobytes() !=
+                        source.crop(tuple(rect)).convert("RGBA").tobytes()):
+                    raise EvidenceError("Region pixels differ from the parent rectangle")
 
 
 def main() -> None:

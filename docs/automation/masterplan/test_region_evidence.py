@@ -54,6 +54,19 @@ class RegionEvidenceTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             build_regions(self.report, [{"label": "detail", "rect_px": [0, 0, 2, 2]}])
 
+    def test_rejects_child_with_valid_hash_but_wrong_parent_pixels(self):
+        build_regions(self.report, [{"label": "detail", "rect_px": [2, 1, 8, 7]}])
+        crop = self.root / "regions/detail.png"
+        Image.new("RGB", (6, 6), (200, 10, 10)).save(crop)
+        manifest_path = self.root / "regions/manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["regions"][0]["artifact"] = artifact_ref(
+            self.root, "regions/detail.png", document_id=5,
+            geometry_revision=8, camera_revision=2, region="pixel_crop:detail")
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(EvidenceError, "pixels differ"):
+            verify_regions(self.report, manifest_path)
+
 
 if __name__ == "__main__":
     unittest.main()

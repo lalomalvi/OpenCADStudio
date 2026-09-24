@@ -8,6 +8,6 @@ Ejemplo desde la raíz del worktree:
 python docs/automation/masterplan/region_evidence.py target/mcp-isolated/20260924-025336-21aa919f/report.json docs/automation/masterplan/fixtures/synthetic-door-region-crops.json
 ```
 
-El resultado se añade bajo `target/mcp-isolated/20260924-025336-21aa919f/regions/`, sin cambiar `report.json` ni `capture.png`. `manifest.json` enlaza hash del reporte, ArtifactRef original, rectángulos, ArtifactRef de cada recorte y estado `human_review_status=pending`. Si `regions/` ya existe, se detiene sin sobrescribir; para otra selección use `--output-name` distinto. La verificación en código es `verify_regions(report_path, manifest_path)`.
+El resultado se añade bajo `target/mcp-isolated/20260924-025336-21aa919f/regions/`, sin cambiar `report.json` ni `capture.png`. `manifest.json` enlaza hash del reporte, ArtifactRef original, rectángulos, ArtifactRef de cada recorte y estado `human_review_status=pending`. Si `regions/` ya existe, se detiene sin sobrescribir; para otra selección use `--output-name` distinto. `verify_regions(report_path, manifest_path)` comprueba los hashes/revisiones y que cada píxel del recorte coincide con el rectángulo declarado del PNG padre.
 
 Estos recortes sirven para revisión visual localizada. No prueban que un área en píxeles corresponda a una región CAD semántica, ni miden tipografía impresa, colisiones u opinión humana. La aceptación L5 requiere un oráculo y revisión separados.
