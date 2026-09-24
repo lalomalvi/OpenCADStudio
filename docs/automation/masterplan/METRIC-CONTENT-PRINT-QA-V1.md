@@ -9,3 +9,5 @@ El oráculo L2 verifica hash MCP/local, página física, siete componentes de gl
 Dependencias del arnés: Python con Pillow y pypdf, `pdftoppm`, `target/debug/OpenCADStudio.exe`. La sonda L4 requiere PowerShell 7 y AutoCAD Core Console 2025. Ejemplo: `python docs/automation/mcp_metric_content_smoke.py`; luego `pwsh -NoProfile -File docs/automation/mcp_autocad_probe.ps1 -SyntheticDwg <DWG sintético bajo target/mcp-isolated> -ExpectedInsunits 6 -ExpectedSourceReportSha256 <SHA-256 del reporte L2>`.
 
 Límite observado: el PDF dibuja los glifos vectorialmente, pero `pypdf.extract_text()` devuelve vacío en ambas escalas. Este gate no acredita texto seleccionable/buscable, CTB/plumas, grosores distintos, fuentes alternativas, cotas de un plano completo, impresora real ni L5 humana. El primer intento con estilo por defecto produjo una cifra de cota desproporcionada y solapada; el contrato exige el estilo explícito y conserva ese intento fallido como evidencia.
+
+La variante opcional `--pen-widths` prueba dos grosores explícitos bajo [METRIC-PEN-WIDTH-QA-V1.md](METRIC-PEN-WIDTH-QA-V1.md); la ejecución sin esa opción conserva este contrato y sus evidencias.

@@ -115,6 +115,8 @@ $lispText = @"
                 (ocs_value ocs_data 13) "|" (ocs_value ocs_data 14) "|"
                 (ocs_value ocs_data 52) "|" (ocs_value ocs_data 11) "|"
                 (ocs_value ocs_data 40) "|" (ocs_angle ocs_data 51)) ocs_file)
+      (write-line (strcat "PENWEIGHT|" (ocs_value ocs_data 5) "|"
+                          (ocs_value ocs_data 370)) ocs_file)
       (if (= (cdr (assoc 0 ocs_data)) "TEXT")
         (write-line (strcat "TEXTDATA|" (ocs_value ocs_data 5) "|"
                             (ocs_value ocs_data 1) "|"
@@ -280,6 +282,7 @@ try {
     $plotSourceValid = $null
     $plotContentComparison = @()
     $plotContentSourceValid = $null
+    $plotContentExpectedCount = 4
     $modelLayoutFields = @{}
     if ($censusDone) {
         $layoutLine = $lines | Where-Object { $_.StartsWith('MODELLAYOUT|') } |
@@ -355,9 +358,12 @@ try {
                 }
             }
         }
-        if ($sourceReport.schema_version -eq 'mcp-metric-content-l2-1' -and
+        if ($sourceReport.schema_version -in @('mcp-metric-content-l2-1',
+                'mcp-metric-pen-l2-1') -and
             $sourceReport.status -eq 'passed' -and
             $sourceReport.verified_dwg.sha256 -eq $before) {
+            $penFixture = $sourceReport.schema_version -eq 'mcp-metric-pen-l2-1'
+            if ($penFixture) { $plotContentExpectedCount = 6 }
             $expectedCommands = @('SETVAR INSUNITS 6','LINE 0,0 4,0','LINE 4,0 4,1',
                 'DIMSTYLE NEW OCS_PRINT_TEST',
                 'DIMSTYLE SET OCS_PRINT_TEST dimtxt 0.2',
@@ -370,6 +376,14 @@ try {
                 $sourceReport.reopened_entities.Count -eq 4 -and
                 ((@($sourceReport.commands) -join ';') -ceq ($expectedCommands -join ';')) -and
                 $sourceReport.creation.completed_commands -eq $expectedCommands.Count
+            if ($penFixture) {
+                $plotContentSourceValid = $plotContentSourceValid -and
+                    ((@($sourceReport.expected_pen_weight_100th_mm) -join ',') -eq '13,70') -and
+                    $sourceReport.results.'100'.raster_100dpi.thin_horizontal_px -eq 1 -and
+                    $sourceReport.results.'100'.raster_100dpi.thick_vertical_px -eq 3 -and
+                    $sourceReport.results.'50'.raster_100dpi.thin_horizontal_px -eq 1 -and
+                    $sourceReport.results.'50'.raster_100dpi.thick_vertical_px -eq 3
+            }
             $handles = @($sourceReport.handles)
             if ($plotContentSourceValid) {
                 for ($index = 0; $index -lt 2; $index++) {
@@ -385,6 +399,20 @@ try {
                         autocad_start=if ($row) { Read-DxfPoint $row[9] } else { $null };
                         autocad_end=if ($row) { Read-DxfPoint $row[16] } else { $null };
                         matched=[bool]$matched}
+                    if ($penFixture) {
+                        $penLine = $lines | Where-Object {
+                            $_.StartsWith("PENWEIGHT|$handle|") } | Select-Object -First 1
+                        $penParts = if ($penLine) { $penLine -split '\|' } else { @() }
+                        $want = @(13,70)[$index]
+                        $sourceWeight = $source.properties.common.line_weight.Value
+                        $penMatch = $penParts.Count -eq 3 -and
+                            $sourceWeight -eq $want -and
+                            (Read-DxfNumber $penParts[2]) -eq $want
+                        $plotContentComparison += [ordered]@{kind='pen_weight';handle=$handle;
+                            expected=$want;source=$sourceWeight;
+                            autocad=if ($penParts.Count -eq 3) { $penParts[2] } else { $null };
+                            matched=[bool]$penMatch}
+                    }
                 }
                 $textHandle = [string]$handles[2]
                 $textSource = $sourceReport.reopened_entities[2]
@@ -740,7 +768,8 @@ try {
     $plotContentMismatch = $plotContentSourceValid -eq $false -or
         @($plotContentComparison | Where-Object { -not $_.matched }).Count -gt 0 -or
         ($plotContentSourceValid -eq $true -and
-         ($plotContentComparison.Count -ne 4 -or $declaredCount -ne 4 -or
+         ($plotContentComparison.Count -ne $plotContentExpectedCount -or
+          $declaredCount -ne 4 -or
           $types.LINE -ne 2 -or $types.TEXT -ne 1 -or $types.DIMENSION -ne 1))
     $propertyComparison = @()
     if ($richSourceReport) {
@@ -1176,7 +1205,7 @@ try {
         $wallModelCountMatch = $declaredCount -eq ($geometryComparison.Count + 1)
     }
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-13'
+        schema_version = 'mcp-autocad-audit-l4-14'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion

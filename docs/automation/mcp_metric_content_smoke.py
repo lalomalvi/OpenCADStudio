@@ -44,6 +44,9 @@ def ink_components(path):
 def main():
     repo = Path(__file__).resolve().parents[2]
     server = Path(sys.argv[1] if len(sys.argv) > 1 else repo / 'target' / 'debug' / 'OpenCADStudio.exe').resolve()
+    pen_widths = len(sys.argv) > 2 and sys.argv[2] == '--pen-widths'
+    if len(sys.argv) > 2 and not pen_widths:
+        raise ValueError('Only --pen-widths is supported')
     if not server.is_file():
         raise FileNotFoundError(server)
     out = repo / 'target' / 'mcp-isolated' / (time.strftime('%Y%m%d-%H%M%S') + '-metric-content-' + uuid.uuid4().hex[:8])
@@ -53,7 +56,8 @@ def main():
     env = os.environ.copy(); env.update({'APPDATA':str(profile),'LOCALAPPDATA':str(profile),'TEMP':str(temporary),'TMP':str(temporary)})
     gui = subprocess.Popen([str(server),'--new-instance'],cwd=repo,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     client=Client(server,environment=env)
-    report={'schema_version':'mcp-metric-content-l2-1','status':'failed','output':str(out),
+    report={'schema_version':'mcp-metric-pen-l2-1' if pen_widths else
+            'mcp-metric-content-l2-1','status':'failed','output':str(out),
             'binary_sha256':hashlib.sha256(server.read_bytes()).hexdigest().upper()}
     try:
         client.handshake()
@@ -83,6 +87,11 @@ def main():
         if len(handles)!=4 or len(set(handles))!=4:
             raise ProtocolError('Expected two lines, text, and dimension')
         report['handles']=handles
+        if pen_widths:
+            for handle, weight in zip(handles[:2], (13, 70)):
+                request(client,session,'set_properties',collection='entities',handle=handle,
+                        updates=[{'path':'/common/line_weight','value':{'Value':weight}}])
+            report['expected_pen_weight_100th_mm']=[13,70]
         report['verified_dwg']=save_verified(client,session,out/'metric-content.dwg')
         request(client,session,'open',path=report['verified_dwg']['path'])
         report['reopened_entities']=[client.tool('ocs_read',{'ocs_session_id':session,
@@ -91,6 +100,10 @@ def main():
         if [entity['type'] for entity in report['reopened_entities']] != \
                 ['Line','Line','Text','Dimension']:
             raise ProtocolError('DWG reopen changed synthetic entity types')
+        if pen_widths and [entity['properties']['common']['line_weight']
+                           for entity in report['reopened_entities'][:2]] != \
+                [{'Value':13},{'Value':70}]:
+            raise ProtocolError('DWG reopen changed explicit pen weights')
         report['results']={}
         for denominator in (100,50):
             report['results'][str(denominator)]={}
@@ -139,11 +152,27 @@ def main():
                 'main_line_bbox':main[:4],'label_glyph_count':len(label),
                 'label_height_px':glyph_height,'dimension_glyph_count':len(dim),
                 'dimension_height_px':dim_height}
+            if pen_widths:
+                image=Image.open(out/f'metric-content-{denominator}.png').convert('L')
+                sample_x=main[0]+main[2]//3
+                sample_y=main[1]+main[3]//3
+                horizontal=sum(image.getpixel((sample_x,y))<120
+                    for y in range(main[1]+main[3]-8,main[1]+main[3]+2))
+                vertical=sum(image.getpixel((x,sample_y))<120
+                    for x in range(main[0]+main[2]-8,main[0]+main[2]+2))
+                if not (1<=horizontal<=2 and 3<=vertical<=4 and
+                        vertical>=horizontal+2):
+                    raise ProtocolError('Rendered pen hierarchy differs from DWG weights')
+                report['results'][str(denominator)]['raster_100dpi'].update({
+                    'thin_horizontal_px':horizontal,'thick_vertical_px':vertical})
         a=report['results']['100']['raster_100dpi']
         b=report['results']['50']['raster_100dpi']
         if abs(b['main_line_bbox'][2]/a['main_line_bbox'][2]-2)>0.05 or \
                 abs(b['label_height_px']/a['label_height_px']-2)>0.2:
             raise ProtocolError('Two scales did not preserve physical ratios')
+        if pen_widths and (a['thin_horizontal_px']!=b['thin_horizontal_px'] or
+                           a['thick_vertical_px']!=b['thick_vertical_px']):
+            raise ProtocolError('Fixed paper pen widths changed with model scale')
         for _ in range(3):
             if gui.poll() is not None: break
             try:
