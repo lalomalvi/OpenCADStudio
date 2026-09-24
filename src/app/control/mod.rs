@@ -128,6 +128,7 @@ struct Operation {
     geometry_revision: u64,
     started_at: std::time::Instant,
     capture_dispatched: bool,
+    capture_clean_frames: u8,
     result: Value,
 }
 fn failure(code: &str, error: impl ToString) -> Value {
@@ -690,6 +691,7 @@ impl OpenCADStudio {
             geometry_revision: tab.scene.geometry_epoch,
             started_at: std::time::Instant::now(),
             capture_dispatched: false,
+            capture_clean_frames: 0,
             result: json!({}),
         });
         self.control.routing = true;
@@ -914,6 +916,12 @@ impl OpenCADStudio {
                 self.main_window
                     .ok_or_else(|| failure("gui_required", "Capture requires a GUI window"))?;
                 string(req, "path")?;
+                if req["scope"] == "viewport" {
+                    if self.thumbnail_capture_clean {
+                        return Err(failure("capture_busy", "Thumbnail capture is in progress"));
+                    }
+                    self.control_capture_clean = true;
+                }
                 // Keep the operation pending until a viewport shader frame
                 // encodes this document/camera revision. The frame subscription
                 // drives the screenshot or a bounded failure.
@@ -1065,6 +1073,9 @@ impl OpenCADStudio {
             return;
         }
         let p = self.control.pending.take().unwrap();
+        if p.request["op"] == "capture" {
+            self.control_capture_clean = false;
+        }
         let previous = self.active_tab;
         if let Some(index) = p
             .document_id
@@ -1168,6 +1179,14 @@ impl OpenCADStudio {
             pending.request["op"] == "capture" && !pending.capture_dispatched)
     }
 
+    pub(super) fn control_capture_clean_frame(&mut self) {
+        if let Some(pending) = self.control.pending.as_mut().filter(|p|
+            p.request["op"] == "capture" && !p.capture_dispatched && self.control_capture_clean)
+        {
+            pending.capture_clean_frames = pending.capture_clean_frames.saturating_add(1);
+        }
+    }
+
     pub(super) fn control_capture_frame(&mut self) -> Task<Message> {
         let Some(pending) = self.control.pending.as_ref().filter(|p|
             p.request["op"] == "capture" && !p.capture_dispatched)
@@ -1200,6 +1219,11 @@ impl OpenCADStudio {
                 && camera == active.scene.camera_generation
                 && at >= pending.started_at)
         {
+            return Task::none();
+        }
+        // Two compositor frames with the clean view prevent capturing a frame
+        // from the interactive layout immediately before overlays were hidden.
+        if self.control_capture_clean && pending.capture_clean_frames < 2 {
             return Task::none();
         }
         let Some(window) = self.main_window else { return Task::none() };
@@ -1309,7 +1333,7 @@ impl OpenCADStudio {
                 end.saturating_duration_since(start).as_secs_f64() * 1000.0
             };
             Ok(
-                json!({"path":path,"scope":actual_scope,"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"geometry_revision":self.tabs[self.active_tab].scene.geometry_epoch,"camera_revision":self.tabs[self.active_tab].scene.camera_generation,"rendered_geometry_revision":rendered.unwrap().0,"rendered_camera_revision":rendered.unwrap().1,"render_fence":"shader_encoded_frame","timings":{"scope":"gui_process_monotonic","wait_for_encoded_frame_ms":elapsed_ms(requested_at,rendered_at),"frame_to_screenshot_callback_ms":elapsed_ms(rendered_at,screenshot_available_at),"encode_and_write_png_ms":elapsed_ms(screenshot_available_at,encoded_at),"total_ms":elapsed_ms(requested_at,encoded_at)}}),
+                json!({"path":path,"scope":actual_scope,"overlay_policy":if actual_scope == "viewport" && self.control_capture_clean { "drawing_only" } else { "interactive" },"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"geometry_revision":self.tabs[self.active_tab].scene.geometry_epoch,"camera_revision":self.tabs[self.active_tab].scene.camera_generation,"rendered_geometry_revision":rendered.unwrap().0,"rendered_camera_revision":rendered.unwrap().1,"render_fence":"shader_encoded_frame","timings":{"scope":"gui_process_monotonic","wait_for_encoded_frame_ms":elapsed_ms(requested_at,rendered_at),"frame_to_screenshot_callback_ms":elapsed_ms(rendered_at,screenshot_available_at),"encode_and_write_png_ms":elapsed_ms(screenshot_available_at,encoded_at),"total_ms":elapsed_ms(requested_at,encoded_at)}}),
             )
         })();
         match result {

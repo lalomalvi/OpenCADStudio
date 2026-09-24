@@ -1547,6 +1547,10 @@ fn call_tool(
                 let _ = std::fs::remove_file(&path);
                 return Err("Capture scope differs from requested scope".into());
             }
+            if scope == "viewport" && metadata["overlay_policy"] != "drawing_only" {
+                let _ = std::fs::remove_file(&path);
+                return Err("Capture viewport includes interactive overlays".into());
+            }
             for key in ["document_id", "geometry_revision", "camera_revision"] {
                 if arguments.get(key).is_some() && arguments[key] != metadata[key] {
                     let _ = std::fs::remove_file(&path);
@@ -1567,6 +1571,7 @@ fn call_tool(
                 "geometry_revision":metadata["geometry_revision"],
                 "camera_revision":metadata["camera_revision"],
                 "width":metadata["width"],"height":metadata["height"],"scope":metadata["scope"],
+                "overlay_policy":metadata["overlay_policy"],
                 "rendered_geometry_revision":metadata["rendered_geometry_revision"],
                 "rendered_camera_revision":metadata["rendered_camera_revision"],
                 "render_fence":metadata["render_fence"],

@@ -189,7 +189,8 @@ class ClientTests(unittest.TestCase):
                                       "geometry_revision": 3, "camera_revision": 4,
                                       "rendered_geometry_revision": 3,
                                       "rendered_camera_revision": 4,
-                                      "render_fence": "shader_encoded_frame", "scope": "viewport"},
+                                      "render_fence": "shader_encoded_frame", "scope": "viewport",
+                                      "overlay_policy": "drawing_only"},
                 "content": [{"type": "image", "mimeType": "image/png",
                              "data": base64.b64encode(b"\x89PNG\r\n\x1a\nfixture").decode()}]}
         with tempfile.TemporaryDirectory() as directory:
@@ -203,6 +204,12 @@ class ClientTests(unittest.TestCase):
                                                     geometry_revision=3, camera_revision=4)
                 self.assertEqual(metadata["geometry_revision"], 3)
                 self.assertEqual(path.read_bytes(), b"\x89PNG\r\n\x1a\nfixture")
+                fake["structuredContent"]["overlay_policy"] = "interactive"
+                rejected = (Path(directory) / "rejected.png").resolve()
+                with self.assertRaisesRegex(ProtocolError, "interactive overlays"):
+                    client.capture_artifact("s1", rejected, document_id=1,
+                                            geometry_revision=3, camera_revision=4)
+                self.assertFalse(rejected.exists())
 
     def test_capture_artifact_rejects_window_fallback(self):
         client = self.client()

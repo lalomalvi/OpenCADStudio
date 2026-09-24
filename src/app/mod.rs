@@ -822,6 +822,8 @@ pub(super) struct OpenCADStudio {
     main_window: Option<window::Id>,
     /// Hides drawing UI overlays for one thumbnail capture frame.
     thumbnail_capture_clean: bool,
+    /// Hides overlays while an MCP viewport screenshot waits for clean frames.
+    control_capture_clean: bool,
     #[cfg(not(target_arch = "wasm32"))]
     pending_native_thumbnail_save: Option<PendingNativeThumbnailSave>,
     #[cfg(target_arch = "wasm32")]
@@ -2059,6 +2061,7 @@ pub enum Message {
     ControlTaskDone(String),
     ControlScreenshot(String, Option<iced::window::Screenshot>),
     ControlCaptureFrame,
+    ControlCaptureCleanFrame,
     ControlToggle,
     Tick(Instant),
     /// Periodic drain of plugin-to-host requests that arrived outside a host
@@ -4085,6 +4088,7 @@ impl OpenCADStudio {
             pending_click_snap: None,
             main_window: None,
             thumbnail_capture_clean: false,
+            control_capture_clean: false,
             #[cfg(not(target_arch = "wasm32"))]
             pending_native_thumbnail_save: None,
             #[cfg(target_arch = "wasm32")]

@@ -294,6 +294,8 @@ class Client:
             raise ProtocolError("Capture identity or render revision differs")
         if metadata.get("scope") != "viewport":
             raise ProtocolError("Capture scope differs from requested viewport")
+        if metadata.get("overlay_policy") != "drawing_only":
+            raise ProtocolError("Capture viewport includes interactive overlays")
         images = [item for item in result.get("content", [])
                   if item.get("type") == "image" and item.get("mimeType") == "image/png"]
         if len(images) != 1 or not isinstance(images[0].get("data"), str):
@@ -310,7 +312,7 @@ class Client:
             os.fsync(output.fileno())
         return {key: metadata.get(key) for key in
                 ("document_id", "revision", "geometry_revision", "camera_revision",
-                 "width", "height", "scope", "rendered_geometry_revision",
+                 "width", "height", "scope", "overlay_policy", "rendered_geometry_revision",
                  "rendered_camera_revision", "render_fence", "timings")}
 
     @staticmethod

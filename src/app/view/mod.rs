@@ -220,7 +220,7 @@ impl OpenCADStudio {
         crate::entities::common::set_unit_context(
             crate::entities::common::UnitContext::from_header(&tab.scene.document.header),
         );
-        let thumbnail_capture_clean = self.thumbnail_capture_clean;
+        let thumbnail_capture_clean = self.thumbnail_capture_clean || self.control_capture_clean;
         let theme_text = self.active_theme.palette().background.base.text;
         let viewcube_text_color = [theme_text.r, theme_text.g, theme_text.b, theme_text.a];
         let is_paper = tab.scene.current_layout != "Model";
@@ -2542,6 +2542,11 @@ impl OpenCADStudio {
         } else {
             Subscription::none()
         };
+        let control_capture_clean = if self.control_capture_clean && self.capture_awaiting_render() {
+            window::frames().map(|_| Message::ControlCaptureCleanFrame)
+        } else {
+            Subscription::none()
+        };
         // Blink the MText preview caret while the editor is open.
         let caret_blink = if self.mtext_editor.is_some() {
             iced::time::every(std::time::Duration::from_millis(530))
@@ -2765,6 +2770,7 @@ impl OpenCADStudio {
             gpu_probe,
             thumbnail_capture,
             control_capture,
+            control_capture_clean,
             caret_blink,
             web_fonts,
             autosave,

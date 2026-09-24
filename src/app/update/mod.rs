@@ -552,6 +552,10 @@ impl OpenCADStudio {
                 Task::none()
             }
             Message::ControlCaptureFrame => self.control_capture_frame(),
+            Message::ControlCaptureCleanFrame => {
+                self.control_capture_clean_frame();
+                Task::none()
+            }
             Message::ControlToggle => {
                 self.control.enabled = !self.control.enabled;
                 Task::none()

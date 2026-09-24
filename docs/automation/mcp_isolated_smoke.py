@@ -518,6 +518,20 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                     abs(restored_assoc_measure - 3.5) > 1e-6):
                 raise ProtocolError("Edited associative dimension changed after DWG reopen")
             report["association_fixture"]["roundtrip_measurement"] = restored_assoc_measure
+        if plan_fixture in {"synthetic-wall", "synthetic-wall-gap"}:
+            zoom = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "run", "request_id": "l2-zoom-extents-" + uuid.uuid4().hex,
+                            "cmd": "ZOOM EXTENTS"}})
+            report["capture_framing"] = {"command": "ZOOM EXTENTS",
+                                         "status": zoom.get("status")}
+            if zoom.get("status") != "completed":
+                raise ProtocolError("Synthetic wall capture could not fit extents")
+            # ZOOM updates the drawing view and marks the working tab dirty.
+            # Save that isolated tab again so shutdown never discards it.
+            client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "save", "request_id": "l2-framed-save-" + uuid.uuid4().hex,
+                            "path": str(output / "synthetic-session.dwg"),
+                            "target_format": "dwg", "target_version": "2018"}})
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         capture_path = (output / "capture.png").resolve()
         capture_checkpoint = (output / "capture-budget.jsonl").resolve()
@@ -557,6 +571,9 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                                         capture_checkpoint.read_bytes()).hexdigest().upper()}
         if capture.get("timings", {}).get("scope") != "gui_process_monotonic":
             raise ProtocolError("Synthetic capture omitted GUI phase timings")
+        if capture.get("overlay_policy") != "drawing_only":
+            raise ProtocolError("Synthetic viewport capture contains interactive overlays")
+        report["capture_overlay_policy"] = capture["overlay_policy"]
         report["capture_engine_timings_ms"] = capture["timings"]
         reference = artifact_ref(output, capture_path.name,
                                  document_id=capture["document_id"],
