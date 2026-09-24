@@ -221,6 +221,9 @@ def main() -> None:
             ("measurement_compiler_sha256" in frozen and
              _file_sha(Path(__file__).with_name("measurement_grid.py")) !=
              frozen["measurement_compiler_sha256"]) or \
+            ("axis_chain_compiler_sha256" in frozen and
+             _file_sha(Path(__file__).with_name("measurement_axis_chain.py")) !=
+             frozen["axis_chain_compiler_sha256"]) or \
             ("stacked_span_compiler_sha256" in frozen and
              _file_sha(Path(__file__).with_name("measurement_stacked_span.py")) !=
              frozen["stacked_span_compiler_sha256"]) or \
@@ -303,6 +306,14 @@ def main() -> None:
         if reuse.get("events_sha256") != _file_sha(events) or \
                 reuse.get("source_report_sha256", "") == "":
             raise CliTrialError("Reused model evidence is not bound")
+        if "source_run" in reuse:
+            source_run = reuse["source_run"]
+            if not isinstance(source_run, str) or \
+                    Path(source_run).name != source_run or source_run == root.name or \
+                    _file_sha(root.parent / source_run / "events.jsonl") != reuse["events_sha256"] or \
+                    _file_sha(root.parent / source_run / "report.json") != \
+                    reuse["source_report_sha256"]:
+                raise CliTrialError("Reused source run differs")
     else:
         reuse = None
     profile, temporary, cad_root = (root / name for name in ("profile", "temp", "cad"))

@@ -40,6 +40,18 @@ def assess(run: Path, image_path: Path, external_path: Path) -> dict:
     cad_path = cad_files[0]
     cad = verify_owned_cad_evidence(cad_path)
     handles = cad["handles_by_id"]
+    if frozen.get("style_variant") == "legible_25cm_v1":
+        reuse = report.get("model_reuse")
+        source_run = run.parent / "apartment-bottom-chain-v1"
+        if not isinstance(reuse, dict) or \
+                reuse.get("source_run") != source_run.name or \
+                reuse.get("events_sha256") != _file_sha(source_run / "events.jsonl") or \
+                reuse.get("source_report_sha256") != _file_sha(source_run / "report.json") or \
+                frozen.get("source_model_events_sha256") != reuse["events_sha256"] or \
+                frozen.get("source_model_report_sha256") != reuse["source_report_sha256"] or \
+                frozen.get("axis_chain_compiler_sha256") != _file_sha(
+                    Path(__file__).with_name("measurement_axis_chain.py")):
+            raise BottomChainL4Error("Styled CAD model reuse differs")
     if frozen.get("shape") != "bottom_axis_chain_six_v1" or \
             frozen.get("acceptance_m7") is not False or \
             frozen.get("source_sha256") != _file_sha(image_path) or \

@@ -41,6 +41,17 @@ class AxisChainTests(unittest.TestCase):
             compile_bottom_chain(bad, frozen=FROZEN,
                                  image_width=1000, image_height=500)
 
+    def test_large_text_style_keeps_geometry_and_compiles(self):
+        original = compile_bottom_chain(observation(), frozen=FROZEN,
+                                        image_width=1000, image_height=500)
+        variant = compile_bottom_chain(
+            observation(), frozen={**FROZEN, "style_variant": "legible_25cm_v1"},
+            image_width=1000, image_height=500)
+        self.assertEqual(variant["nodes"], original["nodes"])
+        self.assertEqual(variant["dimensions"], original["dimensions"])
+        self.assertEqual(variant["dimension_style"]["text_height_m"], 0.25)
+        self.assertTrue(dry_run(variant)["executable"])
+
 
 if __name__ == "__main__":
     unittest.main()
