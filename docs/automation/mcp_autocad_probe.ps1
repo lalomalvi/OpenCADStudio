@@ -50,6 +50,11 @@ function Same-Point($first, $second) {
     return $true
 }
 
+function Wall-Point($a, $ux, $uy, $nx, $ny, $distance, $side) {
+    return ,@(($a[0] + $ux * $distance + $nx * $side),
+              ($a[1] + $uy * $distance + $ny * $side), 0.0)
+}
+
 $runId = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-autocad-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $output = Join-Path $repo (Join-Path 'target\mcp-external' $runId)
 New-Item -ItemType Directory -Path $output -ErrorAction Stop | Out-Null
@@ -312,7 +317,8 @@ try {
         if ($fixtureName -notin @('synthetic-room.planspec.json',
                                   'synthetic-layer.planspec.json',
                                   'synthetic-contour.planspec.json',
-                                  'synthetic-wall.planspec.json')) {
+                                  'synthetic-wall.planspec.json',
+                                  'synthetic-wall-gap.planspec.json')) {
             $geometrySourceValid = $false
         } else {
             $fixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $fixtureName)
@@ -409,10 +415,91 @@ try {
                     }
                 }
             }
+            if ($fixture.schema_version -eq 'planspec-3' -and
+                $fixture.walls.Count -eq 1 -and $fixture.openings.Count -gt 0 -and
+                @($fixture.openings | Where-Object { $_.kind -ne 'clear' }).Count -eq 0) {
+                $wall = $fixture.walls[0]
+                $a = $nodes[$wall.start]
+                $b = $nodes[$wall.end]
+                $dx = $b[0] - $a[0]
+                $dy = $b[1] - $a[1]
+                $length = [Math]::Sqrt($dx * $dx + $dy * $dy)
+                $ux = $dx / $length
+                $uy = $dy / $length
+                $half = [double]$wall.thickness_m / 2.0
+                $nx = -$uy * $half
+                $ny = $ux * $half
+                $intervals = @($fixture.openings | Sort-Object { [double]$_.offset_m }, id)
+                $spans = @()
+                $previous = 0.0
+                foreach ($opening in $intervals) {
+                    $start = [double]$opening.offset_m
+                    $spans += ,@($previous, $start)
+                    $previous = $start + [double]$opening.width_m
+                }
+                $spans += ,@($previous, $length)
+                $expectedSegments = @()
+                foreach ($sideSpec in @(@(1, 'left'), @(-1, 'right'))) {
+                    $side = [int]$sideSpec[0]
+                    $sideName = [string]$sideSpec[1]
+                    for ($index = 0; $index -lt $spans.Count; $index++) {
+                        $partId = '{0}__{1}_span_{2}' -f $wall.id, $sideName, $index
+                        $expectedSegments += [ordered]@{
+                            part_id = $partId; source_id = $wall.id
+                            start = Wall-Point $a $ux $uy $nx $ny $spans[$index][0] $side
+                            end = Wall-Point $a $ux $uy $nx $ny $spans[$index][1] $side
+                        }
+                    }
+                }
+                foreach ($cap in @(@('start_cap', 0.0), @('end_cap', $length))) {
+                    $expectedSegments += [ordered]@{
+                        part_id = '{0}__{1}' -f $wall.id, $cap[0]
+                        source_id = $wall.id
+                        start = Wall-Point $a $ux $uy $nx $ny $cap[1] 1
+                        end = Wall-Point $a $ux $uy $nx $ny $cap[1] -1
+                    }
+                }
+                foreach ($opening in $intervals) {
+                    $start = [double]$opening.offset_m
+                    foreach ($jamb in @(@('jamb_start', $start),
+                                        @('jamb_end', ($start + [double]$opening.width_m)))) {
+                        $expectedSegments += [ordered]@{
+                            part_id = '{0}__{1}' -f $opening.id, $jamb[0]
+                            source_id = $opening.id
+                            start = Wall-Point $a $ux $uy $nx $ny $jamb[1] 1
+                            end = Wall-Point $a $ux $uy $nx $ny $jamb[1] -1
+                        }
+                    }
+                }
+                foreach ($segment in $expectedSegments) {
+                    $partId = $segment.part_id
+                    $handle = [string]$richSourceReport.planspec.handles_by_id.($partId)
+                    $row = if ($handle) { $entityByHandle[$handle] } else { $null }
+                    $observedStart = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                    $observedEnd = if ($row) { Read-DxfPoint $row[16] } else { $null }
+                    $matched = $row -and $row[1] -eq 'LINE' -and $row[3] -eq $wall.layer -and
+                        (((Same-Point $segment.start $observedStart) -and
+                          (Same-Point $segment.end $observedEnd)) -or
+                         ((Same-Point $segment.start $observedEnd) -and
+                          (Same-Point $segment.end $observedStart)))
+                    $geometryComparison += [ordered]@{
+                        planspec_id = $partId; source_id = $segment.source_id
+                        kind = 'WALL_GAP_EDGE'; handle = $handle; expected_layer = $wall.layer
+                        expected_start = $segment.start; expected_end = $segment.end
+                        autocad_start = $observedStart; autocad_end = $observedEnd
+                        matched_1e_6 = [bool]$matched
+                    }
+                }
+            }
         }
     }
     $geometryMismatch = ($geometrySourceValid -eq $false) -or
         @($geometryComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
+    $wallModelCountMatch = $null
+    if ($richSourceReport -and $richSourceReport.planspec.fixture -in
+            @('synthetic-wall.planspec.json', 'synthetic-wall-gap.planspec.json')) {
+        $wallModelCountMatch = $declaredCount -eq $geometryComparison.Count
+    }
     $report = [ordered]@{
         schema_version = 'mcp-autocad-audit-l4-5'
         run_id = $runId
@@ -437,9 +524,11 @@ try {
         property_comparison = $propertyComparison
         geometry_source_valid = $geometrySourceValid
         source_report_match = $sourceReportMatch
+        wall_model_count_match = $wallModelCountMatch
         geometry_comparison = $geometryComparison
         semantic_verdict = if ($sourceReportMatch -eq $false -or $dimensionMismatch -or
-                              $propertyMismatch -or $geometryMismatch) {
+                              $propertyMismatch -or $geometryMismatch -or
+                              $wallModelCountMatch -eq $false) {
             'mismatch'
         } elseif ($expected.Count -gt 0 -or $propertyComparison.Count -gt 0 -or
                   $geometryComparison.Count -gt 0) {
@@ -456,7 +545,8 @@ try {
                       ($null -ne $ExpectedInsunits -and $insunits -ne $ExpectedInsunits)) {
             'failed'
         } elseif ($sourceReportMatch -eq $false -or $dimensionMismatch -or
-                  $propertyMismatch -or $geometryMismatch) { 'semantic_mismatch'
+                  $propertyMismatch -or $geometryMismatch -or
+                  $wallModelCountMatch -eq $false) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {
             'partial_abnormal_exit'
         } else { 'audit_and_census_passed' }

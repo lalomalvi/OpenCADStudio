@@ -175,7 +175,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
             ids.add(name)
             if not isinstance(opening["wall_id"], str) or opening["wall_id"] not in walls or \
                     not isinstance(opening["kind"], str) or \
-                    opening["kind"] not in {"door", "window"} or \
+                    opening["kind"] not in {"clear", "door", "window"} or \
                     _number(opening["offset_m"], "opening.offset_m") <= 0 or \
                     _number(opening["width_m"], "opening.width_m") <= 0:
                 raise PlanError("Opening reference, kind or dimensions are invalid")
@@ -454,6 +454,55 @@ def _single_wall_commands(wall: dict, nodes: dict, origin: tuple[Decimal, Decima
     return commands
 
 
+def _clear_opening_wall_commands(wall: dict, openings: list[dict], nodes: dict,
+                                 origin: tuple[Decimal, Decimal]) -> list[dict]:
+    """Compile one straight wall with explicit clear gaps and jambs, no symbols."""
+    a, b = nodes[wall["start"]], nodes[wall["end"]]
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = (dx * dx + dy * dy).sqrt()
+    ux, uy = dx / length, dy / length
+    half = _number(wall["thickness_m"], "wall.thickness_m") / 2
+    intervals = sorted(((_number(item["offset_m"], "opening.offset_m"),
+                         _number(item["offset_m"], "opening.offset_m") +
+                         _number(item["width_m"], "opening.width_m"), item["id"])
+                        for item in openings), key=lambda item: (item[0], item[2]))
+
+    def point(distance: Decimal, side: int) -> tuple[Decimal, Decimal]:
+        return (a[0] + ux * distance - uy * half * side,
+                a[1] + uy * distance + ux * half * side)
+
+    def line(part_id: str, source_id: str, part: str,
+             start: tuple[Decimal, Decimal], end: tuple[Decimal, Decimal]) -> dict:
+        coords = [*(_coordinate(start[axis] + origin[axis]) for axis in (0, 1)),
+                  *(_coordinate(end[axis] + origin[axis]) for axis in (0, 1))]
+        if coords[:2] == coords[2:]:
+            raise PlanError(f"Wall {wall['id']} gap outline collapses at compiler precision")
+        return {"planspec_id": part_id, "source_id": source_id, "part": part,
+                "command": f"LINE {coords[0]},{coords[1]} {coords[2]},{coords[3]}",
+                "layer": wall["layer"]}
+
+    spans = []
+    previous = Decimal(0)
+    for start, end, _ in intervals:
+        spans.append((previous, start))
+        previous = end
+    spans.append((previous, length))
+    commands = []
+    for side, side_name in ((1, "left"), (-1, "right")):
+        for index, (start, end) in enumerate(spans):
+            part = f"{side_name}_span_{index}"
+            commands.append(line(f"{wall['id']}__{part}", wall["id"], part,
+                                 point(start, side), point(end, side)))
+    for name, distance in (("start_cap", Decimal(0)), ("end_cap", length)):
+        commands.append(line(f"{wall['id']}__{name}", wall["id"], name,
+                             point(distance, 1), point(distance, -1)))
+    for start, end, opening_id in intervals:
+        for name, distance in (("jamb_start", start), ("jamb_end", end)):
+            commands.append(line(f"{opening_id}__{name}", opening_id, name,
+                                 point(distance, 1), point(distance, -1)))
+    return commands
+
+
 def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
     dimension_graph = analyze_dimension_graph(plan)
@@ -480,10 +529,19 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         commands.append({"planspec_id": circle["id"], "command": f"CIRCLE {x},{y} {radius}",
                          "layer": circle["layer"]})
     wall_parts = 0
-    if plan["schema_version"] == "planspec-3" and len(plan["walls"]) == 1 and \
-            not plan["openings"]:
-        commands.extend(_single_wall_commands(plan["walls"][0], nodes, origin))
-        wall_parts = 4
+    wall_status = "not_applicable"
+    if plan["schema_version"] == "planspec-3" and plan["walls"]:
+        wall_status = "unsupported"
+        if len(plan["walls"]) == 1 and not plan["openings"]:
+            commands.extend(_single_wall_commands(plan["walls"][0], nodes, origin))
+            wall_parts = 4
+            wall_status = "compiled_single_unopened_wall"
+        elif len(plan["walls"]) == 1 and \
+                all(opening["kind"] == "clear" for opening in plan["openings"]):
+            commands.extend(_clear_opening_wall_commands(
+                plan["walls"][0], plan["openings"], nodes, origin))
+            wall_parts = 4 * (len(plan["openings"]) + 1)
+            wall_status = "compiled_single_clear_opening_wall"
     if len({item["planspec_id"] for item in commands}) != len(commands):
         raise PlanError("Generated wall part ID collides with PlanSpec geometry ID")
     layers = sorted({item["layer"] for item in commands} - {"0"})
@@ -503,10 +561,10 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     missing = set()
     if plan["dimensions"]:
         missing.add("native_dimension")
-    if plan["schema_version"] == "planspec-3" and plan["walls"] and \
-            (len(plan["walls"]) != 1 or plan["openings"]):
+    if wall_status == "unsupported":
         missing.add("wall_compilation")
-    if plan["schema_version"] == "planspec-3" and plan["openings"]:
+    if plan["schema_version"] == "planspec-3" and any(
+            opening["kind"] != "clear" for opening in plan["openings"]):
         missing.add("opening_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")
@@ -518,10 +576,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             "dimension_graph": dimension_graph,
             "topology": topology,
             "architecture": architecture,
-            "wall_compilation": {"status": "compiled_single_unopened_wall" if wall_parts else
-                                 "unsupported" if plan["schema_version"] == "planspec-3"
-                                 and plan["walls"] else "not_applicable",
-                                 "generated_parts": wall_parts},
+            "wall_compilation": {"status": wall_status, "generated_parts": wall_parts},
             "geometry_qa": geometry_qa,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
             "unsupported": unsupported, "executable": not unsupported,

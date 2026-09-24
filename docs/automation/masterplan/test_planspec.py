@@ -246,6 +246,31 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual([item["source_id"] for item in result["commands"]], ["wall-1"] * 4)
         self.assertEqual(len({item["planspec_id"] for item in result["commands"]}), 4)
 
+    def test_v3_clear_opening_compiles_gap_and_jambs_without_door_symbol(self):
+        value = plan()
+        value["schema_version"] = "planspec-3"
+        value["lines"] = []
+        value["topology"] = {"contours": []}
+        value["walls"] = [{"id": "wall-1", "start": "a", "end": "c",
+                           "thickness_m": 0.2, "layer": "0", "source": SOURCE}]
+        value["openings"] = [{"id": "gap-1", "wall_id": "wall-1", "offset_m": 1,
+                              "width_m": 0.9, "kind": "clear", "source": SOURCE}]
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_clear_opening_wall", "generated_parts": 8})
+        self.assertEqual([item["command"] for item in result["commands"]], [
+            "LINE 0,0.1 1,0.1", "LINE 1.9,0.1 5,0.1",
+            "LINE 0,-0.1 1,-0.1", "LINE 1.9,-0.1 5,-0.1",
+            "LINE 0,0.1 0,-0.1", "LINE 5,0.1 5,-0.1",
+            "LINE 1,0.1 1,-0.1", "LINE 1.9,0.1 1.9,-0.1"])
+        self.assertEqual([item["source_id"] for item in result["commands"]][-2:],
+                         ["gap-1", "gap-1"])
+        value["openings"][0]["kind"] = "door"
+        self.assertFalse(module.dry_run(value)["executable"])
+        self.assertEqual(module.dry_run(value)["unsupported"],
+                         ["opening_compilation", "wall_compilation"])
+
 
 if __name__ == "__main__":
     unittest.main()

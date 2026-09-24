@@ -82,7 +82,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
               "binary_sha256": hashlib.sha256(server.read_bytes()).hexdigest().upper(),
               "output": str(output)}
     if plan_fixture not in {"synthetic-room", "synthetic-layer", "synthetic-contour",
-                            "synthetic-wall"}:
+                            "synthetic-wall", "synthetic-wall-gap"}:
         raise ValueError("Only versioned synthetic PlanSpec fixtures are allowed")
     fixtures = Path(__file__).resolve().parent / "masterplan/fixtures"
     fixture = fixtures / f"{plan_fixture}.planspec.json"
@@ -93,7 +93,8 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             raise ProtocolError("Layer capability manifest belongs to another build")
     compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")),
                        capabilities=set(manifest["verified_capabilities"]) if manifest else None)
-    expected_count = 4 if plan_fixture in {"synthetic-contour", "synthetic-wall"} else 3
+    expected_count = 8 if plan_fixture == "synthetic-wall-gap" else \
+        4 if plan_fixture in {"synthetic-contour", "synthetic-wall"} else 3
     if not compiled["executable"] or len(compiled["commands"]) != expected_count:
         raise ProtocolError("Synthetic PlanSpec has unsupported or missing commands")
     report["planspec"] = {"fixture": fixture.name,

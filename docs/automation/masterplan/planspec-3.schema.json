@@ -376,7 +376,8 @@
         },
         "kind": {
           "enum": [
-            "door",
+          "clear",
+          "door",
             "window"
           ]
         },
