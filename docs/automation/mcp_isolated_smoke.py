@@ -252,6 +252,48 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                                                     "type": "Dimension", "layer": "A-DIMS",
                                                     "actual_measurement": aligned_measure,
                                                     "associativity": "unverified"}
+            source = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "run_script", "request_id": "l2-block-source-" + uuid.uuid4().hex,
+                            "strict": True, "commands": ["LINE 55,0 57,0"]}})
+            source_handles = [change["handle"] for change in source.get("changes", [])
+                              if change.get("kind") == "Added"]
+            if source.get("added_entities") != 1 or len(source_handles) != 1:
+                raise ProtocolError("Block source line was not created")
+            definition = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "batch", "request_id": "l2-block-def-" + uuid.uuid4().hex,
+                            "steps": [{"op": "select", "handles": source_handles},
+                                      {"op": "run", "cmd": "-BLOCK MCP-SYMBOL 55,0"}]}})
+            report["block_fixture"] = {"source_handle": source_handles[0],
+                                       "definition_steps": definition.get("completed_steps")}
+            inserted = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "run_script", "request_id": "l2-block-insert-" + uuid.uuid4().hex,
+                            "strict": True, "commands": ["INSERT MCP-SYMBOL R 30 62,0",
+                                                          "INSERT MCP-SYMBOL S 2 66,0"]}})
+            insert_handles = [change["handle"] for change in inserted.get("changes", [])
+                              if change.get("kind") == "Added"]
+            if inserted.get("completed_commands") != 2 or len(insert_handles) != 2:
+                raise ProtocolError("Block instances were not inserted")
+            inserts_query = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                      "parameters": {"handles": insert_handles,
+                                                                     "detail": "full"}})
+            inserts = inserts_query.get("entities", [])
+            if (len(inserts) != 2 or any(entity.get("type") != "Block Reference" or
+                                          entity.get("block") != "MCP-SYMBOL" for entity in inserts)):
+                raise ProtocolError("Native block reference identity differs from fixture")
+            report["block_fixture"]["insert_handles"] = insert_handles
+            report["block_fixture"]["instances"] = [
+                {"block": entity.get("block"), "position": entity.get("position"),
+                 "x_scale": entity.get("properties", {}).get("x_scale"),
+                 "y_scale": entity.get("properties", {}).get("y_scale"),
+                 "rotation": entity.get("properties", {}).get("rotation")}
+                for entity in inserts]
+            first, second = report["block_fixture"]["instances"]
+            if (not same_geometry(first["rotation"], math.radians(30)) or
+                    not same_geometry(first["x_scale"], 1) or
+                    not same_geometry(second["rotation"], 0) or
+                    not same_geometry(second["x_scale"], 2) or
+                    not same_geometry(second["y_scale"], 2)):
+                raise ProtocolError("Block instance scale or rotation differs from fixture")
         audit = client.tool("ocs_read", {"ocs_session_id": session, "op": "audit",
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
@@ -278,6 +320,9 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                 raise ProtocolError("Native dimensions did not survive DWG reopen")
             report["dimension_fixture"]["reopened_count"] = 1
             report["aligned_dimension_fixture"]["reopened_count"] = 1
+            if verified.get("manifest", {}).get("by_type", {}).get("Block Reference") != 3:
+                raise ProtocolError("Block references did not survive DWG reopen")
+            report["block_fixture"]["reopened_count"] = 3
         actual_hash = hashlib.sha256(destination.read_bytes()).hexdigest().upper()
         if verified["sha256"].upper() != actual_hash:
             raise ProtocolError("Synthetic output hash differs from backend report")
@@ -330,6 +375,17 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                     abs(restored_aligned_measure - aligned_measure) > 1e-6):
                 raise ProtocolError("Aligned dimension measure/layer changed after DWG reopen")
             report["aligned_dimension_fixture"]["roundtrip_measurement"] = restored_aligned_measure
+            inserts_after = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                      "parameters": {"handles": insert_handles,
+                                                                     "detail": "full"}})
+            instances_after = [{"block": entity.get("block"), "position": entity.get("position"),
+                                "x_scale": entity.get("properties", {}).get("x_scale"),
+                                "y_scale": entity.get("properties", {}).get("y_scale"),
+                                "rotation": entity.get("properties", {}).get("rotation")}
+                               for entity in inserts_after.get("entities", [])]
+            if not same_geometry(report["block_fixture"]["instances"], instances_after):
+                raise ProtocolError("Block instance transform changed after DWG reopen")
+            report["block_fixture"]["roundtrip_transforms"] = "matched_1e-6_internal"
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         capture_path = (output / "capture.png").resolve()
         capture = client.capture_artifact(session, capture_path,
