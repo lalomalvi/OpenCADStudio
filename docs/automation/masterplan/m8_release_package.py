@@ -5,6 +5,7 @@ import ast
 import hashlib
 import json
 from pathlib import Path
+import struct
 import subprocess
 import tomllib
 import zipfile
@@ -108,6 +109,20 @@ def _zip_info(name: str) -> zipfile.ZipInfo:
     return info
 
 
+def pe_machine(path: Path) -> int:
+    with path.open("rb") as stream:
+        if stream.read(2) != b"MZ":
+            raise ReleasePackageError("Release binary lacks DOS/PE header")
+        stream.seek(0x3C)
+        offset = struct.unpack("<I", stream.read(4))[0]
+        if offset < 0x40 or offset > path.stat().st_size - 6:
+            raise ReleasePackageError("Release binary PE offset differs")
+        stream.seek(offset)
+        if stream.read(4) != b"PE\0\0":
+            raise ReleasePackageError("Release binary PE signature differs")
+        return struct.unpack("<H", stream.read(2))[0]
+
+
 def stage(root: Path, binary: Path) -> dict:
     repo = Path(__file__).resolve().parents[3]
     allowed = (repo / "target/mcp-release-bundles").resolve()
@@ -119,10 +134,8 @@ def stage(root: Path, binary: Path) -> dict:
         raise ReleasePackageError("Only the isolated locked release build may be staged")
     commit = _git_clean(repo)
     _check_import_closure(repo)
-    with binary.open("rb") as stream:
-        magic = stream.read(2)
-    if binary.stat().st_size < 1_000_000 or magic != b"MZ":
-        raise ReleasePackageError("Windows release executable is absent or invalid")
+    if binary.stat().st_size < 1_000_000 or pe_machine(binary) != 0x8664:
+        raise ReleasePackageError("Windows x64 release executable is absent or invalid")
     version = tomllib.loads((repo / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
     payload = {}
     for member, source in SOURCE_FILES.items():
@@ -137,6 +150,7 @@ def stage(root: Path, binary: Path) -> dict:
         "schema_version": "m8-local-release-bundle-1",
         "status": "candidate_partial_m7_gates_open",
         "platform": "windows-x86_64",
+        "pe_machine": "AMD64-0x8664",
         "application_version": version,
         "source_git_sha": commit,
         "cargo_lock_sha256": sha256(repo / "Cargo.lock"),
@@ -179,6 +193,8 @@ def verify(root: Path) -> dict:
     manifest = json.loads(manifest_bytes)
     if (manifest.get("schema_version") != "m8-local-release-bundle-1"
             or manifest.get("status") != "candidate_partial_m7_gates_open"
+            or manifest.get("platform") != "windows-x86_64"
+            or manifest.get("pe_machine") != "AMD64-0x8664"
             or set(manifest.get("files", {})) != expected_members()
             or manifest.get("cargo_lock_sha256") !=
             manifest["files"]["Cargo.lock"]["sha256"]):
@@ -195,6 +211,8 @@ def verify(root: Path) -> dict:
         if len(data) != record.get("bytes") or sha256_bytes(data) != record.get("sha256"):
             raise ReleasePackageError(f"Bundle file changed: {name}")
         _check_text_member(name, data)
+    if pe_machine(bundle / BINARY_MEMBER) != 0x8664:
+        raise ReleasePackageError("Bundled executable is not Windows x64")
     archive_sha = None
     if archive is not None:
         archive_sha = sha256(archive)

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import struct
 import tempfile
 import unittest
 import zipfile
@@ -18,13 +19,22 @@ class ReleasePackageTests(unittest.TestCase):
         self.bundle.mkdir()
         payload = {}
         for member in set(SOURCE_FILES) | {BINARY_MEMBER}:
-            data = b"MZ synthetic" if member == BINARY_MEMBER else member.encode()
+            if member == BINARY_MEMBER:
+                header = bytearray(128)
+                header[:2] = b"MZ"
+                header[0x3C:0x40] = struct.pack("<I", 0x40)
+                header[0x40:0x44] = b"PE\0\0"
+                header[0x44:0x46] = struct.pack("<H", 0x8664)
+                data = bytes(header)
+            else:
+                data = member.encode()
             path = self.bundle / member
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
             payload[member] = data
         manifest = {"schema_version": "m8-local-release-bundle-1",
                     "status": "candidate_partial_m7_gates_open",
+                    "platform": "windows-x86_64", "pe_machine": "AMD64-0x8664",
                     "source_git_sha": "a" * 40,
                     "files": {name: {"sha256": sha256_bytes(data), "bytes": len(data)}
                               for name, data in payload.items()},
