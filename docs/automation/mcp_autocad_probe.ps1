@@ -24,6 +24,20 @@ if ($TimeoutSeconds -lt 10 -or $TimeoutSeconds -gt 120) {
     throw 'TimeoutSeconds must be 10..120'
 }
 
+function Read-DxfNumber([string]$value) {
+    if ([string]::IsNullOrWhiteSpace($value) -or $value -eq '-') { return $null }
+    $parsed = 0.0
+    if ([double]::TryParse($value, [Globalization.NumberStyles]::Float,
+            [Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) { return $parsed }
+    return $null
+}
+
+function Read-DxfPoint([string]$value) {
+    $matches = [regex]::Matches($value, '[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?')
+    if ($matches.Count -ne 3) { return $null }
+    return @($matches | ForEach-Object { Read-DxfNumber $_.Value })
+}
+
 $runId = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-autocad-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $output = Join-Path $repo (Join-Path 'target\mcp-external' $runId)
 New-Item -ItemType Directory -Path $output -ErrorAction Stop | Out-Null
@@ -63,7 +77,8 @@ $lispText = @"
                 (ocs_value ocs_data 91) "|" (ocs_value ocs_data 2) "|"
                 (ocs_value ocs_data 10) "|" (ocs_value ocs_data 41) "|"
                 (ocs_value ocs_data 50) "|" (ocs_measure ocs_entity ocs_data) "|"
-                (ocs_value ocs_data 13) "|" (ocs_value ocs_data 14)) ocs_file)
+                (ocs_value ocs_data 13) "|" (ocs_value ocs_data 14) "|"
+                (ocs_value ocs_data 52)) ocs_file)
       (if (= (cdr (assoc 0 ocs_data)) "DIMENSION")
         (progn
           (write-line (strcat "DIMDATA|" (ocs_value ocs_data 5) "|"
@@ -89,7 +104,7 @@ $lispText = @"
 "@
 [IO.File]::WriteAllText($lispPath, $lispText, [Text.UTF8Encoding]::new($false))
 $loadPath = $lispPath.Replace('\', '/')
-[IO.File]::WriteAllText($script, "(load `"$loadPath`")`n_.AUDIT`n_N`n_.QUIT`n",
+[IO.File]::WriteAllText($script, "(load `"$loadPath`")`n_.AUDIT`n_N`n_.QUIT`n_N`n",
                         [Text.ASCIIEncoding]::new())
 
 $start = [Diagnostics.ProcessStartInfo]::new()
@@ -146,9 +161,11 @@ try {
     }
     $types = @{}
     $dimensionMeasurements = @{}
+    $entityByHandle = @{}
     foreach ($row in $entityRows) {
         $parts = $row -split '\|'
         $kind = $parts[1]
+        $entityByHandle[$parts[2]] = $parts
         if (-not $types.ContainsKey($kind)) { $types[$kind] = 0 }
         $types[$kind]++
         if ($kind -eq 'DIMENSION') {
@@ -161,11 +178,13 @@ try {
         }
     }
     $expected = @{}
+    $richSourceReport = $null
     $sourceReportPath = Join-Path ([IO.Path]::GetDirectoryName($drawing)) 'report.json'
     if (Test-Path -LiteralPath $sourceReportPath -PathType Leaf) {
         $sourceReport = Get-Content -LiteralPath $sourceReportPath -Raw | ConvertFrom-Json
         if ($sourceReport.status -eq 'passed' -and
             $sourceReport.verified_output.sha256 -eq $before) {
+            $richSourceReport = $sourceReport
             foreach ($field in @('dimension_fixture', 'aligned_dimension_fixture')) {
                 $fixture = $sourceReport.$field
                 if ($fixture -and $fixture.handle -and $null -ne $fixture.roundtrip_measurement) {
@@ -204,6 +223,67 @@ try {
         }
     }
     $dimensionMismatch = @($dimensionComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
+    $propertyComparison = @()
+    if ($richSourceReport) {
+        $hatch = $richSourceReport.hatch_fixture
+        if ($hatch -and $hatch.handle) {
+            $row = $entityByHandle[$hatch.handle]
+            $checks = [ordered]@{
+                type = @('HATCH', $(if ($row) { $row[1] } else { $null }))
+                layer = @($hatch.layer, $(if ($row) { $row[3] } else { $null }))
+                associative = @([int][bool]$hatch.is_associative_flag,
+                                $(if ($row) { Read-DxfNumber $row[6] } else { $null }))
+                solid = @([int][bool]$hatch.is_solid,
+                          $(if ($row) { Read-DxfNumber $row[5] } else { $null }))
+                paths = @([int]$hatch.path_count,
+                          $(if ($row) { Read-DxfNumber $row[7] } else { $null }))
+                pattern_scale = @([double]$hatch.pattern_scale,
+                                  $(if ($row) { Read-DxfNumber $row[10] } else { $null }))
+                pattern_angle = @([double]$hatch.pattern_angle,
+                                  $(if ($row) { Read-DxfNumber $row[15] } else { $null }))
+            }
+            foreach ($name in $checks.Keys) {
+                $values = $checks[$name]
+                $match = $null -ne $values[1] -and
+                    $(if ($name -in @('type', 'layer')) { $values[0] -ceq $values[1] }
+                      else { [Math]::Abs($values[0] - $values[1]) -le 1e-6 })
+                $propertyComparison += [ordered]@{ handle = $hatch.handle; property = $name;
+                    expected = $values[0]; observed = $values[1]; matched_1e_6 = $match }
+            }
+        }
+        $block = $richSourceReport.block_fixture
+        if ($block) {
+            for ($index = 0; $index -lt $block.insert_handles.Count; $index++) {
+                $handle = $block.insert_handles[$index]
+                $instance = $block.instances[$index]
+                $row = $entityByHandle[$handle]
+                $position = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                $checks = [ordered]@{
+                    type = @('INSERT', $(if ($row) { $row[1] } else { $null }))
+                    block = @($instance.block, $(if ($row) { $row[8] } else { $null }))
+                    x_scale = @([double]$instance.x_scale,
+                                $(if ($row) { Read-DxfNumber $row[10] } else { $null }))
+                    y_scale = @([double]$instance.y_scale,
+                                $(if ($row) { Read-DxfNumber $row[4] } else { $null }))
+                    rotation = @([double]$instance.rotation,
+                                 $(if ($row) { Read-DxfNumber $row[11] } else { $null }))
+                }
+                for ($axis = 0; $axis -lt 3; $axis++) {
+                    $checks["position_$axis"] = @([double]$instance.position[$axis],
+                        $(if ($position) { $position[$axis] } else { $null }))
+                }
+                foreach ($name in $checks.Keys) {
+                    $values = $checks[$name]
+                    $match = $null -ne $values[1] -and
+                        $(if ($name -in @('type', 'block')) { $values[0] -ceq $values[1] }
+                          else { [Math]::Abs($values[0] - $values[1]) -le 1e-6 })
+                    $propertyComparison += [ordered]@{ handle = $handle; property = $name;
+                        expected = $values[0]; observed = $values[1]; matched_1e_6 = $match }
+                }
+            }
+        }
+    }
+    $propertyMismatch = @($propertyComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
     $report = [ordered]@{
         schema_version = 'mcp-autocad-audit-l4-2'
         run_id = $runId
@@ -220,7 +300,9 @@ try {
         model_types = $types
         dimension_measurements = $dimensionMeasurements
         dimension_comparison = $dimensionComparison
-        semantic_verdict = if ($dimensionMismatch) { 'mismatch' } elseif ($expected.Count -gt 0) {
+        property_comparison = $propertyComparison
+        semantic_verdict = if ($dimensionMismatch -or $propertyMismatch) { 'mismatch' }
+                           elseif ($expected.Count -gt 0 -or $propertyComparison.Count -gt 0) {
             'matched_scoped'
         } else { 'unknown' }
         census_done = $censusDone
@@ -232,7 +314,7 @@ try {
         log_sha256 = (Get-FileHash -LiteralPath $log -Algorithm SHA256).Hash
         verdict = if (-not $auditZero -or -not $censusDone -or $before -ne $after) {
             'failed'
-        } elseif ($dimensionMismatch) { 'semantic_mismatch'
+        } elseif ($dimensionMismatch -or $propertyMismatch) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {
             'partial_abnormal_exit'
         } else { 'audit_and_census_passed' }
