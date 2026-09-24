@@ -88,4 +88,16 @@ M2 añadió `shutdown_owned_session` en el backend. Requiere que la GUI sea hija
 
 El L2 `target/mcp-isolated/20260923-194235-owned-f6c67219/owned-report.json` pasó: rechazo `dirty_document`, rechazo `foreign_document`, cierre del PID propio, repetición del mismo ID con idéntico resultado y descubrimiento posterior `absent`. Después se duplicó el control en la cola de la GUI para cerrar la carrera entre lectura y salida. El L2 final `target/mcp-isolated/20260923-195314-owned-53014dbb/owned-report.json` repitió todos esos resultados. Ambos artefactos son locales, sintéticos y fuera de Git. `cargo test --lib mcp::tests` pasó 16/16 después de la corrección de identidad; la prueba GUI nueva también pasó. Las pruebas Python pasaron 15/15 sin ResourceWarning tras el cierre acotado. El binario Rust de ese build ejecutó la suite completa: 1669 passed, 24 ignored, cero fallos. La revisión y publicación de este segundo corte siguen pendientes al redactar.
 
-M1.6 sigue parcial: el lote conserva progreso solo dentro del proceso MCP; su caída obliga a detener escrituras y reconciliar. M2.2 y cierre explícito de pestañas siguen pendientes. M3–M8 no se promueven por este L2.
+Al segundo corte, M1.6 seguía parcial: el lote conservaba progreso solo dentro del proceso MCP. M2.2 y cierre explícito de pestañas seguían pendientes. M3–M8 no se promovieron por aquel L2.
+
+## Tercer corte M1.6 — 2026-09-23, en progreso
+
+Desde `41350691202f8326f8963e5333e967effdcb2217`, publicado y verificado en `origin/codex/mcp-lifecycle-and-recovery`, se abrió la rama `codex/mcp-durable-journal`. El servidor escribe un journal local por sesión y lote con archivo temporal, `sync_all` y reemplazo atómico antes de despachar un paso. La ruta se deriva de SHA-256 de IDs; el contenido conserva solicitud/progreso/estado pero ningún token. Al consultar la operación desde un nuevo proceso MCP, carga exactamente ese journal y consulta el ID de paso activo de la GUI. Precondiciones de documento y revisión se envían explícitamente en cada paso. Un journal corrupto falla cerrado. Los archivos están en el perfil local y no se publican.
+
+Ensayos L2 aislados, todos en directorios nuevos:
+
+- `20260923-200635-journal-5b09fc82`: **failed**, el reemplazo nativo no aceptó la ruta larga; quedó un `.tmp` sin `.json`. GUI cerrada limpiamente.
+- `20260923-201129-journal-e5f259f0`: **failed de harness**, `wait_seconds:0` devolvió `running` con cero comandos completados, estado válido. La pestaña sintética se guardó en el mismo run y la GUI salió; el reporte original no se alteró.
+- `20260923-201223-journal-ba19ea11`: **passed**; el primer MCP se cerró con el paso activo, el segundo recuperó por el ID original, terminó tres comandos con tres entidades, verificó el DWG sintético por hash y cerró la GUI. `journal-report.json` generado contiene identidad y hashes; no transcribirlos a mano.
+
+La prueba Rust de journal en ruta Windows deliberadamente larga y de corrupción pasó. Pruebas focalizadas M1/MCP: 17/17 antes del ajuste de ruta larga; la prueba específica del ajuste pasó. Pruebas Python: 16/16. El binario Rust de ese corte ejecutó la suite completa: 1670 passed, 24 ignored, cero fallos. Revisión y publicación aún pendientes al redactar. M1.6 puede marcarse passed **solo para reinicio de MCP con la misma GUI**; reinicio de GUI, ACL Windows, retención de journal y conciliación externa continúan pendientes.

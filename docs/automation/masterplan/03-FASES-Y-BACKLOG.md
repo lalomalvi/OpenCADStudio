@@ -10,7 +10,7 @@ Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejec
 | M1.1–M1.3 | passed L1 | Biblioteca reutilizada por tres harnesses; 15 pruebas sintéticas de transporte en el corte nuevo |
 | M1.4 | passed L1/L2 | Estados formales de disponibilidad, deadline y un solo launch; GUI fría aislada verificada |
 | M1.5 | passed L1/L2 | Sesión seleccionada por ID y handshake; document_id/revision exigidos antes de editar |
-| M1.6 | partial L1/L2 | Lote en curso recuperable dentro del mismo proceso MCP; tras reinicio del MCP falta journal durable; unknown_operation bloquea nuevas mutaciones |
+| M1.6 | passed scoped L1/L2 | Journal atómico local por sesión/lote; reinicio de MCP a mitad de `run_script` recuperó 3 entidades sin duplicación por el mismo ID; journal corrupto/operación desconocida bloquean nuevas mutaciones. Reinicio de GUI no evaluado |
 | M2.1 | partial L1/L2 | Descubrimiento concurrente 0/1/20/100 y conexión directa; 10 muestras con 100 descriptores sintéticos muertos: p50 1869.7 ms, p95 conservador 1909.1 ms; ACL Windows pendiente |
 | M2.2 | pending | Heartbeat, descriptor obsoleto y cuarentena con ACL Windows pendientes |
 | M2.3–M2.4 | partial L1/L2 | `shutdown_owned_session` del backend pasó L2: PID/inicio/binario/raíz, rechazo de dirty/foreign, salida e idempotencia; `close_document` con política y modalidades adicionales pendientes |

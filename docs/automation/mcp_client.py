@@ -308,6 +308,9 @@ class Client:
             except ToolError as exc:
                 self._blocked_sessions[session_id] = request_id
                 raise
+            except ProtocolError as exc:
+                self._blocked_sessions[session_id] = request_id
+                raise UncertainMutation(f"{request_id}: operation cannot be reconciled; {exc}") from exc
             if operation.get("status") in {"accepted", "running"}:
                 try:
                     time.sleep(min(0.1, self._remaining(deadline)))

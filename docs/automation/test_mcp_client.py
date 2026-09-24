@@ -128,6 +128,15 @@ class ClientTests(unittest.TestCase):
         with self.assertRaisesRegex(UncertainMutation, "unresolved mutation"):
             client.mutate("s1", {**request, "request_id": "next"})
 
+    def test_standalone_recovery_failure_blocks_session_after_restart(self):
+        client = self.client()
+        with patch.object(client, "_tool_raw", side_effect=ProtocolError("journal corrupt")):
+            with self.assertRaisesRegex(UncertainMutation, "cannot be reconciled"):
+                client.recover("s1", "original-batch")
+        with self.assertRaisesRegex(UncertainMutation, "unresolved mutation"):
+            client.mutate("s1", {"op": "run", "request_id": "new-edit",
+                                 "cmd": "LINE 0,0 1,0", "document_id": 1, "revision": 0})
+
     def test_explicit_server_failure_is_reported(self):
         client = self.client("explicit_failure")
         with self.assertRaises(ToolError):

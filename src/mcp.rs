@@ -4,8 +4,9 @@
 //! to the authenticated GUI control bridge; this module contains no geometry.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs::{File, OpenOptions},
@@ -127,6 +128,7 @@ struct GuiClient {
     batches: VecDeque<BatchExecution>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct BatchExecution {
     id: String,
     request: Value,
@@ -137,6 +139,135 @@ struct BatchExecution {
     changes: Vec<Value>,
     state: Option<Value>,
     terminal: Option<Value>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct BatchJournal {
+    schema_version: u32,
+    session_id: String,
+    batch: BatchExecution,
+}
+
+const MAX_BATCH_JOURNAL: u64 = 16 * 1024 * 1024;
+
+fn batch_journal_dir() -> Result<PathBuf, String> {
+    let dir = crate::config::config_dir()
+        .ok_or_else(|| "No user configuration directory".to_string())?
+        .join("automation").join("batch-journal");
+    if dir.symlink_metadata().is_ok_and(|meta| meta.file_type().is_symlink()) {
+        return Err("Batch journal directory must not be a symlink".into());
+    }
+    Ok(dir)
+}
+
+fn batch_journal_path(dir: &Path, session_id: &str, batch_id: &str) -> PathBuf {
+    let mut hasher = Sha256::new();
+    hasher.update(session_id.as_bytes());
+    hasher.update([0]);
+    hasher.update(batch_id.as_bytes());
+    let digest = hasher.finalize();
+    let name: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    dir.join(format!("{name}.json"))
+}
+
+#[cfg(windows)]
+fn atomic_replace(source: &Path, destination: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+    // canonicalize returns verbatim (\\?\) paths, required for deep worktrees.
+    let source = source.canonicalize().map_err(|error| error.to_string())?;
+    let parent = destination.parent().ok_or_else(|| "Journal has no parent".to_string())?
+        .canonicalize().map_err(|error| error.to_string())?;
+    let destination = parent.join(destination.file_name()
+        .ok_or_else(|| "Journal has no file name".to_string())?);
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) } == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn atomic_replace(source: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::rename(source, destination).map_err(|error| error.to_string())
+}
+
+fn persist_batch(session_id: &str, batch: &BatchExecution) -> Result<(), String> {
+    let dir = batch_journal_dir()?;
+    persist_batch_in(&dir, session_id, batch)
+}
+
+fn persist_batch_in(dir: &Path, session_id: &str, batch: &BatchExecution) -> Result<(), String> {
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let path = batch_journal_path(&dir, session_id, &batch.id);
+    if path.symlink_metadata().is_ok_and(|meta| !meta.file_type().is_file()) {
+        return Err("Batch journal target must be a regular file".into());
+    }
+    let temporary = path.with_extension(format!("{}.tmp", random_id()?));
+    let wire = serde_json::to_vec(&BatchJournal {
+        schema_version: 1, session_id: session_id.into(), batch: batch.clone(),
+    }).map_err(|error| error.to_string())?;
+    if wire.len() as u64 > MAX_BATCH_JOURNAL {
+        return Err("Batch journal exceeds size limit".into());
+    }
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&temporary).map_err(|error| error.to_string())?;
+    file.write_all(&wire).and_then(|_| file.sync_all()).map_err(|error| error.to_string())?;
+    drop(file);
+    atomic_replace(&temporary, &path)?;
+    #[cfg(unix)] {
+        File::open(&dir).and_then(|file| file.sync_all()).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn load_batch(session_id: &str, batch_id: &str) -> Result<Option<BatchExecution>, String> {
+    load_batch_in(&batch_journal_dir()?, session_id, batch_id)
+}
+
+fn load_batch_in(dir: &Path, session_id: &str, batch_id: &str) -> Result<Option<BatchExecution>, String> {
+    let path = batch_journal_path(dir, session_id, batch_id);
+    let Ok(meta) = path.symlink_metadata() else { return Ok(None); };
+    if !meta.file_type().is_file() || meta.len() > MAX_BATCH_JOURNAL
+        || !private_descriptor(&path) {
+        return Err("Batch journal is unsafe or exceeds size limit".into());
+    }
+    let wire = std::fs::read(path).map_err(|error| error.to_string())?;
+    let journal: BatchJournal = serde_json::from_slice(&wire)
+        .map_err(|_| "Batch journal is corrupt; do not replay its mutation".to_string())?;
+    if journal.schema_version != 1 || journal.session_id != session_id
+        || journal.batch.id != batch_id {
+        return Err("Batch journal identity differs; do not replay its mutation".into());
+    }
+    Ok(Some(journal.batch))
+}
+
+#[cfg(test)]
+fn load_batches_in(dir: &Path, session_id: &str) -> Result<VecDeque<BatchExecution>, String> {
+    let Ok(entries) = dir.read_dir() else { return Ok(VecDeque::new()); };
+    let mut paths: Vec<_> = entries.filter_map(Result::ok).map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("json"))
+        .filter(|path| path.symlink_metadata().is_ok_and(|meta|
+            meta.file_type().is_file() && meta.len() <= MAX_BATCH_JOURNAL))
+        .collect();
+    paths.sort_by_key(|path| std::cmp::Reverse(path.metadata().and_then(|meta| meta.modified()).ok()));
+    let mut batches = VecDeque::new();
+    for path in paths.into_iter().take(256) {
+        if !private_descriptor(&path) { continue; }
+        let Ok(bytes) = std::fs::read(path) else { continue; };
+        let Ok(journal) = serde_json::from_slice::<BatchJournal>(&bytes) else { continue; };
+        if journal.schema_version == 1 && journal.session_id == session_id {
+            batches.push_back(journal.batch);
+            if batches.len() == 64 { break; }
+        }
+    }
+    Ok(batches)
 }
 
 struct McpTask {
@@ -423,6 +554,11 @@ impl GuiClient {
     }
 
     fn resume_batch_operation(&mut self, id: &str) -> Result<Option<Value>, String> {
+        if !self.batches.iter().any(|batch| batch.id == id) {
+            if let Some(batch) = load_batch(&self.descriptor.session_id, id)? {
+                self.batches.push_back(batch);
+            }
+        }
         let Some(batch) = self.batches.iter().find(|batch| batch.id == id) else {
             return Ok(None);
         };
@@ -506,6 +642,11 @@ impl GuiClient {
 
     fn execute_batch(&mut self, request: Value, wait_seconds: f64) -> Result<Value, String> {
         let id = required_string(&request, "request_id")?.to_owned();
+        if !self.batches.iter().any(|batch| batch.id == id) {
+            if let Some(saved) = load_batch(&self.descriptor.session_id, &id)? {
+                self.batches.push_back(saved);
+            }
+        }
         let mut batch = if let Some(position) = self.batches.iter().position(|batch| batch.id == id)
         {
             let batch = self
@@ -531,7 +672,7 @@ impl GuiClient {
                 .as_array()
                 .cloned()
                 .ok_or_else(|| "batch requires a steps array".to_string())?;
-            BatchExecution {
+            let batch = BatchExecution {
                 id,
                 request,
                 steps,
@@ -541,7 +682,9 @@ impl GuiClient {
                 changes: Vec::new(),
                 state: None,
                 terminal: None,
-            }
+            };
+            persist_batch(&self.descriptor.session_id, &batch)?;
+            batch
         };
 
         if let Some(result) = batch.terminal.clone() {
@@ -567,6 +710,7 @@ impl GuiClient {
                     true,
                 );
                 batch.terminal = Some(result.clone());
+                persist_batch(&self.descriptor.session_id, &batch)?;
                 self.batches.push_back(batch);
                 trim_batches(&mut self.batches);
                 return Ok(result);
@@ -579,11 +723,14 @@ impl GuiClient {
             }
             attempted = true;
 
-            let step_id = batch
-                .active
-                .clone()
+            let resuming = batch.active.is_some();
+            let step_id = batch.active.clone()
                 .unwrap_or_else(|| batch_step_id(&batch.id, batch.next));
-            let response = if batch.active.is_some() {
+            if !resuming {
+                batch.active = Some(step_id.clone());
+                persist_batch(&self.descriptor.session_id, &batch)?;
+            }
+            let response = if resuming {
                 self.request(
                     json!({"op":"operation","request_id":step_id}),
                     deadline
@@ -596,7 +743,6 @@ impl GuiClient {
                     .cloned()
                     .ok_or_else(|| format!("batch step {} must be an object", batch.next))?;
                 for key in [
-                    "revision",
                     "geometry_revision",
                     "camera_revision",
                     "selection",
@@ -604,6 +750,9 @@ impl GuiClient {
                 ] {
                     step.remove(key);
                 }
+                let expected = batch.state.as_ref().unwrap_or(&batch.request);
+                step.insert("document_id".into(), expected["document_id"].clone());
+                step.insert("revision".into(), expected["revision"].clone());
                 step.insert("request_id".into(), Value::String(step_id.clone()));
                 self.request(
                     Value::Object(step),
@@ -616,6 +765,7 @@ impl GuiClient {
                 Ok(response) => response,
                 Err(error) => {
                     batch.active = Some(step_id);
+                    persist_batch(&self.descriptor.session_id, &batch)?;
                     self.batches.push_back(batch);
                     trim_batches(&mut self.batches);
                     return Err(error);
@@ -637,6 +787,7 @@ impl GuiClient {
             if matches!(response["status"].as_str(), Some("accepted" | "running")) {
                 batch.active = Some(step_id);
                 let result = batch_result(&batch, "running", true);
+                persist_batch(&self.descriptor.session_id, &batch)?;
                 self.batches.push_back(batch);
                 trim_batches(&mut self.batches);
                 return Ok(result);
@@ -675,6 +826,7 @@ impl GuiClient {
                     false,
                 );
                 batch.terminal = Some(result.clone());
+                persist_batch(&self.descriptor.session_id, &batch)?;
                 self.batches.push_back(batch);
                 trim_batches(&mut self.batches);
                 return Ok(result);
@@ -688,10 +840,12 @@ impl GuiClient {
             {
                 let result = batch_result(&batch, "waiting_input", true);
                 batch.terminal = Some(result.clone());
+                persist_batch(&self.descriptor.session_id, &batch)?;
                 self.batches.push_back(batch);
                 trim_batches(&mut self.batches);
                 return Ok(result);
             }
+            persist_batch(&self.descriptor.session_id, &batch)?;
         }
     }
 }
@@ -1777,6 +1931,42 @@ mod tests {
         let error = shutdown_owned_session(&mut HashMap::new(),
             "0123456789abcdef0123456789abcdef", &request).unwrap_err();
         assert!(error.contains("not owned"));
+    }
+
+    #[test]
+    fn batch_journal_recovers_active_step_without_persisting_tokens() {
+        let base = std::env::current_dir().unwrap().join("target/mcp-journal-tests");
+        std::fs::create_dir_all(&base).unwrap();
+        let run_root = base.join(random_id().unwrap());
+        let dir = run_root
+            .join("long-component-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .join("long-component-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+            .join("long-component-cccccccccccccccccccccccccccccccccccccccccccccccc");
+        let mut batch = BatchExecution {
+            id: "fixture-batch".into(),
+            request: json!({"op":"run_script","request_id":"fixture-batch",
+                "document_id":2,"revision":0,"steps":[{"op":"run","cmd":"LINE 0,0 1,0"}]}),
+            steps: vec![json!({"op":"run","cmd":"LINE 0,0 1,0"})],
+            next: 0,
+            active: None,
+            results: Vec::new(), changes: Vec::new(), state: None, terminal: None,
+        };
+        persist_batch_in(&dir, "session-1", &batch).unwrap();
+        batch.active = Some(batch_step_id(&batch.id, 0));
+        persist_batch_in(&dir, "session-1", &batch).unwrap();
+        let loaded = load_batches_in(&dir, "session-1").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].active, batch.active);
+        assert_eq!(loaded[0].next, 0);
+        assert!(load_batches_in(&dir, "another-session").unwrap().is_empty());
+        assert_eq!(load_batch_in(&dir, "session-1", &batch.id).unwrap().unwrap().active,
+            batch.active);
+        let journal = std::fs::read_to_string(batch_journal_path(&dir, "session-1", &batch.id)).unwrap();
+        assert!(!journal.contains("token"));
+        std::fs::write(batch_journal_path(&dir, "session-1", &batch.id), b"corrupt").unwrap();
+        assert!(load_batch_in(&dir, "session-1", &batch.id).unwrap_err().contains("corrupt"));
+        assert!(run_root.canonicalize().unwrap().starts_with(base.canonicalize().unwrap()));
+        std::fs::remove_dir_all(run_root).unwrap();
     }
 
     #[test]
