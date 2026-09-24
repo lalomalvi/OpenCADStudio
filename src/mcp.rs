@@ -58,6 +58,7 @@ const EXECUTE_OPS: &[&str] = &[
     "select",
     "property",
     "set_properties",
+    "edit_wall_thickness",
     "action",
     "embed_image",
     "save",
@@ -1302,6 +1303,11 @@ fn validate_execute_request(request: &Value, op: &str) -> Result<(), String> {
                 r#"{"op":"set_properties","collection":"entities","handle":"2A","updates":[{"path":"/common/layer","value":"Walls"}]}"#,
             )
         }
+        "edit_wall_thickness" if request["edge_handles"].as_array().is_none_or(|edges| edges.len() != 4)
+            || request["expected_thickness_m"].as_f64().is_none()
+            || request["new_thickness_m"].as_f64().is_none() => {
+            missing("edge_handles or thickness", r#"{"op":"edit_wall_thickness","edge_handles":["64","65","66","67"],"expected_thickness_m":0.2,"new_thickness_m":0.25}"#)
+        }
         "action" => match request["name"].as_str() {
             Some(name) if crate::app::automation_action_names().contains(&name) => Ok(()),
             Some(name) => Err(format!(
@@ -1653,6 +1659,9 @@ fn execute_request_schema() -> Value {
             "value":{"description":"New property value; its JSON type must match the property kind.","anyOf":[{"type":"string"},{"type":"number"},{"type":"boolean"},{"type":"object"},{"type":"array"},{"type":"null"}]},
             "collection":{"type":"string","description":"Record collection returned by ocs_read records."},
             "updates":{"type":"array","minItems":1,"description":"Atomic, type-checked property replacements. Paths are RFC 6901 JSON Pointers relative to record.properties.","items":{"type":"object","properties":{"path":{"type":"string","pattern":"^/"},"value":{},"expected":{"description":"Optional compare-and-set value."}},"required":["path","value"],"additionalProperties":false}},
+            "edge_handles":{"type":"array","minItems":4,"maxItems":4,"uniqueItems":true,"items":handle.clone(),"description":"Four LINE handles in closed contour order: first face, end cap, opposite face, start cap."},
+            "expected_thickness_m":{"type":"number","minimum":0.01,"maximum":10},
+            "new_thickness_m":{"type":"number","minimum":0.01,"maximum":10},
             "name":{"type":"string","enum":crate::app::automation_action_names(),"description":"UI action returned by ocs_read commands."},
             "steps":{"type":"array","minItems":1,"maxItems":MAX_BATCH_STEPS,"description":"Sequential editor operations executed with fresh state and idempotency keys. Execution stops at the first failure; completed_steps says what committed.","items":batch_step_schema()},
             "commands":{"type":"array","minItems":1,"maxItems":MAX_SCRIPT_COMMANDS,"description":"Complete one-line CAD commands for a resumable high-volume drawing script. Read command manifests first; points use x,y or x,y,z.","items":{"type":"string","minLength":1,"maxLength":MAX_SCRIPT_COMMAND_BYTES}},
@@ -1686,6 +1695,7 @@ fn execute_request_schema() -> Value {
             {"properties":{"op":{"const":"select"}}},
             {"properties":{"op":{"const":"property"}},"required":["field","value"]},
             {"properties":{"op":{"const":"set_properties"}},"required":["collection","updates"]},
+            {"properties":{"op":{"const":"edit_wall_thickness"}},"required":["edge_handles","expected_thickness_m","new_thickness_m","document_id","revision"]},
             {"properties":{"op":{"const":"action"}},"required":["name"]},
             {"properties":{"op":{"const":"embed_image"}},"required":["path"]},
             {"properties":{"op":{"const":"save"}}},
@@ -2427,6 +2437,22 @@ mod tests {
                 .unwrap()
                 .contains("request_id")
         );
+    }
+
+    #[test]
+    fn wall_thickness_edit_requires_four_ordered_handles_and_expected_state() {
+        let request = json!({"op":"edit_wall_thickness","request_id":"wall-1",
+            "document_id":1,"revision":2,"edge_handles":["64","65","66","67"],
+            "expected_thickness_m":0.2,"new_thickness_m":0.25});
+        assert!(EXECUTE_OPS.contains(&"edit_wall_thickness"));
+        assert!(!BATCH_STEP_OPS.contains(&"edit_wall_thickness"));
+        assert!(validate_execute_request(&request, "edit_wall_thickness").is_ok());
+        let mut invalid = request.clone();
+        invalid["edge_handles"] = json!(["64","65","66"]);
+        assert!(validate_execute_request(&invalid, "edit_wall_thickness").is_err());
+        let schema = execute_request_schema();
+        assert_eq!(schema["properties"]["edge_handles"]["minItems"], 4);
+        assert_eq!(schema["properties"]["edge_handles"]["uniqueItems"], true);
     }
 
     #[test]

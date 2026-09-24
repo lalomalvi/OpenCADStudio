@@ -264,7 +264,8 @@ try {
             ($sourceReport.verified_output.sha256 -eq $before -or
              $sourceReport.first_save.sha256 -eq $before -or
              $sourceReport.second_save.sha256 -eq $before)
-        if ($sourceReport.schema_version -eq 'mcp-face-dimension-l2-1' -and
+        if ($sourceReport.schema_version -in @('mcp-face-dimension-l2-1',
+                                               'mcp-wall-thickness-l2-1') -and
             $sourceReport.status -eq 'passed' -and $sourceReport.handles.dimension) {
             if ($sourceReport.first_save.sha256 -eq $before) {
                 $expected[$sourceReport.handles.dimension] =
@@ -372,6 +373,12 @@ try {
                 $expected[$association.dimension_handle] = [double]$association.roundtrip_measurement
             }
         }
+        if ($sourceReport.schema_version -eq 'mcp-wall-thickness-l2-1' -and
+            $sourceReport.status -eq 'passed' -and
+            ($sourceReport.first_save.sha256 -eq $before -or
+             $sourceReport.second_save.sha256 -eq $before)) {
+            $richSourceReport = $sourceReport
+        }
         if ($sourceReport.status -eq 'passed' -and
             $sourceReport.second_save.sha256 -eq $before -and
             $sourceReport.association.dimension_handle -and
@@ -474,7 +481,9 @@ try {
                                   'synthetic-wall-gap.planspec.json',
                                   'synthetic-door-swing.planspec.json',
                                   'synthetic-window.planspec.json',
-                                  'synthetic-wall-join.planspec.json')) {
+                                  'synthetic-wall-join.planspec.json',
+                                  'synthetic-wall-face-dimension-readable-v7.planspec.json',
+                                  'synthetic-wall-face-dimension-vertical-v7.planspec.json')) {
             $geometrySourceValid = $false
         } else {
             $fixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $fixtureName)
@@ -532,7 +541,7 @@ try {
                     matched_1e_6 = [bool]$matched
                 }
             }
-            if ($fixture.schema_version -eq 'planspec-3' -and
+            if ($fixture.schema_version -in @('planspec-3', 'planspec-7') -and
                 $fixture.walls.Count -eq 1 -and $fixture.openings.Count -eq 0) {
                 $wall = $fixture.walls[0]
                 $a = $nodes[$wall.start]
@@ -540,7 +549,12 @@ try {
                 $dx = $b[0] - $a[0]
                 $dy = $b[1] - $a[1]
                 $length = [Math]::Sqrt($dx * $dx + $dy * $dy)
-                $half = [double]$wall.thickness_m / 2.0
+                $effectiveThickness = [double]$wall.thickness_m
+                if ($richSourceReport.schema_version -eq 'mcp-wall-thickness-l2-1' -and
+                    $richSourceReport.second_save.sha256 -eq $before) {
+                    $effectiveThickness = [double]$richSourceReport.measurements_m.edited
+                }
+                $half = $effectiveThickness / 2.0
                 $nx = -$dy * $half / $length
                 $ny = $dx * $half / $length
                 $corners = @(
@@ -804,6 +818,9 @@ try {
               'synthetic-door-swing.planspec.json', 'synthetic-window.planspec.json',
               'synthetic-wall-join.planspec.json')) {
         $wallModelCountMatch = $declaredCount -eq $geometryComparison.Count
+    }
+    if ($richSourceReport.schema_version -eq 'mcp-wall-thickness-l2-1') {
+        $wallModelCountMatch = $declaredCount -eq ($geometryComparison.Count + 1)
     }
     $report = [ordered]@{
         schema_version = 'mcp-autocad-audit-l4-11'
