@@ -41,6 +41,35 @@ class PlanSpecTests(unittest.TestCase):
         result = module.dry_run(value)
         self.assertEqual(result["unsupported"], ["native_dimension"])
         self.assertFalse(result["executable"])
+        self.assertEqual(result["dimension_graph"]["status"], "satisfied")
+
+    def test_cumulative_dimension_chain_conflict_is_localized(self):
+        value = plan()
+        value["nodes"][1]["x"] = 1.0009
+        value["nodes"][2]["x"] = 2.0018
+        value["dimensions"] = [
+            {"id": "d-ab", "start": "a", "end": "b", "axis": "x", "reference_type": "face",
+             "value": 1, "text": "1.00", "source": SOURCE},
+            {"id": "d-ac", "start": "a", "end": "c", "axis": "x", "reference_type": "face",
+             "value": 2.0027, "text": "2.0027", "source": SOURCE},
+            {"id": "d-bc", "start": "b", "end": "c", "axis": "x", "reference_type": "face",
+             "value": 1, "text": "1.00", "source": SOURCE}]
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["status"], "conflict")
+        self.assertEqual(report["conflicts"][0]["dimension_id"], "d-bc")
+        with self.assertRaisesRegex(module.PlanError, "Dimension chain conflict: d-bc"):
+            module.dry_run(value)
+        value["dimensions"][1]["reference_type"] = "axis"
+        self.assertEqual(module.analyze_dimension_graph(value)["status"], "satisfied")
+
+    def test_aligned_chain_is_explicitly_indeterminate(self):
+        value = plan()
+        value["dimensions"] = [{"id": "d-aligned", "start": "a", "end": "b", "axis": "aligned",
+                                "reference_type": "face", "value": 2.5, "text": "2.50",
+                                "source": SOURCE}]
+        report = module.dry_run(value)["dimension_graph"]
+        self.assertEqual(report["status"], "indeterminate")
+        self.assertEqual(report["unresolved_aligned"], ["d-aligned"])
 
     def test_label_over_wrong_geometry_is_rejected(self):
         value = plan()

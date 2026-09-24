@@ -63,7 +63,7 @@ def _text_dimension(value: Any) -> Decimal:
     return _number(text, "dimension text")
 
 
-def validate(plan: dict[str, Any]) -> None:
+def _validate_basic(plan: dict[str, Any]) -> None:
     _keys(plan, {"schema_version", "units", "origin", "nodes", "lines", "circles", "dimensions"}, "plan")
     if plan["schema_version"] != "planspec-1" or plan["units"] != "m":
         raise PlanError("PlanSpec version or units unsupported; explicit conversion required")
@@ -119,6 +119,71 @@ def validate(plan: dict[str, Any]) -> None:
                     raise PlanError(f"Dimension {name} differs from referenced geometry")
 
 
+def analyze_dimension_graph(plan: dict[str, Any]) -> dict[str, Any]:
+    """Find inconsistent dimension chains without mixing axes or reference types.
+
+    Aligned dimensions are checked against their own geometry by the basic
+    validator, but a general signed aligned-chain solver is not yet available.
+    """
+    _validate_basic(plan)
+    nodes = {node["id"]: (_number(node["x"], "node.x"),
+                          _number(node["y"], "node.y")) for node in plan["nodes"]}
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    unresolved: list[str] = []
+    for dimension in plan["dimensions"]:
+        if dimension["axis"] == "aligned":
+            unresolved.append(dimension["id"])
+        else:
+            groups.setdefault((dimension["axis"], dimension["reference_type"]), []).append(dimension)
+    conflicts: list[dict[str, str]] = []
+    components = 0
+    for (axis, reference_type), dimensions in sorted(groups.items()):
+        coordinate = 0 if axis == "x" else 1
+        adjacent: dict[str, list[tuple[str, Decimal, str]]] = {}
+        for dimension in sorted(dimensions, key=lambda item: item["id"]):
+            start, end = dimension["start"], dimension["end"]
+            direction = 1 if nodes[end][coordinate] > nodes[start][coordinate] else -1
+            delta = _number(dimension["value"], "dimension.value") * direction
+            adjacent.setdefault(start, []).append((end, delta, dimension["id"]))
+            adjacent.setdefault(end, []).append((start, -delta, dimension["id"]))
+        potentials: dict[str, Decimal] = {}
+        visited_edges: set[str] = set()
+        for root in sorted(adjacent):
+            if root in potentials:
+                continue
+            components += 1
+            potentials[root] = Decimal(0)
+            pending = [root]
+            while pending:
+                node = pending.pop(0)
+                for neighbor, delta, edge_id in sorted(adjacent[node], key=lambda edge: edge[2]):
+                    if edge_id in visited_edges:
+                        continue
+                    visited_edges.add(edge_id)
+                    predicted = potentials[node] + delta
+                    if neighbor not in potentials:
+                        potentials[neighbor] = predicted
+                        pending.append(neighbor)
+                    else:
+                        residual = predicted - potentials[neighbor]
+                        if abs(residual) > Decimal("0.001"):
+                            conflicts.append({"dimension_id": edge_id, "axis": axis,
+                                              "reference_type": reference_type,
+                                              "component_root": root,
+                                              "residual_m": format(residual, "f")})
+    return {"schema_version": "planspec-dimension-graph-1",
+            "status": "conflict" if conflicts else "indeterminate" if unresolved else "satisfied",
+            "components": components, "conflicts": conflicts,
+            "unresolved_aligned": sorted(unresolved)}
+
+
+def validate(plan: dict[str, Any]) -> None:
+    report = analyze_dimension_graph(plan)
+    if report["conflicts"]:
+        ids = ", ".join(conflict["dimension_id"] for conflict in report["conflicts"])
+        raise PlanError(f"Dimension chain conflict: {ids}")
+
+
 def _coordinate(value: Decimal) -> str:
     if abs(value) > Decimal("1000000"):
         raise PlanError("Coordinate exceeds compiler range")
@@ -132,6 +197,7 @@ def _coordinate(value: Decimal) -> str:
 
 def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
+    dimension_graph = analyze_dimension_graph(plan)
     nodes = {node["id"]: (_number(node["x"], "x"), _number(node["y"], "y"))
              for node in plan["nodes"]}
     origin = (_number(plan["origin"]["x"], "origin.x"),
@@ -171,6 +237,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     wire = json.dumps(execution, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return {"schema_version": "planspec-dry-run-1", "commands": commands,
             "execution_steps": execution,
+            "dimension_graph": dimension_graph,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
             "unsupported": unsupported, "executable": not unsupported,
             "note": "Nonzero layers require layer_assignment in a manifest verified for this build"}
