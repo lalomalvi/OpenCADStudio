@@ -28,7 +28,7 @@ def assess(run: Path, image: Path, binary: Path, external_path: Path) -> dict:
     cad_path = cad_files[0]
     cad = verify_owned_cad_evidence(cad_path)
     handles = cad["handles_by_id"]
-    if report.get("schema_version") != "m7-integrated-dimension-trial-1" or \
+    if report.get("schema_version") != "m7-integrated-dimension-trial-3" or \
             report.get("status") != "passed_scoped_reuse_l3_cad_l2" or \
             report.get("acceptance_m7") is not False or \
             report.get("gui_exited") is not True or \
@@ -53,6 +53,7 @@ def assess(run: Path, image: Path, binary: Path, external_path: Path) -> dict:
             external.get("insunits") != 6 or external.get("unit_match") is not True or \
             external.get("model_census_count") != 32 or \
             external.get("model_types") != {"LINE": 25, "DIMENSION": 7} or \
+            external.get("layer_states", {}).get("OCS_DIM_REF", {}).get("color_aci", 0) >= 0 or \
             external.get("census_done") is not True or \
             external.get("census_sha256") != _file_sha(census_path) or \
             external.get("forced_termination") is not False or \
@@ -104,7 +105,7 @@ def assess(run: Path, image: Path, binary: Path, external_path: Path) -> dict:
                 raise IntegratedL4Error("Compiled LINE command differs")
             x0, y0, x1, y1 = (float(value) for value in match.groups())
             observed_a, observed_b = _point(fields[9]), _point(fields[16])
-            same = (fields[1] == "LINE" and fields[3] == "0" and
+            same = (fields[1] == "LINE" and fields[3] == command["layer"] and
                     ((_close(observed_a, (x0, y0, 0.0)) and
                       _close(observed_b, (x1, y1, 0.0))) or
                      (_close(observed_b, (x0, y0, 0.0)) and
@@ -112,11 +113,12 @@ def assess(run: Path, image: Path, binary: Path, external_path: Path) -> dict:
         matched.append({"planspec_id": name, "handle": handles[name],
                         "matched_1e_6": bool(same)})
     count = sum(row["matched_1e_6"] for row in matched)
-    return {"schema_version": "m7-integrated-dimension-l4-1",
+    return {"schema_version": "m7-integrated-dimension-l4-3",
             "status": "passed_scoped_l4" if count == 32 else "failed_scoped_l4",
-            "scope": "partial_apartment_with_source_aligned_axis_dimensions_and_visible_support_wall",
+            "scope": "partial_apartment_with_source_aligned_axis_dimensions_and_hidden_support_wall",
             "acceptance_m7": False, "native_dimensions": 7,
-            "architectural_lines": 21, "visible_support_lines": 4,
+            "architectural_lines": 21, "hidden_support_lines": 4,
+            "support_layer_off": True,
             "freeze_sha256": _file_sha(run / "freeze.json"),
             "report_sha256": _file_sha(run / "report.json"),
             "cad_evidence_sha256": _file_sha(cad_path),

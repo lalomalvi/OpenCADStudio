@@ -32,8 +32,9 @@ def validate_bundle(root: Path, image: Path, binary: Path) -> tuple[dict, dict, 
     frozen = json.loads((root / "freeze.json").read_text(encoding="utf-8"))
     base = root.parent / "apartment-horizontal-bundle-v1"
     chain = root.parent / "apartment-bottom-chain-v1"
-    if frozen.get("schema_version") != "m7-integrated-dimension-freeze-1" or \
+    if frozen.get("schema_version") != "m7-integrated-dimension-freeze-3" or \
             frozen.get("acceptance_m7") is not False or \
+            frozen.get("support_layer") != "OCS_DIM_REF" or \
             frozen.get("source_sha256") != _file_sha(image) or \
             frozen.get("base_plan_sha256") != _file_sha(base / "model-plan.json") or \
             frozen.get("base_report_sha256") != _file_sha(base / "report.json") or \
@@ -71,7 +72,7 @@ def main() -> None:
                            (args.run_root, args.image, args.binary))
     plan, compiled, usage = validate_bundle(root, image, binary)
     _write_new(root / "model-plan.json", plan)
-    report = {"schema_version": "m7-integrated-dimension-trial-1",
+    report = {"schema_version": "m7-integrated-dimension-trial-3",
               "status": "failed", "acceptance_m7": False,
               "effective_model": "unverified_by_cli_jsonl",
               "model_reuse": "bottom_chain_v1_same_events_no_new_model_call",

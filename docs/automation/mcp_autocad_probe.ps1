@@ -99,6 +99,11 @@ $lispText = @"
     "-"))
 (write-line (strcat "ACADVER|" (getvar "ACADVER")) ocs_file)
 (write-line (strcat "INSUNITS|" (itoa (getvar "INSUNITS"))) ocs_file)
+(setq ocs_dim_ref_layer (tblsearch "LAYER" "OCS_DIM_REF"))
+(if ocs_dim_ref_layer
+  (write-line (strcat "LAYERSTATE|OCS_DIM_REF|"
+                      (ocs_value ocs_dim_ref_layer 62) "|"
+                      (ocs_value ocs_dim_ref_layer 70)) ocs_file))
 (foreach ocs_layer_name '("A-THIN" "A-THICK")
   (setq ocs_layer_entity (tblobjname "LAYER" ocs_layer_name))
   (setq ocs_layer_data (if ocs_layer_entity (entget ocs_layer_entity) nil))
@@ -248,7 +253,17 @@ try {
     $entityByHandle = @{}
     $dimensionReferences = @()
     $dimensionStyles = @{}
+    $layerStates = @{}
     if ($censusDone) {
+        foreach ($row in @($lines | Where-Object { $_.StartsWith('LAYERSTATE|') })) {
+            $parts = $row -split '\|'
+            if ($parts.Count -eq 4 -and -not $layerStates.ContainsKey($parts[1])) {
+                $layerStates[$parts[1]] = [ordered]@{
+                    color_aci = Read-DxfNumber $parts[2]
+                    flags = Read-DxfNumber $parts[3]
+                }
+            }
+        }
         foreach ($row in @($lines | Where-Object { $_.StartsWith('DIMREF|') })) {
             $parts = $row -split '\|'
             if ($parts.Count -eq 5) {
@@ -1622,6 +1637,7 @@ try {
         model_types = $types
         dimension_measurements = $dimensionMeasurements
         dimension_styles = $dimensionStyles
+        layer_states = $layerStates
         dimension_comparison = $dimensionComparison
         face_reference_comparison = $faceReferenceComparison
         face_style_comparison = $faceStyleComparison

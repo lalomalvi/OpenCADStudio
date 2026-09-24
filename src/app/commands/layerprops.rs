@@ -58,44 +58,68 @@ impl OpenCADStudio {
                         }
                     }
                     "ON" => {
+                        let mut affected = Vec::new();
                         for name in &parts[1..] {
                             if let Some(l) = self.tabs[i].scene.document.layers.get_mut(name) {
                                 l.flags.off = false;
                                 l.flags.frozen = false;
+                                affected.push(l.name.clone());
                             }
                         }
                         self.push_undo_snapshot(i, "LAYER ON");
                         self.tabs[i].dirty = true;
+                        if !affected.is_empty() {
+                            self.tabs[i].scene.invalidate_layer_dependencies(&affected);
+                            self.refresh_layer_panel();
+                        }
                         self.command_line.push_output(crate::t!("LAYER: layers turned on.").as_ref());
                     }
                     "OFF" => {
+                        let mut affected = Vec::new();
                         for name in &parts[1..] {
                             if let Some(l) = self.tabs[i].scene.document.layers.get_mut(name) {
                                 l.flags.off = true;
+                                affected.push(l.name.clone());
                             }
                         }
                         self.push_undo_snapshot(i, "LAYER OFF");
                         self.tabs[i].dirty = true;
+                        if !affected.is_empty() {
+                            self.tabs[i].scene.invalidate_layer_dependencies(&affected);
+                            self.refresh_layer_panel();
+                        }
                         self.command_line.push_output(crate::t!("LAYER: layers turned off.").as_ref());
                     }
                     "FREEZE" | "FR" => {
+                        let mut affected = Vec::new();
                         for name in &parts[1..] {
                             if let Some(l) = self.tabs[i].scene.document.layers.get_mut(name) {
                                 l.flags.frozen = true;
+                                affected.push(l.name.clone());
                             }
                         }
                         self.push_undo_snapshot(i, "LAYER FREEZE");
                         self.tabs[i].dirty = true;
+                        if !affected.is_empty() {
+                            self.tabs[i].scene.invalidate_layer_dependencies(&affected);
+                            self.refresh_layer_panel();
+                        }
                         self.command_line.push_output(crate::t!("LAYER: layers frozen.").as_ref());
                     }
                     "THAW" | "TH" => {
+                        let mut affected = Vec::new();
                         for name in &parts[1..] {
                             if let Some(l) = self.tabs[i].scene.document.layers.get_mut(name) {
                                 l.flags.frozen = false;
+                                affected.push(l.name.clone());
                             }
                         }
                         self.push_undo_snapshot(i, "LAYER THAW");
                         self.tabs[i].dirty = true;
+                        if !affected.is_empty() {
+                            self.tabs[i].scene.invalidate_layer_dependencies(&affected);
+                            self.refresh_layer_panel();
+                        }
                         self.command_line.push_output(crate::t!("LAYER: layers thawed.").as_ref());
                     }
                     "LOCK" | "LO" => {

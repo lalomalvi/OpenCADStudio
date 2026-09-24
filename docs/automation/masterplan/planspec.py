@@ -1600,6 +1600,18 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                               "layer": command["layer"]})
             current_layer = command["layer"]
         execution.append(command)
+    # The single axis support remains a native editable wall in the DWG but is
+    # hidden after dimension creation. Never hide a layer containing source
+    # architecture; the caller must opt into layer_assignment explicitly.
+    if (dimension_status == "compiled_multi_axis_spans" and
+            len(plan["walls"]) == 1 and
+            plan["walls"][0]["layer"] == "OCS_DIM_REF"):
+        if any(line["layer"] == "OCS_DIM_REF" for line in plan["lines"]):
+            raise PlanError("Dimension reference layer contains architecture")
+        if current_layer == "OCS_DIM_REF":
+            execution.append({"planspec_id": None, "command": "CLAYER 0", "layer": "0"})
+        execution.append({"planspec_id": None,
+                          "command": "LAYER OFF OCS_DIM_REF", "layer": "OCS_DIM_REF"})
     missing = set()
     if plan["dimensions"] and dimension_status == "unsupported":
         missing.add("native_dimension")

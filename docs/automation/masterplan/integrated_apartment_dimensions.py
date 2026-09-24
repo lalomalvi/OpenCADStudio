@@ -32,7 +32,8 @@ def compile_integrated_apartment(base_plan: dict, observation: dict, *,
                 "top_px": 365, "bottom_px": 869,
                 "width_m": 13.86, "height_m": 8.0} or \
             frozen.get("axis_alignment_tolerance_m") != 0.05 or \
-            frozen.get("chain_baseline_y_m") != -3.0:
+            frozen.get("chain_baseline_y_m") != -3.0 or \
+            frozen.get("support_layer", "0") not in {"0", "OCS_DIM_REF"}:
         raise IntegratedDimensionError("Frozen integration scope differs")
     chain = compile_bottom_chain(
         observation,
@@ -59,6 +60,7 @@ def compile_integrated_apartment(base_plan: dict, observation: dict, *,
     if set(line["id"] for line in base_plan["lines"]) & \
             set(item["id"] for item in [*chain["dimensions"], *chain["walls"]]):
         raise IntegratedDimensionError("Dimension IDs collide with apartment lines")
+    chain["walls"][0]["layer"] = frozen.get("support_layer", "0")
     plan = {"schema_version": "planspec-8", "units": "m",
             "origin": {"x": 0, "y": 0},
             "nodes": [*deepcopy(base_plan["nodes"]), *chain["nodes"]],
@@ -73,10 +75,14 @@ def compile_integrated_apartment(base_plan: dict, observation: dict, *,
             "dimension_style": chain["dimension_style"],
             "dimension_placements": chain["dimension_placements"],
             "obstacles": []}
-    compiled = dry_run(plan)
+    compiled = dry_run(plan, capabilities={"layer_assignment"}
+                       if frozen.get("support_layer") == "OCS_DIM_REF" else None)
     if not compiled["executable"] or compiled["unsupported"] or \
             compiled["quality_blockers"] or len(compiled["commands"]) != 32 or \
             compiled["dimension_compilation"] != {
                 "status": "compiled_multi_axis_spans", "generated_parts": 7}:
         raise IntegratedDimensionError("Integrated PlanSpec cannot compile safely")
+    if frozen.get("support_layer") == "OCS_DIM_REF" and \
+            compiled["execution_steps"][-1]["command"] != "LAYER OFF OCS_DIM_REF":
+        raise IntegratedDimensionError("Technical dimension layer was not hidden")
     return plan, compiled

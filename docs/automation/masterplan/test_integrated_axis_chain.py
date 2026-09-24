@@ -2,7 +2,7 @@ import copy
 import unittest
 
 from measurement_axis_chain import compile_bottom_chain
-from planspec import dry_run
+from planspec import PlanError, dry_run
 
 
 class IntegratedAxisChainTests(unittest.TestCase):
@@ -44,6 +44,19 @@ class IntegratedAxisChainTests(unittest.TestCase):
         result = dry_run(bad)
         self.assertFalse(result["executable"])
         self.assertIn("native_dimension", result["unsupported"])
+
+    def test_reference_layer_is_hidden_after_dimensions(self):
+        self.plan["walls"][0]["layer"] = "OCS_DIM_REF"
+        result = dry_run(self.plan, capabilities={"layer_assignment"})
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["execution_steps"][-1]["command"],
+                         "LAYER OFF OCS_DIM_REF")
+
+    def test_architecture_on_reference_layer_is_rejected(self):
+        self.plan["walls"][0]["layer"] = "OCS_DIM_REF"
+        self.plan["lines"][0]["layer"] = "OCS_DIM_REF"
+        with self.assertRaises(PlanError):
+            dry_run(self.plan, capabilities={"layer_assignment"})
 
 
 if __name__ == "__main__":

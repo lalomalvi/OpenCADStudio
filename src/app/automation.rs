@@ -1320,6 +1320,51 @@ mod tests {
         let lines = app.automation_op(r#"{"op":"query","type":"Line"}"#);
         assert_eq!(lines["entities"][0]["layer"], "Annotations");
     }
+
+    #[test]
+    fn layer_off_command_invalidates_scene_and_panel() {
+        let mut app = super::OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        app.automation_op(r#"{"op":"run","cmd":"LAYER NEW OCS_DIM_REF"}"#);
+        app.automation_op(r#"{"op":"run","cmd":"CLAYER OCS_DIM_REF"}"#);
+        app.automation_op(r#"{"op":"run","cmd":"LINE 0,0 10,0"}"#);
+        app.automation_op(r#"{"op":"run","cmd":"CLAYER 0"}"#);
+        let i = app.active_tab;
+        let before = app.tabs[i].scene.geometry_epoch;
+        app.automation_op(r#"{"op":"run","cmd":"LAYER OFF OCS_DIM_REF"}"#);
+        assert!(app.tabs[i]
+            .scene
+            .document
+            .layers
+            .get("OCS_DIM_REF")
+            .unwrap()
+            .flags
+            .off);
+        assert_ne!(app.tabs[i].scene.geometry_epoch, before);
+        assert!(!app.tabs[i]
+            .layers
+            .layers
+            .iter()
+            .find(|layer| layer.name == "OCS_DIM_REF")
+            .unwrap()
+            .visible);
+        app.automation_op(r#"{"op":"run","cmd":"LAYER ON OCS_DIM_REF"}"#);
+        assert!(!app.tabs[i]
+            .scene
+            .document
+            .layers
+            .get("OCS_DIM_REF")
+            .unwrap()
+            .flags
+            .off);
+        assert!(app.tabs[i]
+            .layers
+            .layers
+            .iter()
+            .find(|layer| layer.name == "OCS_DIM_REF")
+            .unwrap()
+            .visible);
+    }
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn built_in_edits_advance_plugin_document_fingerprint_once() {
