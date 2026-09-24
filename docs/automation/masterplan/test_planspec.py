@@ -554,6 +554,10 @@ class PlanSpecTests(unittest.TestCase):
         changed["joins"][0]["wall_a_id"] = "missing"
         with self.assertRaisesRegex(module.PlanError, "reference"):
             module.validate(changed)
+        changed = deepcopy(value)
+        changed["nodes"][2]["y"] = 0.05
+        with self.assertRaisesRegex(module.PlanError, "too short"):
+            module.dry_run(changed)
 
     def test_v5_joined_wall_one_door_preserves_gap_jamb_and_swing(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-joined-door.planspec.json"
@@ -592,10 +596,35 @@ class PlanSpecTests(unittest.TestCase):
         near_second_join["openings"][0]["offset_m"] = 0.5
         with self.assertRaisesRegex(module.PlanError, "clear distance from join"):
             module.dry_run(near_second_join)
-        changed = deepcopy(value)
-        changed["nodes"][2]["y"] = 0.05
-        with self.assertRaisesRegex(module.PlanError, "too short"):
-            module.dry_run(changed)
+
+    def test_v5_three_wall_two_join_chain_has_one_outer_boundary(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-three-wall-chain.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_three_wall_two_join_union", "generated_parts": 12})
+        edges = [item["command"].split()[1:] for item in result["commands"]]
+        self.assertEqual(len(edges), 12)
+        self.assertTrue(all(end == edges[(index + 1) % 12][0]
+                            for index, (_, end) in enumerate(edges)))
+        vertices = [tuple(map(float, start.split(","))) for start, _ in edges]
+        doubled_area = sum(vertices[index][0] * vertices[(index + 1) % 12][1] -
+                           vertices[(index + 1) % 12][0] * vertices[index][1]
+                           for index in range(12))
+        self.assertAlmostEqual(abs(doubled_area) / 2, 1.98, places=6)
+        self.assertEqual(result["commands_sha256"], module.dry_run(deepcopy(value))["commands_sha256"])
+        wrong_layer = deepcopy(value)
+        wrong_layer["walls"][2]["layer"] = "A-OTHER"
+        with self.assertRaisesRegex(module.PlanError, "one layer"):
+            module.dry_run(wrong_layer)
+        touching = deepcopy(value)
+        touching["nodes"][2]["y"] = 0.2
+        touching["nodes"][3]["y"] = 0.2
+        # The changed axis remains joined at c, but the far arm touches an
+        # unjoined wall and must be rejected before any CAD command runs.
+        with self.assertRaisesRegex(module.PlanError, "Unjoined wall rectangles"):
+            module.dry_run(touching)
 
     def test_v6_wall_face_binding_validates_without_emitting_native_dimension(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"

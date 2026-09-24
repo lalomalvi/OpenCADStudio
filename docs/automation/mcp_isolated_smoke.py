@@ -88,6 +88,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                             "synthetic-window", "synthetic-wall-join",
                             "synthetic-joined-door",
                             "synthetic-joined-door-second",
+                            "synthetic-three-wall-chain",
                             "synthetic-two-door-wall-v8",
                             "synthetic-wall-axis-span-v8",
                             "synthetic-wall-axis-span-vertical-v8",
@@ -104,6 +105,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
     compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")),
                        capabilities=set(manifest["verified_capabilities"]) if manifest else None)
     expected_count = 20 if plan_fixture == "synthetic-two-door-wall-v8" else \
+        12 if plan_fixture == "synthetic-three-wall-chain" else \
         14 if plan_fixture in {"synthetic-door-swing", "synthetic-window",
                               "synthetic-joined-door", "synthetic-joined-door-second"} else \
         8 if plan_fixture in {"synthetic-wall-gap", "synthetic-wall-join"} else \
@@ -581,6 +583,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                             "synthetic-window", "synthetic-wall-join",
                             "synthetic-joined-door",
                             "synthetic-joined-door-second",
+                            "synthetic-three-wall-chain",
                             "synthetic-two-door-wall-v8", "synthetic-wall-axis-span-v8",
                             "synthetic-wall-axis-span-vertical-v8",
                             "synthetic-wall-axis-endpoints-v9",

@@ -1,0 +1,7 @@
+# Tres muros y dos uniones explícitas
+
+PlanSpec v5–v9 compila exactamente tres muros ortogonales a los ejes XY, de igual espesor y capa, con dos joins `orthogonal_union` que formen una sola cadena y sin aberturas. Valida referencias/extremos con el contrato existente; además rechaza ejes oblicuos, contacto o solape de muros sin join, más de un bucle de contorno y segmentos degenerados. No infiere joins por proximidad. El algoritmo toma la unión de las tres huellas rectangulares, traza una sola frontera orientada y combina tramos colineales con el mismo muro propietario. IDs de borde y orden son deterministas; cada segmento conserva el muro fuente.
+
+El fixture `fixtures/synthetic-three-wall-chain.planspec.json` declara muros de 4 m, 3 m y 3 m, espesor 0.2 m y dos codos. Oráculo previo: un contorno cerrado de 12 LINE y área 1.98 m². L2 exige 12 handles, guardado/reapertura, auditoría, captura fenced y salida. L4 AutoCAD compara cada LINE con una lista de 12 extremos congelada en la sonda, independiente del algoritmo compilador, con tolerancia 1e-6; exige Model12, INSUNITS6, AUDIT0/0 y DWG sin cambio. Un handle adulterado en copia debe producir `mismatch`; las uniones de dos muros con y sin puerta son regresiones.
+
+Alcance parcial: no cubre tres muros oblicuos, T/X, ciclos, más de dos joins, aperturas, cotas de muros unidos, contactos tridimensionales ni evaluación L3/L5. La lista fija L4 certifica este fixture, no cualquier cadena válida que acepte el algoritmo.

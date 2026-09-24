@@ -954,6 +954,7 @@ try {
                                   'synthetic-wall-join.planspec.json',
                                   'synthetic-joined-door.planspec.json',
                                   'synthetic-joined-door-second.planspec.json',
+                                  'synthetic-three-wall-chain.planspec.json',
                                   'synthetic-wall-face-dimension-readable-v7.planspec.json',
                                   'synthetic-wall-face-dimension-vertical-v7.planspec.json',
                                   'synthetic-wall-axis-span-v8.planspec.json',
@@ -1406,6 +1407,46 @@ try {
                         matched_1e_6 = [bool]$arcMatched }
                 }
             }
+            if ($fixtureName -eq 'synthetic-three-wall-chain.planspec.json') {
+                # Frozen independent coordinate oracle for the v5 synthetic
+                # chain. A changed fixture is detected by these comparisons.
+                $oracle = @(
+                    @('wall-horizontal', 0, -0.1, 4, -0.1),
+                    @('wall-horizontal', 4, -0.1, 4, 0),
+                    @('wall-vertical', 4, 0, 4.1, 0),
+                    @('wall-vertical', 4.1, 0, 4.1, 2.9),
+                    @('wall-top', 4.1, 2.9, 7, 2.9),
+                    @('wall-top', 7, 2.9, 7, 3.1),
+                    @('wall-top', 7, 3.1, 4, 3.1),
+                    @('wall-top', 4, 3.1, 4, 3),
+                    @('wall-vertical', 4, 3, 3.9, 3),
+                    @('wall-vertical', 3.9, 3, 3.9, 0.1),
+                    @('wall-horizontal', 3.9, 0.1, 0, 0.1),
+                    @('wall-horizontal', 0, 0.1, 0, -0.1)
+                )
+                for ($index = 0; $index -lt $oracle.Count; $index++) {
+                    $partId = 'three-wall-union__outline_{0}' -f $index
+                    $expected = $oracle[$index]
+                    $expectedStart = @([double]$expected[1], [double]$expected[2], 0.0)
+                    $expectedEnd = @([double]$expected[3], [double]$expected[4], 0.0)
+                    $handle = [string]$richSourceReport.planspec.handles_by_id.($partId)
+                    $row = if ($handle) { $entityByHandle[$handle] } else { $null }
+                    $observedStart = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                    $observedEnd = if ($row) { Read-DxfPoint $row[16] } else { $null }
+                    $matched = $row -and $row[1] -eq 'LINE' -and $row[3] -eq '0' -and
+                        (((Same-Point $expectedStart $observedStart) -and
+                          (Same-Point $expectedEnd $observedEnd)) -or
+                         ((Same-Point $expectedStart $observedEnd) -and
+                          (Same-Point $expectedEnd $observedStart)))
+                    $geometryComparison += [ordered]@{
+                        planspec_id = $partId; source_id = [string]$expected[0]
+                        kind = 'THREE_WALL_UNION_EDGE'; handle = $handle; expected_layer = '0'
+                        expected_start = $expectedStart; expected_end = $expectedEnd
+                        autocad_start = $observedStart; autocad_end = $observedEnd
+                        matched_1e_6 = [bool]$matched
+                    }
+                }
+            }
         }
     }
     $geometryMismatch = ($geometrySourceValid -eq $false) -or
@@ -1416,6 +1457,7 @@ try {
               'synthetic-door-swing.planspec.json', 'synthetic-window.planspec.json',
               'synthetic-wall-join.planspec.json', 'synthetic-joined-door.planspec.json',
               'synthetic-joined-door-second.planspec.json',
+              'synthetic-three-wall-chain.planspec.json',
               'synthetic-two-door-wall-v8.planspec.json',
               'synthetic-wall-axis-span-v8.planspec.json',
               'synthetic-wall-axis-span-vertical-v8.planspec.json',

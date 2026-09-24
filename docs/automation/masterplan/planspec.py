@@ -897,6 +897,98 @@ def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
     return commands
 
 
+def _three_wall_union_commands(walls: list[dict], joins: list[dict], nodes: dict,
+                               origin: tuple[Decimal, Decimal]) -> list[dict]:
+    """Trace one outer boundary of three axis-aligned, explicitly joined walls."""
+    by_id = {wall["id"]: wall for wall in walls}
+    if len(by_id) != 3 or len(joins) != 2 or any(
+            join["wall_a_id"] not in by_id or join["wall_b_id"] not in by_id
+            for join in joins):
+        raise PlanError("Three-wall union needs two joins covering three walls")
+    pairs = {frozenset((join["wall_a_id"], join["wall_b_id"])) for join in joins}
+    if len(pairs) != 2 or len(set().union(*pairs)) != 3:
+        raise PlanError("Three-wall joins must form one chain")
+    if len({wall["layer"] for wall in walls}) != 1:
+        raise PlanError("Three-wall union requires one layer")
+    rectangles = {}
+    for wall in walls:
+        a, b = nodes[wall["start"]], nodes[wall["end"]]
+        half = _number(wall["thickness_m"], "wall.thickness_m") / 2
+        if a[0] == b[0] and a[1] != b[1]:
+            rect = (a[0] - half, min(a[1], b[1]), a[0] + half, max(a[1], b[1]))
+        elif a[1] == b[1] and a[0] != b[0]:
+            rect = (min(a[0], b[0]), a[1] - half, max(a[0], b[0]), a[1] + half)
+        else:
+            raise PlanError("Three-wall union currently requires axis-aligned walls")
+        rectangles[wall["id"]] = rect
+    ids = sorted(rectangles)
+    for i, first in enumerate(ids):
+        for second in ids[i + 1:]:
+            if frozenset((first, second)) in pairs:
+                continue
+            a, b = rectangles[first], rectangles[second]
+            if min(a[2], b[2]) >= max(a[0], b[0]) and \
+                    min(a[3], b[3]) >= max(a[1], b[1]):
+                raise PlanError("Unjoined wall rectangles touch or overlap")
+    xs = sorted({value for rect in rectangles.values() for value in (rect[0], rect[2])})
+    ys = sorted({value for rect in rectangles.values() for value in (rect[1], rect[3])})
+    cells = {}
+    for i in range(len(xs) - 1):
+        for j in range(len(ys) - 1):
+            center_x, center_y = (xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2
+            owners = [name for name in ids if rectangles[name][0] < center_x < rectangles[name][2]
+                      and rectangles[name][1] < center_y < rectangles[name][3]]
+            if owners:
+                cells[i, j] = owners[0]
+    edges = []
+    for (i, j), owner in sorted(cells.items()):
+        if (i, j - 1) not in cells:
+            edges.append(((xs[i], ys[j]), (xs[i + 1], ys[j]), owner))
+        if (i + 1, j) not in cells:
+            edges.append(((xs[i + 1], ys[j]), (xs[i + 1], ys[j + 1]), owner))
+        if (i, j + 1) not in cells:
+            edges.append(((xs[i + 1], ys[j + 1]), (xs[i], ys[j + 1]), owner))
+        if (i - 1, j) not in cells:
+            edges.append(((xs[i], ys[j + 1]), (xs[i], ys[j]), owner))
+    outgoing = {}
+    for edge in edges:
+        outgoing.setdefault(edge[0], []).append(edge)
+    if not edges or any(len(items) != 1 for items in outgoing.values()):
+        raise PlanError("Three-wall union boundary is ambiguous")
+    current = min(outgoing)
+    start = current
+    ordered = []
+    while True:
+        if current not in outgoing:
+            raise PlanError("Three-wall union boundary is open")
+        edge = outgoing.pop(current)[0]
+        ordered.append(edge)
+        current = edge[1]
+        if current == start:
+            break
+    if outgoing or len(ordered) < 4:
+        raise PlanError("Three-wall union has multiple boundary loops")
+    merged = []
+    for edge in ordered:
+        if merged and merged[-1][2] == edge[2] and \
+                (merged[-1][1][0] - merged[-1][0][0]) * (edge[1][1] - edge[0][1]) == \
+                (merged[-1][1][1] - merged[-1][0][1]) * (edge[1][0] - edge[0][0]):
+            merged[-1] = (merged[-1][0], edge[1], edge[2])
+        else:
+            merged.append(edge)
+    def xy(point: tuple[Decimal, Decimal]) -> str:
+        return f"{_coordinate(point[0] + origin[0])},{_coordinate(point[1] + origin[1])}"
+    result = []
+    for index, (start_point, end_point, owner) in enumerate(merged):
+        start_xy, end_xy = xy(start_point), xy(end_point)
+        if start_xy == end_xy:
+            raise PlanError("Three-wall union edge collapses at compiler precision")
+        result.append({"planspec_id": f"three-wall-union__outline_{index}",
+                       "source_id": owner, "part": f"outline_{index}",
+                       "command": f"LINE {start_xy} {end_xy}", "layer": walls[0]["layer"]})
+    return result
+
+
 def _door_swing_extrema(wall: dict, door: dict,
                         nodes: dict[str, tuple[Decimal, Decimal]]) -> list[tuple[Decimal, Decimal]]:
     """Quarter-circle endpoints and included cardinal extrema in wall coordinates."""
@@ -1144,7 +1236,13 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     wall_status = "not_applicable"
     if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and plan["walls"]:
         wall_status = "unsupported"
-        if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and len(plan["walls"]) == 2 and \
+        if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and len(plan["walls"]) == 3 and \
+                len(plan["joins"]) == 2 and not plan["openings"]:
+            union = _three_wall_union_commands(plan["walls"], plan["joins"], nodes, origin)
+            commands.extend(union)
+            wall_parts = len(union)
+            wall_status = "compiled_three_wall_two_join_union"
+        elif plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and len(plan["walls"]) == 2 and \
                 len(plan["joins"]) == 1 and len(plan["openings"]) <= 1:
             walls_by_id = {wall["id"]: wall for wall in plan["walls"]}
             join = plan["joins"][0]
@@ -1339,7 +1437,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         missing.add("opening_compilation")
     if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and plan["joins"] and \
             wall_status not in {"compiled_orthogonal_union_two_walls",
-                                "compiled_joined_wall_single_door"}:
+                                "compiled_joined_wall_single_door",
+                                "compiled_three_wall_two_join_union"}:
         missing.add("join_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")
