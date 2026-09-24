@@ -1373,3 +1373,13 @@ M5.3 mejora formato y persistencia acotados; asociatividad al editar, escala gen
 ### Prompt de continuidad desde el centésimo undécimo corte
 
 Verifica AGENTS, Git/remotos, árbol, SHAs, build y los siete estilos AutoCAD DIMDEC=2/DIMZIN=0. Conserva los runs v1 pequeño, estilo grande y formato fijo como cortes distintos unidos por el mismo JSONL Luna. Prueba adversarialmente `DIMSTYLE SET` con valores inválidos antes de cualquier mutación y verifica asociatividad real al editar/reabrir; no extrapoles M5.3 general. Para M6.5, prueba cajas derivadas contra textos vecinos y desplazamientos en fixtures separados. M7/M8 siguen abiertos por plano completo, L5, identidad/uso directos, baseline/candidato y publicación integrada. Continúa con cinco imágenes, sin pedir sexta ni API, y conserva la abstención de escalera. No abras/modifiques DWG privado; push solo al fork.
+
+## Centésimo duodécimo corte: cajas derivadas sin solape — 2026-09-24
+
+El corte 111 `codex/mcp-m5-fixed-decimal-dimensions` quedó publicado solo en el fork con SHA local/remoto `c28eb5fb004ab7d291fb464d040374d83ed48b86` y árbol limpio al iniciar. `source_text_crops.py` rechaza cajas derivadas con intersección de área antes de crear evidencia, y `verify_review` vuelve a comprobarlo. Fixture sintético adversarial: dos cajas cercanas con padding10 chocan y se rechazan; las cajas exactas siguen válidas. Dos reviews de imagen real con padding25 se revalidaron 6/6 sin solape. Masterplan 141/141, automatización 32/32, `py_compile` y diff check pasaron. Véase [M6-CAJAS-DERIVADAS-SIN-SOLAPE-V1.md](M6-CAJAS-DERIVADAS-SIN-SOLAPE-V1.md). Verificar SHA local/remoto y árbol tras publicar.
+
+Esto reduce mezcla entre **cajas declaradas**, pero no descubre texto vecino no declarado ni acredita L5. Los resultados M7/M8 y el DWG privado permanecen como antes; `upstream` intacto.
+
+### Prompt de continuidad desde el centésimo duodécimo corte
+
+Verifica AGENTS, Git/remotos, SHA local/remoto, árbol y los 141 tests. Repite verificación de los cuatro reviews y del adversarial sin solape. Mantén el margen25 como corrección post hoc, no cohorte reservada. Para M5.3, prueba rechazo real del comando DIMSTYLE ante enteros fuera de rango y asociatividad tras editar/reabrir. Continúa con las cinco imágenes y evidencia existente, sin sexta ni API; reconstrucción integral, comparación controlada, identidad/uso Responses directo y L5 siguen pendientes para M7/M8. No abras/modifiques DWG privado ni publiques al autor.

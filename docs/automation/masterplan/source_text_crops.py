@@ -20,6 +20,11 @@ def _expanded(box: list[int], width: int, height: int, padding: int) -> list[int
             min(width, box[2] + padding), min(height, box[3] + padding)]
 
 
+def _overlap(a: list[int], b: list[int]) -> bool:
+    return max(a[0], b[0]) < min(a[2], b[2]) and \
+        max(a[1], b[1]) < min(a[3], b[3])
+
+
 def create(run: Path, image_path: Path, output: Path, *, padding_px: int = 0) -> dict:
     if output.exists():
         raise ValueError("Source crop output already exists")
@@ -37,20 +42,27 @@ def create(run: Path, image_path: Path, output: Path, *, padding_px: int = 0) ->
         raise ValueError("Source regions are absent")
     if not 1 <= len(indexed) <= 32:
         raise ValueError("Source region count differs")
-    output.mkdir(parents=True, exist_ok=False)
     entries = []
     with Image.open(image_path) as bitmap:
         source = bitmap.convert("RGB")
-        row_height = 300 if padding_px else 120
-        sheet = Image.new("RGB", (560, len(indexed) * row_height), "white")
-        draw = ImageDraw.Draw(sheet)
-        for index, (name, box) in enumerate(indexed):
+        expanded_boxes = []
+        for _, box in indexed:
             if not isinstance(box, list) or len(box) != 4 or \
                     any(type(value) is not int for value in box) or \
                     not (0 <= box[0] < box[2] <= source.width) or \
                     not (0 <= box[1] < box[3] <= source.height):
                 raise ValueError("Source region escapes image")
-            expanded = _expanded(box, source.width, source.height, padding_px)
+            expanded_boxes.append(_expanded(box, source.width, source.height,
+                                            padding_px))
+        if padding_px and any(_overlap(a, b)
+                              for index, a in enumerate(expanded_boxes)
+                              for b in expanded_boxes[index + 1:]):
+            raise ValueError("Derived source crops overlap neighboring claims")
+        output.mkdir(parents=True, exist_ok=False)
+        row_height = 300 if padding_px else 120
+        sheet = Image.new("RGB", (560, len(indexed) * row_height), "white")
+        draw = ImageDraw.Draw(sheet)
+        for index, ((name, box), expanded) in enumerate(zip(indexed, expanded_boxes)):
             crop = source.crop(tuple(expanded))
             raw_sha = hashlib.sha256(crop.tobytes()).hexdigest().upper()
             scale = max(1, min(10, 520 // crop.width,
@@ -108,6 +120,7 @@ def verify_review(run: Path, image_path: Path, review_path: Path) -> dict:
         raise ValueError("Source crop manifest differs")
     with Image.open(image_path) as bitmap:
         source = bitmap.convert("RGB")
+        boxes = []
         for (name, box), entry in zip(indexed, manifest["regions"]):
             expected = (_expanded(box, source.width, source.height,
                                   manifest.get("padding_px", 0))
@@ -118,6 +131,11 @@ def verify_review(run: Path, image_path: Path, review_path: Path) -> dict:
                     entry.get("rgb_pixels_sha256") != hashlib.sha256(
                         source.crop(tuple(expected)).tobytes()).hexdigest().upper():
                 raise ValueError("Source crop pixels differ")
+            boxes.append(expected)
+        if schema == "m7-source-text-crops-derived-2" and any(
+                _overlap(a, b) for index, a in enumerate(boxes)
+                for b in boxes[index + 1:]):
+            raise ValueError("Derived source crops overlap neighboring claims")
     judgments = review.get("regions")
     if review.get("schema_version") != "m7-source-text-visual-review-1" or \
             review.get("reviewer") != "assistant_visual_manual" or \
