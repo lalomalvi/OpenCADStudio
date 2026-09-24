@@ -358,6 +358,31 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual(module.dry_run(multi)["unsupported"],
                          ["opening_compilation", "wall_compilation"])
 
+    def test_v5_explicit_orthogonal_join_validates_but_does_not_emit_cad(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-join.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertEqual(result["architecture"]["joins"][0]["id"], "join-corner")
+        self.assertEqual(result["unsupported"], ["join_compilation", "wall_compilation"])
+        self.assertFalse(result["executable"])
+        self.assertEqual(result["commands"], [])
+        changed = deepcopy(value)
+        changed["nodes"][2]["x"] = 4.1
+        with self.assertRaisesRegex(module.PlanError, "perpendicular"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["walls"][1]["thickness_m"] = 0.3
+        with self.assertRaisesRegex(module.PlanError, "equal thickness"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["joins"][0]["wall_b_end"] = "end"
+        with self.assertRaisesRegex(module.PlanError, "do not coincide"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["joins"][0]["wall_a_id"] = "missing"
+        with self.assertRaisesRegex(module.PlanError, "reference"):
+            module.validate(changed)
+
 
 if __name__ == "__main__":
     unittest.main()

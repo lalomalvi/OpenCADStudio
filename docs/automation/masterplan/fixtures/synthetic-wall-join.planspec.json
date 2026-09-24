@@ -1,0 +1,118 @@
+{
+  "schema_version": "planspec-5",
+  "units": "m",
+  "origin": {
+    "x": 0,
+    "y": 0
+  },
+  "nodes": [
+    {
+      "id": "a",
+      "x": 0,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "junction",
+      "x": 4,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "c",
+      "x": 4,
+      "y": 3,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "lines": [],
+  "circles": [],
+  "dimensions": [],
+  "topology": {
+    "contours": []
+  },
+  "walls": [
+    {
+      "id": "wall-horizontal",
+      "start": "a",
+      "end": "junction",
+      "thickness_m": 0.2,
+      "layer": "0",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "wall-vertical",
+      "start": "junction",
+      "end": "c",
+      "thickness_m": 0.2,
+      "layer": "0",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "openings": [],
+  "joins": [
+    {
+      "id": "join-corner",
+      "wall_a_id": "wall-horizontal",
+      "wall_a_end": "end",
+      "wall_b_id": "wall-vertical",
+      "wall_b_end": "start",
+      "style": "orthogonal_union",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ]
+}
