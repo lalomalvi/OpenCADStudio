@@ -460,8 +460,9 @@ class PlanSpecTests(unittest.TestCase):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension-v7.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))
         result = module.dry_run(value)
-        self.assertTrue(result["executable"])
+        self.assertFalse(result["executable"])
         self.assertEqual(result["unsupported"], [])
+        self.assertEqual(result["quality_blockers"], ["dimension_line_inside_wall_bounds"])
         self.assertEqual(result["dimension_compilation"],
                          {"status": "compiled_single_horizontal_face_thickness",
                           "generated_parts": 1})
@@ -469,6 +470,7 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual(result["commands"][-1]["command"],
                          "DIMLINEAR 2,0.1 2,-0.1 2.5,0")
         self.assertEqual(result["commands"][-1]["planspec_id"], "wall-thickness")
+        self.assertEqual(result["dimension_placement_qa"]["status"], "inside_wall_bounds")
         self.assertIn("DIMSTYLE SET OCS_WALL_METRIC dimtxt 0.035",
                       [step["command"] for step in result["execution_steps"]])
         self.assertEqual(result["commands_sha256"], module.dry_run(value)["commands_sha256"])
@@ -496,6 +498,20 @@ class PlanSpecTests(unittest.TestCase):
         changed["dimension_placements"] = []
         with self.assertRaises(module.PlanError):
             module.validate(changed)
+
+    def test_v7_exterior_dimension_line_clears_wall_bounds(self):
+        fixture = Path(__file__).with_name("fixtures") / \
+            "synthetic-wall-face-dimension-exterior-v7.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["dimension_placement_qa"],
+                         {"status": "outside_wall_bounds", "wall_id": "wall-1",
+                          "dimension_id": "wall-thickness", "wall_end_x_m": "4",
+                          "dimension_line_x_m": "4.5",
+                          "scope": "2d_dimension_line_position_only_no_text_extents"})
+        self.assertEqual(result["commands"][-1]["command"],
+                         "DIMLINEAR 2,0.1 2,-0.1 4.5,0")
         changed = deepcopy(value)
         changed["dimension_placements"][0]["offset_m"] = 0
         with self.assertRaises(module.PlanError):

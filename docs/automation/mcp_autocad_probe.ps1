@@ -289,11 +289,15 @@ try {
                 }
             }
             if ($sourceReport.planspec.dimension_style) {
-                $faceFixturePath = Join-Path $PSScriptRoot 'masterplan\fixtures\synthetic-wall-face-dimension-v7.planspec.json'
-                $faceFixtureValid = $sourceReport.planspec.fixture -eq
-                    'synthetic-wall-face-dimension-v7.planspec.json' -and
-                    (Get-FileHash -LiteralPath $faceFixturePath -Algorithm SHA256).Hash -eq
-                    $sourceReport.planspec.fixture_sha256
+                $faceFixtureName = [string]$sourceReport.planspec.fixture
+                $faceFixtureValid = $faceFixtureName -in @(
+                    'synthetic-wall-face-dimension-v7.planspec.json',
+                    'synthetic-wall-face-dimension-exterior-v7.planspec.json')
+                if ($faceFixtureValid) {
+                    $faceFixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $faceFixtureName)
+                    $faceFixtureValid = (Get-FileHash -LiteralPath $faceFixturePath -Algorithm SHA256).Hash -eq
+                        $sourceReport.planspec.fixture_sha256
+                }
                 $expectedStyle = $sourceReport.planspec.dimension_style
                 $observedStyle = $dimensionStyles[$sourceReport.handles.dimension]
                 foreach ($field in @('name', 'text_height_m', 'arrow_size_m', 'gap_m',

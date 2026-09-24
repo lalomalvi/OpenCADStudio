@@ -44,7 +44,12 @@ def main():
     server = Path(sys.argv[1] if len(sys.argv) > 1 else repo / "target/debug/OpenCADStudio.exe").resolve()
     if not server.is_file():
         raise FileNotFoundError(server)
-    fixture = repo / "docs/automation/masterplan/fixtures/synthetic-wall-face-dimension-v7.planspec.json"
+    fixture_name = (sys.argv[2] if len(sys.argv) > 2 else
+                    "synthetic-wall-face-dimension-exterior-v7.planspec.json")
+    if fixture_name not in {"synthetic-wall-face-dimension-v7.planspec.json",
+                            "synthetic-wall-face-dimension-exterior-v7.planspec.json"}:
+        raise ValueError("Only versioned synthetic face fixtures are allowed")
+    fixture = repo / "docs/automation/masterplan/fixtures" / fixture_name
     plan = json.loads(fixture.read_text(encoding="utf-8"))
     if (plan["schema_version"] != "planspec-7" or len(plan["walls"]) != 1 or
             len(plan["dimension_bindings"]) != 1 or len(plan["dimensions"]) != 1 or
@@ -69,6 +74,7 @@ def main():
                            "commands_sha256": compiled["commands_sha256"],
                            "command_count": len(compiled["commands"]),
                            "step_count": len(compiled["execution_steps"]),
+                           "dimension_placement_qa": compiled["dimension_placement_qa"],
                            "dimension_style": plan["dimension_style"]},
               "output": str(output)}
     gui = subprocess.Popen([str(server), "--new-instance"], cwd=repo, env=environment,
@@ -105,6 +111,22 @@ def main():
         initial = dimension(client, session, dim)
         if abs(initial - 0.2) > 1e-6:
             raise ProtocolError("Initial face thickness differs from fixture")
+        zoom = request(client, session, "run", cmd="ZOOM EXTENTS")
+        if zoom.get("status") != "completed":
+            raise ProtocolError("Synthetic dimension viewport could not fit extents")
+        state = read_state(client, session)
+        capture_path = (output / "dimension-before.png").resolve()
+        capture = client.capture_artifact(session, capture_path,
+            document_id=state["document_id"],
+            geometry_revision=state["geometry_revision"],
+            camera_revision=state["camera_revision"], max_dimension=2048)
+        report["capture"] = {"file": capture_path.name,
+            "sha256": hashlib.sha256(capture_path.read_bytes()).hexdigest().upper(),
+            "width": capture["width"], "height": capture["height"],
+            "render_fence": capture["render_fence"],
+            "overlay_policy": capture["overlay_policy"],
+            "geometry_revision": capture["geometry_revision"],
+            "camera_revision": capture["camera_revision"]}
         first = save_verified(client, session, output / "before-edit.dwg")
         request(client, session, "save", path=str(output / "session-before.dwg"),
                 target_format="dwg", target_version="2018")

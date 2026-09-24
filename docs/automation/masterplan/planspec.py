@@ -840,6 +840,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             wall_parts = 10
             wall_status = "compiled_single_window_wall"
     dimension_status = "not_applicable" if not plan["dimensions"] else "unsupported"
+    dimension_placement_qa = {"status": "unavailable",
+                              "scope": "only_single_horizontal_face_thickness"}
     if (plan["schema_version"] == "planspec-7" and len(plan["walls"]) == 1 and
             not plan["lines"] and not plan["circles"] and not plan["openings"] and
             not plan["joins"] and len(plan["dimensions"]) == 1 and
@@ -868,6 +870,12 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                              "command": f"DIMLINEAR {point(start)} {point(end)} {point(location)}",
                              "layer": placement["layer"]})
             dimension_status = "compiled_single_horizontal_face_thickness"
+            dimension_placement_qa = {
+                "status": "outside_wall_bounds" if location[0] > b[0] else "inside_wall_bounds",
+                "wall_id": wall["id"], "dimension_id": dimension["id"],
+                "wall_end_x_m": format(b[0] + origin[0], "f"),
+                "dimension_line_x_m": format(location[0] + origin[0], "f"),
+                "scope": "2d_dimension_line_position_only_no_text_extents"}
     if len({item["planspec_id"] for item in commands}) != len(commands):
         raise PlanError("Generated wall part ID collides with PlanSpec geometry ID")
     layers = sorted({item["layer"] for item in commands} - {"0"})
@@ -911,6 +919,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")
     unsupported = sorted(missing)
+    quality_blockers = (["dimension_line_inside_wall_bounds"]
+                        if dimension_placement_qa["status"] == "inside_wall_bounds" else [])
     wire = json.dumps(execution, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return {"schema_version": "planspec-dry-run-1", "commands": commands,
             "execution_steps": execution,
@@ -921,7 +931,9 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             "wall_compilation": {"status": wall_status, "generated_parts": wall_parts},
             "dimension_compilation": {"status": dimension_status,
                                       "generated_parts": 1 if dimension_status.startswith("compiled_") else 0},
+            "dimension_placement_qa": dimension_placement_qa,
             "geometry_qa": geometry_qa,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
-            "unsupported": unsupported, "executable": not unsupported,
+            "unsupported": unsupported, "quality_blockers": quality_blockers,
+            "executable": not unsupported and not quality_blockers,
             "note": "Nonzero layers require layer_assignment in a manifest verified for this build"}
