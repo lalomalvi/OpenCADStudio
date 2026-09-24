@@ -302,3 +302,23 @@ class TrialJournal:
                 "slots_total": 36, "slots_reserved": len(slots),
                 "slots_remaining": 36 - len(slots), "pending_uncertain": pending is not None,
                 "dispositions": dispositions, "journal_sha256": _file_sha(self.path)}
+
+    @_locked
+    def verified_slot(self, arm: str, case_id: str, repetition: int) -> dict:
+        """Return a journal-verified slot bound to its frozen run identity."""
+        if arm not in _ARMS or not isinstance(case_id, str) or type(repetition) is not int \
+                or repetition not in (1, 2, 3):
+            raise TrialError("Trial slot identity is invalid")
+        start, cohort = self._identity()
+        records, slots, pending = self._read(start, cohort)
+        if case_id not in {case["id"] for case in cohort["cases"]}:
+            raise TrialError("Case is outside frozen cohort")
+        slot = (arm, case_id, repetition)
+        result = slots.get(slot)
+        if result is None or result["event"] != "result":
+            raise TrialError("Trial slot has no sealed result")
+        intent = next(record for record in records[1:] if record["event"] == "intent"
+                      and (record["arm"], record["case_id"], record["repetition"]) == slot)
+        return {"start": start, "intent": intent, "result": result,
+                "journal_sha256": _file_sha(self.path),
+                "pending_uncertain": pending is not None}
