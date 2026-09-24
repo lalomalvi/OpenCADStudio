@@ -1561,7 +1561,8 @@ fn call_tool(
                 "width":metadata["width"],"height":metadata["height"],"scope":metadata["scope"],
                 "rendered_geometry_revision":metadata["rendered_geometry_revision"],
                 "rendered_camera_revision":metadata["rendered_camera_revision"],
-                "render_fence":metadata["render_fence"]}}))
+                "render_fence":metadata["render_fence"],
+                "timings":metadata["timings"]}}))
         }
         _ => Err(format!("Unknown tool: {name}")),
     }

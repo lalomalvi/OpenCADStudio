@@ -1189,7 +1189,9 @@ impl OpenCADStudio {
             Some(&path),
         )
         .map_err(|error| json!({"ok":false,"status":"failed","code":"invalid_target","error":error}))?;
+        let began = std::time::Instant::now();
         let audit = self.document_audit(req);
+        let audited_at = std::time::Instant::now();
         if audit["summary"]["errors"].as_u64().unwrap_or(0) > 0 {
             return Err(json!({
                 "ok":false,"status":"failed","code":"audit_failed",
@@ -1213,10 +1215,12 @@ impl OpenCADStudio {
         let mut expected = self.tabs[i].scene.document.clone();
         crate::modules::draw::modify::explode::bake_dimension_blocks(&mut expected);
         let before = document_manifest(&expected);
+        let materialized_at = std::time::Instant::now();
         crate::io::save_as_version(&self.tabs[i].scene.document, &path, version)
             .map_err(|error| json!({
                 "ok":false,"status":"failed","code":"save_failed","error":error,
             }))?;
+        let written_at = std::time::Instant::now();
         let sha256 = sha256_file(&path).map_err(|error| json!({
             "ok":false,"status":"failed","code":"hash_failed","error":error,
             "saved":path,
@@ -1229,6 +1233,7 @@ impl OpenCADStudio {
         } else {
             None
         };
+        let hashed_at = std::time::Instant::now();
         if dxf_structure
             .as_ref()
             .is_some_and(|audit| audit["ok"] != true)
@@ -1244,6 +1249,7 @@ impl OpenCADStudio {
             "ok":false,"status":"failed","code":"reopen_failed","error":error,
             "saved":path,"sha256":sha256,
         }))?;
+        let reopened_at = std::time::Instant::now();
         if reopened.version != version {
             return Err(json!({
                 "ok":false,"status":"failed","code":"version_mismatch",
@@ -1263,6 +1269,10 @@ impl OpenCADStudio {
                 "target_version":format!("{version:?}"),"dropped_on_save":dropped,
             }));
         }
+        let compared_at = std::time::Instant::now();
+        let elapsed_ms = |start: std::time::Instant, end: std::time::Instant| {
+            end.duration_since(start).as_secs_f64() * 1000.0
+        };
         Ok(json!({
             "ok":true,"status":"completed","verified":true,
             "saved":path,"sha256":sha256,"bytes":std::fs::metadata(&path).map(|m|m.len()).unwrap_or(0),
@@ -1270,6 +1280,16 @@ impl OpenCADStudio {
             "target_version":format!("{version:?}"),"dropped_on_save":dropped,
             "source_manifest":source_manifest,"materialized_manifest":before,
             "manifest":after,"audit":audit,"dxf_structure":dxf_structure,
+            "timings":{
+                "scope":"gui_process_monotonic",
+                "audit_ms":elapsed_ms(began,audited_at),
+                "prepare_and_materialize_ms":elapsed_ms(audited_at,materialized_at),
+                "write_ms":elapsed_ms(materialized_at,written_at),
+                "hash_and_structure_ms":elapsed_ms(written_at,hashed_at),
+                "reopen_ms":elapsed_ms(hashed_at,reopened_at),
+                "compare_manifest_ms":elapsed_ms(reopened_at,compared_at),
+                "total_ms":elapsed_ms(began,compared_at),
+            },
         }))
     }
 
@@ -1383,6 +1403,12 @@ mod tests {
         assert_eq!(result["target_version"], "AC1014", "{result}");
         assert_eq!(result["manifest"]["total"], 1, "{result}");
         assert_eq!(result["sha256"].as_str().map(str::len), Some(64));
+        assert_eq!(result["timings"]["scope"], "gui_process_monotonic");
+        for field in ["audit_ms", "prepare_and_materialize_ms", "write_ms",
+            "hash_and_structure_ms", "reopen_ms", "compare_manifest_ms", "total_ms"] {
+            assert!(result["timings"][field].as_f64().is_some_and(|value| value >= 0.0),
+                "missing or negative timing {field}: {result}");
+        }
         assert!(path.is_file());
         let _ = std::fs::remove_file(path);
     }

@@ -309,7 +309,7 @@ class Client:
         return {key: metadata.get(key) for key in
                 ("document_id", "revision", "geometry_revision", "camera_revision",
                  "width", "height", "scope", "rendered_geometry_revision",
-                 "rendered_camera_revision", "render_fence")}
+                 "rendered_camera_revision", "render_fence", "timings")}
 
     @staticmethod
     def _remaining(deadline: float | None) -> float | None:

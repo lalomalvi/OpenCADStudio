@@ -1222,6 +1222,7 @@ impl OpenCADStudio {
         path: String,
         screenshot: Option<iced::window::Screenshot>,
     ) {
+        let screenshot_available_at = std::time::Instant::now();
         let result = (|| -> Result<Value, String> {
             let s = screenshot
                 .ok_or("The window is minimized or has no size; restore it and capture again")?;
@@ -1234,6 +1235,8 @@ impl OpenCADStudio {
             {
                 return Err("Viewport render revision changed before screenshot completed".into());
             }
+            let requested_at = self.control.pending.as_ref().unwrap().started_at;
+            let rendered_at = rendered.unwrap().2;
             let requested_scope = self
                 .control
                 .pending
@@ -1292,8 +1295,12 @@ impl OpenCADStudio {
             image
                 .save_with_format(&path, image::ImageFormat::Png)
                 .map_err(|e| e.to_string())?;
+            let encoded_at = std::time::Instant::now();
+            let elapsed_ms = |start: std::time::Instant, end: std::time::Instant| {
+                end.saturating_duration_since(start).as_secs_f64() * 1000.0
+            };
             Ok(
-                json!({"path":path,"scope":actual_scope,"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"geometry_revision":self.tabs[self.active_tab].scene.geometry_epoch,"camera_revision":self.tabs[self.active_tab].scene.camera_generation,"rendered_geometry_revision":rendered.unwrap().0,"rendered_camera_revision":rendered.unwrap().1,"render_fence":"shader_encoded_frame"}),
+                json!({"path":path,"scope":actual_scope,"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"geometry_revision":self.tabs[self.active_tab].scene.geometry_epoch,"camera_revision":self.tabs[self.active_tab].scene.camera_generation,"rendered_geometry_revision":rendered.unwrap().0,"rendered_camera_revision":rendered.unwrap().1,"render_fence":"shader_encoded_frame","timings":{"scope":"gui_process_monotonic","wait_for_encoded_frame_ms":elapsed_ms(requested_at,rendered_at),"frame_to_screenshot_callback_ms":elapsed_ms(rendered_at,screenshot_available_at),"encode_and_write_png_ms":elapsed_ms(screenshot_available_at,encoded_at),"total_ms":elapsed_ms(requested_at,encoded_at)}}),
             )
         })();
         match result {

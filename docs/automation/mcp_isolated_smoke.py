@@ -136,10 +136,13 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         state = read_state(client, session)
         if not isinstance(state.get("document_id"), int):
             raise ProtocolError("New synthetic document was not activated")
+        script_started_ns = time.monotonic_ns()
         script = client.tool("ocs_execute", {"ocs_session_id": session,
             "request": {"op": "run_script", "request_id": "l2-script-" + uuid.uuid4().hex,
                         "strict": True,
                         "commands": [item["command"] for item in compiled["execution_steps"]]}})
+        report.setdefault("client_timings_ms", {})["planspec_script_rpc"] = round(
+            (time.monotonic_ns() - script_started_ns) / 1_000_000, 3)
         if script.get("completed_commands") != len(compiled["execution_steps"]) \
                 or script.get("added_entities") != len(compiled["commands"]):
             raise ProtocolError("Synthetic script did not create three entities")
@@ -371,12 +374,17 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                                    ("status", "summary", "target", "manifest", "bounds",
                                     "unknown_entities")}
         destination = output / "synthetic-verified.dwg"
+        save_started_ns = time.monotonic_ns()
         saved = client.tool("ocs_execute", {"ocs_session_id": session,
             "request": {"op": "save_verified", "request_id": "l2-save-" + uuid.uuid4().hex,
                         "path": str(destination), "target_format": "dwg", "target_version": "2018"}})
+        report.setdefault("client_timings_ms", {})["save_verified_rpc"] = round(
+            (time.monotonic_ns() - save_started_ns) / 1_000_000, 3)
         verified = saved.get("result", saved)
         if verified.get("verified") is not True or not destination.is_file():
             raise ProtocolError("Synthetic verified save failed")
+        if verified.get("timings", {}).get("scope") != "gui_process_monotonic":
+            raise ProtocolError("Synthetic verified save omitted GUI phase timings")
         if semantic:
             by_type = verified.get("manifest", {}).get("by_type", {})
             if by_type.get("Arc") != 1 or by_type.get("Polyline") != 1:
@@ -403,6 +411,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                        "audit_ok": True,
                        "verified_output": {"path": str(destination), "sha256": actual_hash,
                                            "bytes": destination.stat().st_size,
+                                           "engine_timings_ms": verified["timings"],
                                            "source_manifest": verified.get("source_manifest"),
                                            "materialized_manifest": verified.get("materialized_manifest"),
                                            "reopened_manifest": verified.get("manifest")}})
@@ -485,10 +494,16 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             report["association_fixture"]["roundtrip_measurement"] = restored_assoc_measure
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         capture_path = (output / "capture.png").resolve()
+        capture_started_ns = time.monotonic_ns()
         capture = client.capture_artifact(session, capture_path,
                                           document_id=state["document_id"],
                                           geometry_revision=state["geometry_revision"],
                                           camera_revision=state["camera_revision"])
+        report.setdefault("client_timings_ms", {})["capture_rpc_and_artifact"] = round(
+            (time.monotonic_ns() - capture_started_ns) / 1_000_000, 3)
+        if capture.get("timings", {}).get("scope") != "gui_process_monotonic":
+            raise ProtocolError("Synthetic capture omitted GUI phase timings")
+        report["capture_engine_timings_ms"] = capture["timings"]
         reference = artifact_ref(output, capture_path.name,
                                  document_id=capture["document_id"],
                                  geometry_revision=capture["geometry_revision"],
