@@ -21,6 +21,7 @@ from PIL import Image
 from measurement_grid import compile_five_bay, compile_three_region, compile_two_bay
 from measurement_axis_chain import compile_bottom_chain
 from measurement_stacked_span import compile_lower_span_rectangle
+from pixel_perimeter import compile_visible_perimeter
 from owned_cad_executor import OwnedCadExecutor, verify_owned_cad_evidence
 from planspec import dry_run
 from reserved_runner import Invocation
@@ -227,6 +228,9 @@ def main() -> None:
             ("stacked_span_compiler_sha256" in frozen and
              _file_sha(Path(__file__).with_name("measurement_stacked_span.py")) !=
              frozen["stacked_span_compiler_sha256"]) or \
+            ("perimeter_compiler_sha256" in frozen and
+             _file_sha(Path(__file__).with_name("pixel_perimeter.py")) !=
+             frozen["perimeter_compiler_sha256"]) or \
             ("validator_sha256" in frozen and
              _file_sha(Path(__file__).resolve(strict=True)) !=
              frozen["validator_sha256"]):
@@ -240,6 +244,15 @@ def main() -> None:
             compiled = check_explicit_line_graph(
                 plan, width_px, height_px, frozen["expected_vertices"],
                 frozen["expected_edges"], frozen["expected_regions"])
+        elif frozen.get("shape") == "visible_perimeter_pixels_v1":
+            plan = compile_visible_perimeter(plan, frozen=frozen,
+                                             image_width=width_px,
+                                             image_height=height_px)
+            compiled = dry_run(plan)
+            if not compiled["executable"] or compiled["quality_blockers"] or \
+                    len(compiled["commands"]) != len(plan["lines"]):
+                raise CliTrialError("Visible perimeter does not compile")
+            output_kind = "typed_visible_perimeter_pixels_compiled_deterministically"
         elif frozen.get("shape") == "measurement_grid_five_bay_v1":
             plan = compile_five_bay(plan, frozen=frozen,
                                     image_width=width_px,

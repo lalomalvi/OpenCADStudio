@@ -83,6 +83,12 @@ $lispText = @"
 (setq ocs_file (open "$censusLispPath" "w"))
 (defun ocs_value (data code) (if (assoc code data) (vl-princ-to-string (cdr (assoc code data))) "-"))
 (defun ocs_angle (data code) (if (assoc code data) (rtos (cdr (assoc code data)) 2 12) "-"))
+(defun ocs_point (data code / value)
+  (setq value (cdr (assoc code data)))
+  (if (and (listp value) (numberp (car value)) (numberp (cadr value)))
+    (strcat "(" (rtos (car value) 2 12) " " (rtos (cadr value) 2 12)
+            " " (rtos (if (numberp (caddr value)) (caddr value) 0.0) 2 12) ")")
+    (if value (vl-princ-to-string value) "-")))
 (defun ocs_measure (entity data / value)
   (if (= (cdr (assoc 0 data)) "DIMENSION")
     (progn
@@ -116,10 +122,10 @@ $lispText = @"
                 (ocs_value ocs_data 8) "|" (ocs_value ocs_data 42) "|"
                 (ocs_value ocs_data 70) "|" (ocs_value ocs_data 71) "|"
                 (ocs_value ocs_data 91) "|" (ocs_value ocs_data 2) "|"
-                (ocs_value ocs_data 10) "|" (ocs_value ocs_data 41) "|"
+                (ocs_point ocs_data 10) "|" (ocs_value ocs_data 41) "|"
                 (ocs_angle ocs_data 50) "|" (ocs_measure ocs_entity ocs_data) "|"
-                (ocs_value ocs_data 13) "|" (ocs_value ocs_data 14) "|"
-                (ocs_value ocs_data 52) "|" (ocs_value ocs_data 11) "|"
+                (ocs_point ocs_data 13) "|" (ocs_point ocs_data 14) "|"
+                (ocs_value ocs_data 52) "|" (ocs_point ocs_data 11) "|"
                 (ocs_value ocs_data 40) "|" (ocs_angle ocs_data 51)) ocs_file)
       (write-line (strcat "PENWEIGHT|" (ocs_value ocs_data 5) "|"
                           (ocs_value ocs_data 370)) ocs_file)
