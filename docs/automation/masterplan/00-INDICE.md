@@ -15,6 +15,7 @@ La conciliación versionada de cadenas de cotas alineadas en 2D está en [M4-GRA
 La identidad de vértices mediante referencias de muro/cara/estación vinculadas para PlanSpec v6–v9 está en [M4-GRAFO-REFERENCIAS-VINCULADAS-V3.md](M4-GRAFO-REFERENCIAS-VINCULADAS-V3.md).
 La primera cadena de tres cotas nativas sobre un muro sintético, con reapertura y contraste AutoCAD por handle, está en [M4-CADENA-COTAS-NATIVAS-V1.md](M4-CADENA-COTAS-NATIVAS-V1.md).
 El segundo pase Luna sobre las cinco imágenes disponibles, con retícula de cinco franjas y seis cotas nativas de ejes en alcances de referencia, está en [M7-CINCO-IMAGENES-SEGUNDO-PASE-V1.md](M7-CINCO-IMAGENES-SEGUNDO-PASE-V1.md).
+La revisión de píxeles de las cajas de cota declaradas por Luna y sus fallas verificadas está en [M6-CAJAS-DE-TEXTO-FUENTE-V1.md](M6-CAJAS-DE-TEXTO-FUENTE-V1.md).
 Convertir el ensayo Luna → MCP → OpenCADStudio en un flujo reproducible, medible y recuperable que genere CAD editable con precisión declarada. Este plan abarca arranque, transporte, ejecución, evidencia, consumo, semántica CAD, evaluación e integración. El programa probado fue OpenCADStudio; LibreCAD no participó.
 
 ## Lectura y autoridad
