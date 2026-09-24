@@ -715,6 +715,35 @@ class PlanSpecTests(unittest.TestCase):
         with self.assertRaises(module.PlanError):
             module.validate(wrong_axis)
 
+    def test_v8_axis_span_dimension_is_bound_and_outside_wall(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        for fixture_name, expected_command, status, expected_bounds in (
+            ("synthetic-wall-axis-span-v8.planspec.json",
+             "DIMLINEAR 0.5,0 3.5,0 2,0.5", "compiled_single_horizontal_axis_span",
+             {"min_x": "0.5", "min_y": "0", "max_x": "3.5", "max_y": "0.5"}),
+            ("synthetic-wall-axis-span-vertical-v8.planspec.json",
+             "DIMLINEAR 0,0.5 0,3.5 -0.5,2", "compiled_single_vertical_axis_span",
+             {"min_x": "-0.5", "min_y": "0.5", "max_x": "0", "max_y": "3.5"})):
+            value = json.loads((fixtures / fixture_name).read_text(encoding="utf-8"))
+            result = module.dry_run(value)
+            self.assertTrue(result["executable"])
+            self.assertEqual(result["dimension_compilation"]["status"], status)
+            self.assertEqual(result["commands"][-1]["command"], expected_command)
+            self.assertEqual(result["source_bounds"]["annotation_reference_bounds_m"],
+                             expected_bounds)
+            self.assertEqual(result["source_bounds"]["unresolved"], [])
+            inside = deepcopy(value)
+            inside["dimension_placements"][0]["offset_m"] = 0.05
+            self.assertEqual(module.dry_run(inside)["quality_blockers"],
+                             ["dimension_line_inside_wall_bounds"])
+            swapped = deepcopy(value)
+            swapped["dimension_bindings"][0]["start_ref"], \
+                swapped["dimension_bindings"][0]["end_ref"] = (
+                    swapped["dimension_bindings"][0]["end_ref"],
+                    swapped["dimension_bindings"][0]["start_ref"])
+            with self.assertRaises(module.PlanError):
+                module.validate(swapped)
+
     def test_source_bounds_do_not_merge_uncompiled_annotation_into_architecture(self):
         value = plan()
         value["dimensions"] = [{"id": "length", "start": "a", "end": "c",

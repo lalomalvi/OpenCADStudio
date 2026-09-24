@@ -86,7 +86,9 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
     if plan_fixture not in {"synthetic-room", "synthetic-layer", "synthetic-contour",
                             "synthetic-wall", "synthetic-wall-gap", "synthetic-door-swing",
                             "synthetic-window", "synthetic-wall-join",
-                            "synthetic-two-door-wall-v8"}:
+                            "synthetic-two-door-wall-v8",
+                            "synthetic-wall-axis-span-v8",
+                            "synthetic-wall-axis-span-vertical-v8"}:
         raise ValueError("Only versioned synthetic PlanSpec fixtures are allowed")
     fixtures = Path(__file__).resolve().parent / "masterplan/fixtures"
     fixture = fixtures / f"{plan_fixture}.planspec.json"
@@ -100,6 +102,8 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
     expected_count = 20 if plan_fixture == "synthetic-two-door-wall-v8" else \
         14 if plan_fixture in {"synthetic-door-swing", "synthetic-window"} else \
         8 if plan_fixture in {"synthetic-wall-gap", "synthetic-wall-join"} else \
+        5 if plan_fixture in {"synthetic-wall-axis-span-v8",
+                              "synthetic-wall-axis-span-vertical-v8"} else \
         4 if plan_fixture in {"synthetic-contour", "synthetic-wall"} else 3
     if not compiled["executable"] or len(compiled["commands"]) != expected_count:
         raise ProtocolError("Synthetic PlanSpec has unsupported or missing commands")
@@ -202,6 +206,23 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         if {name: layers_by_handle.get(handle) for name, handle in handles.items()} != expected_layers:
             raise ProtocolError("PlanSpec entity layer differs from compiled layer")
         report["planspec"]["layers_by_id"] = expected_layers
+        axis_fixture = plan_fixture in {"synthetic-wall-axis-span-v8",
+                                        "synthetic-wall-axis-span-vertical-v8"}
+        if axis_fixture:
+            queried = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                "parameters": {"handle": handles["axis-span"], "detail": "full"}})
+            entity = queried.get("entities", [{}])[0]
+            measured = (entity.get("properties", {}).get("Linear", {})
+                        .get("base", {}).get("actual_measurement"))
+            if entity.get("type") != "Dimension" or not isinstance(measured, (int, float)) or \
+                    abs(measured - 3.0) > 1e-6:
+                raise ProtocolError("Axis span native dimension differs from PlanSpec")
+            report["axis_dimension"] = {"handle": handles["axis-span"],
+                                         "actual_measurement": measured,
+                                         "dimension_compilation": compiled["dimension_compilation"],
+                                         "dimension_placement_qa": compiled["dimension_placement_qa"],
+                                         "dimension_style": json.loads(fixture.read_text(encoding="utf-8"))
+                                            ["dimension_style"]}
         if semantic:
             native = client.tool("ocs_execute", {"ocs_session_id": session,
                 "request": {"op": "run_script", "request_id": "l2-native-" + uuid.uuid4().hex,
@@ -419,6 +440,8 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             raise ProtocolError("Synthetic verified save failed")
         if verified.get("timings", {}).get("scope") != "gui_process_monotonic":
             raise ProtocolError("Synthetic verified save omitted GUI phase timings")
+        if axis_fixture and verified.get("manifest", {}).get("by_type", {}).get("Dimension") != 1:
+            raise ProtocolError("Axis span dimension did not survive internal DWG reopen")
         if semantic:
             by_type = verified.get("manifest", {}).get("by_type", {})
             if by_type.get("Arc") != 1 or by_type.get("Polyline") != 1:
@@ -455,6 +478,20 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             "request": {"op": "save", "request_id": "l2-clean-save-" + uuid.uuid4().hex,
                         "path": str(output / "synthetic-session.dwg"),
                         "target_format": "dwg", "target_version": "2018"}})
+        if axis_fixture:
+            client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "open", "request_id": "l2-axis-reopen-" + uuid.uuid4().hex,
+                            "path": str(destination)}})
+            reopened = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                "parameters": {"handle": handles["axis-span"], "detail": "full"}})
+            restored = reopened.get("entities", [{}])[0]
+            reopened_measure = (restored.get("properties", {}).get("Linear", {})
+                                .get("base", {}).get("actual_measurement"))
+            if restored.get("type") != "Dimension" or \
+                    not isinstance(reopened_measure, (int, float)) or \
+                    abs(reopened_measure - 3.0) > 1e-6:
+                raise ProtocolError("Axis span dimension changed after DWG reopen")
+            report["axis_dimension"]["roundtrip_measurement"] = reopened_measure
         if semantic:
             client.tool("ocs_execute", {"ocs_session_id": session,
                 "request": {"op": "open", "request_id": "l2-reopen-" + uuid.uuid4().hex,
@@ -528,7 +565,8 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             report["association_fixture"]["roundtrip_measurement"] = restored_assoc_measure
         if plan_fixture in {"synthetic-wall", "synthetic-wall-gap", "synthetic-door-swing",
                             "synthetic-window", "synthetic-wall-join",
-                            "synthetic-two-door-wall-v8"}:
+                            "synthetic-two-door-wall-v8", "synthetic-wall-axis-span-v8",
+                            "synthetic-wall-axis-span-vertical-v8"}:
             zoom = client.tool("ocs_execute", {"ocs_session_id": session,
                 "request": {"op": "run", "request_id": "l2-zoom-extents-" + uuid.uuid4().hex,
                             "cmd": "ZOOM EXTENTS"}})
@@ -538,9 +576,11 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                 raise ProtocolError("Synthetic wall capture could not fit extents")
             # ZOOM updates the drawing view and marks the working tab dirty.
             # Save that isolated tab again so shutdown never discards it.
+            framed_path = (output / "synthetic-reopened-framed.dwg" if axis_fixture else
+                           output / "synthetic-session.dwg")
             client.tool("ocs_execute", {"ocs_session_id": session,
                 "request": {"op": "save", "request_id": "l2-framed-save-" + uuid.uuid4().hex,
-                            "path": str(output / "synthetic-session.dwg"),
+                            "path": str(framed_path),
                             "target_format": "dwg", "target_version": "2018"}})
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         capture_path = (output / "capture.png").resolve()

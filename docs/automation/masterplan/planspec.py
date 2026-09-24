@@ -1023,6 +1023,16 @@ def _source_bounds(plan: dict[str, Any], nodes: dict[str, tuple[Decimal, Decimal
             add(annotation, (a[0] + offset, (a[1] + b[1]) / 2))
         else:
             add(annotation, ((a[0] + b[0]) / 2, a[1] + offset))
+    elif dimension_status in {"compiled_single_horizontal_axis_span",
+                              "compiled_single_vertical_axis_span"}:
+        dimension = plan["dimensions"][0]
+        placement = plan["dimension_placements"][0]
+        a, b = nodes[dimension["start"]], nodes[dimension["end"]]
+        offset = _number(placement["offset_m"], "offset_m")
+        if dimension_status == "compiled_single_horizontal_axis_span":
+            add(annotation, ((a[0] + b[0]) / 2, a[1] + offset))
+        else:
+            add(annotation, (a[0] - offset, (a[1] + b[1]) / 2))
     elif plan["dimensions"]:
         unresolved.append("dimension_placement_or_rendered_extents")
     def box(points):
@@ -1153,6 +1163,34 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                     format((location[0] + origin[0]) if horizontal else
                            (location[1] + origin[1]), "f"),
                 "scope": "2d_dimension_line_position_only_no_text_extents"}
+        elif (plan["schema_version"] == "planspec-8" and
+              (horizontal and dimension["axis"] == "x" or
+               vertical and dimension["axis"] == "y") and
+              dimension["reference_type"] == "axis" and
+              start_ref["wall_id"] == wall["id"] == end_ref["wall_id"] and
+              start_ref["side"] == end_ref["side"] == "axis" and
+              _number(start_ref["station_m"], "station") <
+              _number(end_ref["station_m"], "station") and
+              binding["dimension_id"] == dimension["id"] == placement["dimension_id"]):
+            start, end = nodes[dimension["start"]], nodes[dimension["end"]]
+            offset = _number(placement["offset_m"], "offset_m")
+            location = (((start[0] + end[0]) / 2, start[1] + offset) if horizontal else
+                        (start[0] - offset, (start[1] + end[1]) / 2))
+            def point(value):
+                return ",".join(_coordinate(value[axis] + origin[axis]) for axis in (0, 1))
+            commands.append({"planspec_id": dimension["id"], "source_id": dimension["id"],
+                             "part": "axis_span_dimension",
+                             "command": f"DIMLINEAR {point(start)} {point(end)} {point(location)}",
+                             "layer": placement["layer"]})
+            dimension_status = ("compiled_single_horizontal_axis_span" if horizontal else
+                                "compiled_single_vertical_axis_span")
+            half = _number(wall["thickness_m"], "wall.thickness_m") / 2
+            dimension_placement_qa = {
+                "status": "outside_wall_bounds" if offset > half else "inside_wall_bounds",
+                "wall_id": wall["id"], "dimension_id": dimension["id"],
+                "wall_half_thickness_m": format(half, "f"),
+                "dimension_normal_offset_m": format(offset, "f"),
+                "scope": "2d_axis_span_line_position_only_no_text_extents"}
     if len({item["planspec_id"] for item in commands}) != len(commands):
         raise PlanError("Generated wall part ID collides with PlanSpec geometry ID")
     layers = sorted({item["layer"] for item in commands} - {"0"})
@@ -1160,7 +1198,9 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     # to INSUNITS=4 (millimetres), silently changing insertion scale semantics.
     execution = [{"planspec_id": None, "command": "SETVAR INSUNITS 6", "layer": "0"}]
     if dimension_status in {"compiled_single_horizontal_face_thickness",
-                            "compiled_single_vertical_face_thickness"}:
+                            "compiled_single_vertical_face_thickness",
+                            "compiled_single_horizontal_axis_span",
+                            "compiled_single_vertical_axis_span"}:
         style = plan["dimension_style"]
         name = style["name"]
         execution.extend({"planspec_id": None, "command": command, "layer": "0"} for command in (
