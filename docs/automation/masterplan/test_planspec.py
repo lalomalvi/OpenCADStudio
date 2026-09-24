@@ -67,14 +67,50 @@ class PlanSpecTests(unittest.TestCase):
         value["dimensions"][1]["reference_type"] = "axis"
         self.assertEqual(module.analyze_dimension_graph(value)["status"], "satisfied")
 
-    def test_aligned_chain_is_explicitly_indeterminate(self):
+    def test_single_aligned_dimension_is_solved(self):
         value = plan()
         value["dimensions"] = [{"id": "d-aligned", "start": "a", "end": "b", "axis": "aligned",
                                 "reference_type": "face", "value": 2.5, "text": "2.50",
                                 "source": SOURCE}]
         report = module.dry_run(value)["dimension_graph"]
-        self.assertEqual(report["status"], "indeterminate")
-        self.assertEqual(report["unresolved_aligned"], ["d-aligned"])
+        self.assertEqual(report["schema_version"], "planspec-dimension-graph-2")
+        self.assertEqual(report["status"], "satisfied")
+        self.assertEqual(report["unresolved_aligned"], [])
+
+    def test_aligned_triangle_closes_without_false_conflict(self):
+        value = plan()
+        value["nodes"][1].update(x=3, y=0)
+        value["nodes"][2].update(x=3, y=4)
+        value["dimensions"] = [
+            {"id": name, "start": start, "end": end, "axis": "aligned",
+             "reference_type": "face", "value": metric, "text": str(metric),
+             "source": SOURCE}
+            for name, start, end, metric in (("d-ab", "a", "b", 3),
+                                             ("d-bc", "b", "c", 4),
+                                             ("d-ac", "a", "c", 5))]
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["status"], "satisfied")
+        self.assertEqual(report["components"], 1)
+
+    def test_aligned_cycle_accumulates_conflict_by_reference_type(self):
+        value = plan()
+        value["nodes"][1].update(x=0.60054, y=0.80072)
+        value["nodes"][2].update(x=1.20108, y=1.60144)
+        value["dimensions"] = [
+            {"id": name, "start": start, "end": end, "axis": "aligned",
+             "reference_type": "face", "value": metric, "text": str(metric),
+             "source": SOURCE}
+            for name, start, end, metric in (("d-ab", "a", "b", 1),
+                                             ("d-ac", "a", "c", 2.0027),
+                                             ("d-bc", "b", "c", 1))]
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["status"], "conflict")
+        self.assertEqual(report["conflicts"][0]["dimension_id"], "d-bc")
+        self.assertEqual(report["conflicts"][0]["axis"], "aligned")
+        with self.assertRaisesRegex(module.PlanError, "Dimension chain conflict"):
+            module.dry_run(value)
+        value["dimensions"][1]["reference_type"] = "axis"
+        self.assertEqual(module.analyze_dimension_graph(value)["status"], "satisfied")
 
     def test_label_over_wrong_geometry_is_rejected(self):
         value = plan()

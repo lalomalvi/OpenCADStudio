@@ -489,16 +489,11 @@ def analyze_topology(plan: dict[str, Any]) -> dict[str, Any]:
 
 
 def analyze_dimension_graph(plan: dict[str, Any]) -> dict[str, Any]:
-    """Find inconsistent dimension chains without mixing axes or reference types.
-
-    Aligned dimensions are checked against their own geometry by the basic
-    validator, but a general signed aligned-chain solver is not yet available.
-    """
+    """Find inconsistent metric chains without mixing reference types."""
     _validate_basic(plan)
     nodes = {node["id"]: (_number(node["x"], "node.x"),
                           _number(node["y"], "node.y")) for node in plan["nodes"]}
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    unresolved: list[str] = []
     direct_bound_aligned: list[str] = []
     for dimension in plan["dimensions"]:
         if dimension["axis"] == "aligned":
@@ -506,30 +501,36 @@ def analyze_dimension_graph(plan: dict[str, Any]) -> dict[str, Any]:
                     dimension["reference_type"] == "axis" and
                     len(plan["dimensions"]) == 1 and len(plan["walls"]) == 1):
                 # The v9 single-wall binding is checked geometrically by
-                # _validate_basic; this is not a general aligned-chain solver.
+                # _validate_basic as well as by the vector graph below.
                 direct_bound_aligned.append(dimension["id"])
-            else:
-                unresolved.append(dimension["id"])
-        else:
-            groups.setdefault((dimension["axis"], dimension["reference_type"]), []).append(dimension)
+        groups.setdefault((dimension["axis"], dimension["reference_type"]), []).append(dimension)
     conflicts: list[dict[str, str]] = []
     components = 0
     for (axis, reference_type), dimensions in sorted(groups.items()):
         coordinate = 0 if axis == "x" else 1
-        adjacent: dict[str, list[tuple[str, Decimal, str]]] = {}
+        adjacent: dict[str, list[tuple[str, Any, str]]] = {}
         for dimension in sorted(dimensions, key=lambda item: item["id"]):
             start, end = dimension["start"], dimension["end"]
-            direction = 1 if nodes[end][coordinate] > nodes[start][coordinate] else -1
-            delta = _number(dimension["value"], "dimension.value") * direction
+            value = _number(dimension["value"], "dimension.value")
+            if axis == "aligned":
+                dx = nodes[end][0] - nodes[start][0]
+                dy = nodes[end][1] - nodes[start][1]
+                length = (dx * dx + dy * dy).sqrt()
+                delta = (value * dx / length, value * dy / length)
+                reverse = (-delta[0], -delta[1])
+            else:
+                direction = 1 if nodes[end][coordinate] > nodes[start][coordinate] else -1
+                delta = value * direction
+                reverse = -delta
             adjacent.setdefault(start, []).append((end, delta, dimension["id"]))
-            adjacent.setdefault(end, []).append((start, -delta, dimension["id"]))
-        potentials: dict[str, Decimal] = {}
+            adjacent.setdefault(end, []).append((start, reverse, dimension["id"]))
+        potentials: dict[str, Any] = {}
         visited_edges: set[str] = set()
         for root in sorted(adjacent):
             if root in potentials:
                 continue
             components += 1
-            potentials[root] = Decimal(0)
+            potentials[root] = (Decimal(0), Decimal(0)) if axis == "aligned" else Decimal(0)
             pending = [root]
             while pending:
                 node = pending.pop(0)
@@ -537,21 +538,26 @@ def analyze_dimension_graph(plan: dict[str, Any]) -> dict[str, Any]:
                     if edge_id in visited_edges:
                         continue
                     visited_edges.add(edge_id)
-                    predicted = potentials[node] + delta
+                    predicted = ((potentials[node][0] + delta[0],
+                                  potentials[node][1] + delta[1])
+                                 if axis == "aligned" else potentials[node] + delta)
                     if neighbor not in potentials:
                         potentials[neighbor] = predicted
                         pending.append(neighbor)
                     else:
-                        residual = predicted - potentials[neighbor]
+                        residual = (((predicted[0] - potentials[neighbor][0]) ** 2 +
+                                     (predicted[1] - potentials[neighbor][1]) ** 2).sqrt()
+                                    if axis == "aligned" else
+                                    predicted - potentials[neighbor])
                         if abs(residual) > Decimal("0.001"):
                             conflicts.append({"dimension_id": edge_id, "axis": axis,
                                               "reference_type": reference_type,
                                               "component_root": root,
                                               "residual_m": format(residual, "f")})
-    result = {"schema_version": "planspec-dimension-graph-1",
-            "status": "conflict" if conflicts else "indeterminate" if unresolved else "satisfied",
+    result = {"schema_version": "planspec-dimension-graph-2",
+            "status": "conflict" if conflicts else "satisfied",
             "components": components, "conflicts": conflicts,
-            "unresolved_aligned": sorted(unresolved)}
+            "unresolved_aligned": []}
     if plan["schema_version"] == "planspec-9":
         result["direct_bound_aligned"] = sorted(direct_bound_aligned)
     return result

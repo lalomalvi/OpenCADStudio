@@ -1,0 +1,7 @@
+# M4.3: conciliación de cadenas alineadas en 2D
+
+`analyze_dimension_graph` emite `planspec-dimension-graph-2`. Conserva grupos separados por eje (`x`, `y`, `aligned`) y tipo de referencia (`face`, `axis`, `exterior`, `interior`). Para `aligned`, cada arista aporta un vector de longitud declarada en la dirección geométrica entre sus nodos. El grafo asigna potenciales 2D desde cada componente y calcula el residual euclidiano de cada cierre. Un residual mayor que 0.001 m identifica la cota conflictiva; `validate` y `dry_run` detienen el plan antes de CAD. Las cotas x/y mantienen el cálculo escalar previo. `direct_bound_aligned` sigue identificando el caso v9 de muro único, ahora también conciliado por el grafo.
+
+Las pruebas sintéticas verifican un triángulo 3–4–5 sin falso conflicto y un ciclo oblicuo donde cada cota aislada está dentro de 0.001 m de su geometría, pero la suma acumulada no cierra. Cambiar una de esas cotas a otra clase de referencia evita mezclar cadenas semánticamente distintas. El contrato anterior `planspec-dimension-graph-1` informaba cotas alineadas generales como `indeterminate`; esa salida histórica no se reinterpreta. El nuevo esquema se aplica solo a nuevas evaluaciones.
+
+El solver contrasta longitudes y nodos **ya declarados** en un plano 2D. No descubre por sí mismo qué cara o eje de la imagen corresponde a cada cota, ni crea cotas nativas CAD para cadenas múltiples. Esa identidad topológica, la compilación de más de una cota y L3–L5 siguen pendientes.
