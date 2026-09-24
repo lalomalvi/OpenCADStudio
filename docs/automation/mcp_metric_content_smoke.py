@@ -45,8 +45,10 @@ def main():
     repo = Path(__file__).resolve().parents[2]
     server = Path(sys.argv[1] if len(sys.argv) > 1 else repo / 'target' / 'debug' / 'OpenCADStudio.exe').resolve()
     pen_widths = len(sys.argv) > 2 and sys.argv[2] == '--pen-widths'
-    if len(sys.argv) > 2 and not pen_widths:
-        raise ValueError('Only --pen-widths is supported')
+    bylayer_weights = len(sys.argv) > 2 and sys.argv[2] == '--bylayer-weights'
+    if len(sys.argv) > 2 and not (pen_widths or bylayer_weights):
+        raise ValueError('Only --pen-widths or --bylayer-weights is supported')
+    width_qa = pen_widths or bylayer_weights
     if not server.is_file():
         raise FileNotFoundError(server)
     out = repo / 'target' / 'mcp-isolated' / (time.strftime('%Y%m%d-%H%M%S') + '-metric-content-' + uuid.uuid4().hex[:8])
@@ -56,8 +58,9 @@ def main():
     env = os.environ.copy(); env.update({'APPDATA':str(profile),'LOCALAPPDATA':str(profile),'TEMP':str(temporary),'TMP':str(temporary)})
     gui = subprocess.Popen([str(server),'--new-instance'],cwd=repo,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     client=Client(server,environment=env)
-    report={'schema_version':'mcp-metric-pen-l2-1' if pen_widths else
-            'mcp-metric-content-l2-1','status':'failed','output':str(out),
+    report={'schema_version':'mcp-metric-bylayer-l2-1' if bylayer_weights else
+            'mcp-metric-pen-l2-1' if pen_widths else 'mcp-metric-content-l2-1',
+            'status':'failed','output':str(out),
             'binary_sha256':hashlib.sha256(server.read_bytes()).hexdigest().upper()}
     try:
         client.handshake()
@@ -78,6 +81,10 @@ def main():
               'DIMSTYLE SET OCS_PRINT_TEST dimscale 1',
               'DIMSTYLE SET OCS_PRINT_TEST dimlfac 1','CDIMSTY OCS_PRINT_TEST',
               'TEXT 0.5,0.5 0.2 0 TEST123','DIMLINEAR 0,0 4,0 2,-0.5']
+        if bylayer_weights:
+            cmds=['SETVAR INSUNITS 6','LAYER NEW A-THIN','LAYER NEW A-THICK',
+                  'CLAYER A-THIN','LINE 0,0 4,0','CLAYER A-THICK',
+                  'LINE 4,0 4,1','CLAYER 0',*cmds[3:]]
         report['commands']=cmds
         report['creation']=request(client,session,'run_script',strict=True,commands=cmds)
         if report['creation'].get('completed_commands') != len(cmds):
@@ -92,6 +99,11 @@ def main():
                 request(client,session,'set_properties',collection='entities',handle=handle,
                         updates=[{'path':'/common/line_weight','value':{'Value':weight}}])
             report['expected_pen_weight_100th_mm']=[13,70]
+        if bylayer_weights:
+            for name, weight in (('A-THIN',13),('A-THICK',70)):
+                request(client,session,'set_properties',collection='layers',name=name,
+                        updates=[{'path':'/line_weight','value':{'Value':weight}}])
+            report['expected_layer_weights_100th_mm']={'A-THIN':13,'A-THICK':70}
         report['verified_dwg']=save_verified(client,session,out/'metric-content.dwg')
         request(client,session,'open',path=report['verified_dwg']['path'])
         report['reopened_entities']=[client.tool('ocs_read',{'ocs_session_id':session,
@@ -104,6 +116,21 @@ def main():
                            for entity in report['reopened_entities'][:2]] != \
                 [{'Value':13},{'Value':70}]:
             raise ProtocolError('DWG reopen changed explicit pen weights')
+        if bylayer_weights and [entity['properties']['common']['line_weight']
+                                for entity in report['reopened_entities'][:2]] != \
+                ['ByLayer','ByLayer']:
+            raise ProtocolError('DWG reopen changed ByLayer references')
+        if bylayer_weights and [entity['layer'] for entity in
+                                report['reopened_entities'][:2]] != ['A-THIN','A-THICK']:
+            raise ProtocolError('DWG reopen changed line layers')
+        if bylayer_weights:
+            layers=client.tool('ocs_read',{'ocs_session_id':session,'op':'records',
+                'parameters':{'collection':'layers'}})['records']
+            report['reopened_layers']={row['name']:row for row in layers
+                if row['name'] in ('A-THIN','A-THICK')}
+            if [report['reopened_layers'][name]['properties']['line_weight']
+                for name in ('A-THIN','A-THICK')] != [{'Value':13},{'Value':70}]:
+                raise ProtocolError('DWG reopen changed layer pen weights')
         report['results']={}
         for denominator in (100,50):
             report['results'][str(denominator)]={}
@@ -152,7 +179,7 @@ def main():
                 'main_line_bbox':main[:4],'label_glyph_count':len(label),
                 'label_height_px':glyph_height,'dimension_glyph_count':len(dim),
                 'dimension_height_px':dim_height}
-            if pen_widths:
+            if width_qa:
                 image=Image.open(out/f'metric-content-{denominator}.png').convert('L')
                 sample_x=main[0]+main[2]//3
                 sample_y=main[1]+main[3]//3
@@ -170,7 +197,7 @@ def main():
         if abs(b['main_line_bbox'][2]/a['main_line_bbox'][2]-2)>0.05 or \
                 abs(b['label_height_px']/a['label_height_px']-2)>0.2:
             raise ProtocolError('Two scales did not preserve physical ratios')
-        if pen_widths and (a['thin_horizontal_px']!=b['thin_horizontal_px'] or
+        if width_qa and (a['thin_horizontal_px']!=b['thin_horizontal_px'] or
                            a['thick_vertical_px']!=b['thick_vertical_px']):
             raise ProtocolError('Fixed paper pen widths changed with model scale')
         for _ in range(3):

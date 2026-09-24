@@ -1,0 +1,9 @@
+# Grosor ByLayer en DWG y PDF, alcance sintético v1
+
+`python docs/automation/mcp_metric_content_smoke.py target/debug/OpenCADStudio.exe --bylayer-weights` crea las capas `A-THIN` y `A-THICK`; una LINE de 4 m queda en la primera y una LINE perpendicular de 1 m en la segunda. Después de crearlas, `set_properties` fija los grosores de capa en 13 y 70 centésimas de milímetro. Las entidades mantienen `ByLayer`. El arnés guarda y reabre DWG, lee registros de capa y entidades, y exporta PDF A4 a 1:100 y 1:50 con el perfil Model exigido. Conserva también TEXT `TEST123`, DIMLINEAR 4 m y el estilo de cota del contrato de contenido.
+
+La sonda AutoCAD L4-16 usa `entget (tblobjname "LAYER" ...)` para obtener DXF370 de cada capa; `tblsearch` devolvió registros abreviados sin ese código en este entorno. Confirma 13/70 en las capas, DXF370 ausente en las LINE, nombre de capa por handle, geometría, texto y cota, Model4, INSUNITS6, AUDIT0/0 y SHA de DWG intacto. Un reporte sintético que atribuye 70 a `A-THIN` es rechazado. La ausencia de DXF370 de entidad se registra como tal; junto con la lectura interna `ByLayer` y los valores de capa, delimita el alcance de interoperabilidad probado.
+
+A 100 dpi, la LINE fina mide 1 px de grosor y la gruesa 3 px en ambos PDF; las coordenadas de 4 m duplican su tamaño al pasar de 1:100 a 1:50. Los PDF resultaron byte a byte idénticos a los del fixture de grosores directos para cada escala, mientras que sus DWG son distintos. Este cotejo acredita equivalencia de salida en esta fixture, no equivalencia general de todas las propiedades CAD.
+
+No se verificó CTB/STB, color→pluma, transparencia, jerarquía de varias capas en un plano, todos los tipos de entidad, impresora física, texto buscable ni L5 humana. Los reportes exploratorios rechazados siguen guardados bajo `target/mcp-external`.

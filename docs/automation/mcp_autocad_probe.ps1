@@ -93,6 +93,12 @@ $lispText = @"
     "-"))
 (write-line (strcat "ACADVER|" (getvar "ACADVER")) ocs_file)
 (write-line (strcat "INSUNITS|" (itoa (getvar "INSUNITS"))) ocs_file)
+(foreach ocs_layer_name '("A-THIN" "A-THICK")
+  (setq ocs_layer_entity (tblobjname "LAYER" ocs_layer_name))
+  (setq ocs_layer_data (if ocs_layer_entity (entget ocs_layer_entity) nil))
+  (if ocs_layer_data
+    (write-line (strcat "LAYERWEIGHT|" ocs_layer_name "|"
+                        (ocs_value ocs_layer_data 370)) ocs_file)))
 (setq ocs_layout_dict (dictsearch (namedobjdict) "ACAD_LAYOUT"))
 (if ocs_layout_dict
   (write-line (strcat "MODELLAYOUT|" (vl-princ-to-string
@@ -359,11 +365,12 @@ try {
             }
         }
         if ($sourceReport.schema_version -in @('mcp-metric-content-l2-1',
-                'mcp-metric-pen-l2-1') -and
+                'mcp-metric-pen-l2-1','mcp-metric-bylayer-l2-1') -and
             $sourceReport.status -eq 'passed' -and
             $sourceReport.verified_dwg.sha256 -eq $before) {
             $penFixture = $sourceReport.schema_version -eq 'mcp-metric-pen-l2-1'
-            if ($penFixture) { $plotContentExpectedCount = 6 }
+            $bylayerFixture = $sourceReport.schema_version -eq 'mcp-metric-bylayer-l2-1'
+            if ($penFixture -or $bylayerFixture) { $plotContentExpectedCount = 6 }
             $expectedCommands = @('SETVAR INSUNITS 6','LINE 0,0 4,0','LINE 4,0 4,1',
                 'DIMSTYLE NEW OCS_PRINT_TEST',
                 'DIMSTYLE SET OCS_PRINT_TEST dimtxt 0.2',
@@ -372,17 +379,31 @@ try {
                 'DIMSTYLE SET OCS_PRINT_TEST dimscale 1',
                 'DIMSTYLE SET OCS_PRINT_TEST dimlfac 1','CDIMSTY OCS_PRINT_TEST',
                 'TEXT 0.5,0.5 0.2 0 TEST123','DIMLINEAR 0,0 4,0 2,-0.5')
+            if ($bylayerFixture) {
+                $expectedCommands = @('SETVAR INSUNITS 6','LAYER NEW A-THIN',
+                    'LAYER NEW A-THICK','CLAYER A-THIN','LINE 0,0 4,0',
+                    'CLAYER A-THICK','LINE 4,0 4,1','CLAYER 0') +
+                    @($expectedCommands[3..($expectedCommands.Count - 1)])
+            }
             $plotContentSourceValid = $sourceReport.handles.Count -eq 4 -and
                 $sourceReport.reopened_entities.Count -eq 4 -and
                 ((@($sourceReport.commands) -join ';') -ceq ($expectedCommands -join ';')) -and
                 $sourceReport.creation.completed_commands -eq $expectedCommands.Count
-            if ($penFixture) {
+            if ($penFixture -or $bylayerFixture) {
                 $plotContentSourceValid = $plotContentSourceValid -and
-                    ((@($sourceReport.expected_pen_weight_100th_mm) -join ',') -eq '13,70') -and
                     $sourceReport.results.'100'.raster_100dpi.thin_horizontal_px -eq 1 -and
                     $sourceReport.results.'100'.raster_100dpi.thick_vertical_px -eq 3 -and
                     $sourceReport.results.'50'.raster_100dpi.thin_horizontal_px -eq 1 -and
                     $sourceReport.results.'50'.raster_100dpi.thick_vertical_px -eq 3
+            }
+            if ($penFixture) {
+                $plotContentSourceValid = $plotContentSourceValid -and
+                    ((@($sourceReport.expected_pen_weight_100th_mm) -join ',') -eq '13,70')
+            }
+            if ($bylayerFixture) {
+                $plotContentSourceValid = $plotContentSourceValid -and
+                    $sourceReport.expected_layer_weights_100th_mm.'A-THIN' -eq 13 -and
+                    $sourceReport.expected_layer_weights_100th_mm.'A-THICK' -eq 70
             }
             $handles = @($sourceReport.handles)
             if ($plotContentSourceValid) {
@@ -412,6 +433,31 @@ try {
                             expected=$want;source=$sourceWeight;
                             autocad=if ($penParts.Count -eq 3) { $penParts[2] } else { $null };
                             matched=[bool]$penMatch}
+                    }
+                    if ($bylayerFixture) {
+                        $layerName = @('A-THIN','A-THICK')[$index]
+                        $want = @(13,70)[$index]
+                        $penLine = $lines | Where-Object {
+                            $_.StartsWith("PENWEIGHT|$handle|") } | Select-Object -First 1
+                        $penParts = if ($penLine) { $penLine -split '\|' } else { @() }
+                        $layerLine = $lines | Where-Object {
+                            $_.StartsWith("LAYERWEIGHT|$layerName|") } | Select-Object -First 1
+                        $layerParts = if ($layerLine) { $layerLine -split '\|' } else { @() }
+                        $sourceLayerWeight = $sourceReport.reopened_layers.$layerName.properties.line_weight.Value
+                        $layerMatch = $source.layer -ceq $layerName -and
+                            $source.properties.common.line_weight -ceq 'ByLayer' -and
+                            $sourceLayerWeight -eq $want -and
+                            $row[3] -ceq $layerName -and $penParts.Count -eq 3 -and
+                            $penParts[2] -ceq '-' -and
+                            $layerParts.Count -eq 3 -and
+                            (Read-DxfNumber $layerParts[2]) -eq $want
+                        $plotContentComparison += [ordered]@{kind='bylayer_weight';
+                            handle=$handle;layer=$layerName;expected=$want;
+                            source_layer_weight=$sourceLayerWeight;
+                            entity_weight=if ($penParts.Count -eq 3) {
+                                $penParts[2] } else { $null };
+                            layer_weight=if ($layerParts.Count -eq 3) { $layerParts[2] } else { $null };
+                            matched=[bool]$layerMatch}
                     }
                 }
                 $textHandle = [string]$handles[2]
@@ -1205,7 +1251,7 @@ try {
         $wallModelCountMatch = $declaredCount -eq ($geometryComparison.Count + 1)
     }
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-14'
+        schema_version = 'mcp-autocad-audit-l4-16'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion

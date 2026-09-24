@@ -11,3 +11,5 @@ Dependencias del arnés: Python con Pillow y pypdf, `pdftoppm`, `target/debug/Op
 Límite observado: el PDF dibuja los glifos vectorialmente, pero `pypdf.extract_text()` devuelve vacío en ambas escalas. Este gate no acredita texto seleccionable/buscable, CTB/plumas, grosores distintos, fuentes alternativas, cotas de un plano completo, impresora real ni L5 humana. El primer intento con estilo por defecto produjo una cifra de cota desproporcionada y solapada; el contrato exige el estilo explícito y conserva ese intento fallido como evidencia.
 
 La variante opcional `--pen-widths` prueba dos grosores explícitos bajo [METRIC-PEN-WIDTH-QA-V1.md](METRIC-PEN-WIDTH-QA-V1.md); la ejecución sin esa opción conserva este contrato y sus evidencias.
+
+La variante `--bylayer-weights` prueba los mismos grosores resueltos desde dos capas bajo [METRIC-BYLAYER-PRINT-QA-V1.md](METRIC-BYLAYER-PRINT-QA-V1.md).
