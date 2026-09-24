@@ -10,6 +10,7 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import queue
@@ -272,7 +273,8 @@ class Client:
 
     def capture_artifact(self, session_id: str, path: Path, *, document_id: int,
                          geometry_revision: int, camera_revision: int,
-                         max_dimension: int = 1024) -> dict:
+                         max_dimension: int = 1024,
+                         landmarks: list[dict] | None = None) -> dict:
         """Store a fenced PNG locally; never put its Base64 into a trace or report."""
         if not path.is_absolute() or path.suffix.lower() != ".png" or path.exists():
             raise ValueError("Capture path must be a new absolute PNG path")
@@ -282,8 +284,25 @@ class Client:
                     "camera_revision": camera_revision}
         if any(type(value) is not int or value < 0 for value in expected.values()):
             raise ValueError("Capture document/revision identities are required")
-        result = self._tool_result("ocs_capture", {"ocs_session_id": session_id,
-                            "scope": "viewport", "max_dimension": max_dimension, **expected},
+        requested_ids = []
+        if landmarks is not None:
+            if not isinstance(landmarks, list) or len(landmarks) > 32:
+                raise ValueError("Capture accepts at most 32 landmarks")
+            for item in landmarks:
+                if not isinstance(item, dict) or set(item) != {"id", "point"} or \
+                        not isinstance(item["id"], str) or not item["id"] or \
+                        not isinstance(item["point"], list) or len(item["point"]) != 3 or \
+                        any(type(value) not in (int, float) or not math.isfinite(value)
+                            for value in item["point"]):
+                    raise ValueError("Capture landmark requires a stable ID and finite xyz")
+                requested_ids.append(item["id"])
+            if len(set(requested_ids)) != len(requested_ids):
+                raise ValueError("Capture landmark IDs must be unique")
+        arguments = {"ocs_session_id": session_id, "scope": "viewport",
+                     "max_dimension": max_dimension, **expected}
+        if landmarks is not None:
+            arguments["landmarks"] = landmarks
+        result = self._tool_result("ocs_capture", arguments,
                             deadline=time.monotonic() + 45)
         metadata = result.get("structuredContent")
         if result.get("isError") or not isinstance(metadata, dict) or metadata.get("ok") is not True \
@@ -296,6 +315,17 @@ class Client:
             raise ProtocolError("Capture scope differs from requested viewport")
         if metadata.get("overlay_policy") != "drawing_only":
             raise ProtocolError("Capture viewport includes interactive overlays")
+        projected = metadata.get("landmarks_px")
+        if metadata.get("projection_contract") != "viewport-rte-pixels-1" or \
+                not isinstance(projected, list) or \
+                [item.get("id") for item in projected if isinstance(item, dict)] != requested_ids or \
+                len(projected) != len(requested_ids) or any(
+                    not isinstance(item, dict) or set(item) != {"id", "pixel", "inside"} or
+                    not isinstance(item["pixel"], list) or len(item["pixel"]) != 2 or
+                    any(type(value) not in (int, float) or not math.isfinite(value)
+                        for value in item["pixel"]) or type(item["inside"]) is not bool
+                    for item in projected):
+            raise ProtocolError("Capture landmark projection is absent or differs")
         images = [item for item in result.get("content", [])
                   if item.get("type") == "image" and item.get("mimeType") == "image/png"]
         if len(images) != 1 or not isinstance(images[0].get("data"), str):
@@ -313,7 +343,8 @@ class Client:
         return {key: metadata.get(key) for key in
                 ("document_id", "revision", "geometry_revision", "camera_revision",
                  "width", "height", "scope", "overlay_policy", "rendered_geometry_revision",
-                 "rendered_camera_revision", "render_fence", "timings")}
+                 "rendered_camera_revision", "render_fence", "projection_contract",
+                 "landmarks_px", "timings")}
 
     @staticmethod
     def _remaining(deadline: float | None) -> float | None:

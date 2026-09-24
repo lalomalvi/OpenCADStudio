@@ -190,7 +190,9 @@ class ClientTests(unittest.TestCase):
                                       "rendered_geometry_revision": 3,
                                       "rendered_camera_revision": 4,
                                       "render_fence": "shader_encoded_frame", "scope": "viewport",
-                                      "overlay_policy": "drawing_only"},
+                                      "overlay_policy": "drawing_only",
+                                      "projection_contract": "viewport-rte-pixels-1",
+                                      "landmarks_px": []},
                 "content": [{"type": "image", "mimeType": "image/png",
                              "data": base64.b64encode(b"\x89PNG\r\n\x1a\nfixture").decode()}]}
         with tempfile.TemporaryDirectory() as directory:
@@ -209,6 +211,34 @@ class ClientTests(unittest.TestCase):
                 with self.assertRaisesRegex(ProtocolError, "interactive overlays"):
                     client.capture_artifact("s1", rejected, document_id=1,
                                             geometry_revision=3, camera_revision=4)
+                self.assertFalse(rejected.exists())
+
+    def test_capture_artifact_landmarks_are_fenced_before_write(self):
+        client = self.client()
+        fake = {"structuredContent": {"ok": True, "document_id": 1,
+                                      "geometry_revision": 3, "camera_revision": 4,
+                                      "rendered_geometry_revision": 3,
+                                      "rendered_camera_revision": 4,
+                                      "render_fence": "shader_encoded_frame", "scope": "viewport",
+                                      "overlay_policy": "drawing_only",
+                                      "projection_contract": "viewport-rte-pixels-1",
+                                      "landmarks_px": [{"id": "hinge", "pixel": [10.5, 20.25],
+                                                        "inside": True}]},
+                "content": [{"type": "image", "mimeType": "image/png",
+                             "data": base64.b64encode(b"\x89PNG\r\n\x1a\nfixture").decode()}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = (Path(directory) / "capture.png").resolve()
+            landmarks = [{"id": "hinge", "point": [1.0, 0.1, 0.0]}]
+            with patch.object(client, "_tool_result", return_value=fake) as rpc:
+                metadata = client.capture_artifact("s1", path, document_id=1,
+                    geometry_revision=3, camera_revision=4, landmarks=landmarks)
+                self.assertEqual(metadata["landmarks_px"][0]["pixel"], [10.5, 20.25])
+                self.assertEqual(rpc.call_args.args[1]["landmarks"], landmarks)
+                fake["structuredContent"]["landmarks_px"][0]["id"] = "other"
+                rejected = (Path(directory) / "rejected.png").resolve()
+                with self.assertRaisesRegex(ProtocolError, "landmark projection"):
+                    client.capture_artifact("s1", rejected, document_id=1,
+                        geometry_revision=3, camera_revision=4, landmarks=landmarks)
                 self.assertFalse(rejected.exists())
 
     def test_capture_artifact_rejects_window_fallback(self):

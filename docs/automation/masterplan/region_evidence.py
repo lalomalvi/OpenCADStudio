@@ -6,12 +6,55 @@ import argparse
 import hashlib
 import io
 import json
+import math
 import re
 from pathlib import Path
 
 from PIL import Image
 
 from artifact_evidence import EvidenceError, artifact_ref, verify_ref
+
+
+def projected_door_regions(run_report: Path, margin_px: int = 12) -> list[dict]:
+    """Derive two fixture crop boxes from the fenced CAD-to-pixel anchors."""
+    if type(margin_px) is not int or not 0 <= margin_px <= 64:
+        raise EvidenceError("Projection margin is invalid")
+    report = json.loads(run_report.resolve(strict=True).read_text(encoding="utf-8"))
+    parent = report.get("capture_artifact", {})
+    projection = report.get("capture_projection", {})
+    identity = ("document_id", "geometry_revision", "camera_revision")
+    if report.get("status") != "passed" or projection.get("contract") != "viewport-rte-pixels-1" or \
+            any(projection.get(key) != parent.get(key) for key in identity):
+        raise EvidenceError("Projection does not belong to the passed capture")
+    cad = projection.get("landmarks_cad")
+    pixel = projection.get("landmarks_px")
+    probes = projection.get("pixel_probes")
+    if not isinstance(cad, list) or not isinstance(pixel, list) or len(cad) != 8 or len(pixel) != 8:
+        raise EvidenceError("Two-door projection requires eight anchors")
+    expected = [f"{door}-{part}" for door in ("door-south", "door-east")
+                for part in ("hinge", "closed", "arc-mid", "open")]
+    if [item.get("id") for item in cad] != expected or \
+            [item.get("id") for item in pixel] != expected:
+        raise EvidenceError("Projection anchor IDs differ from the fixture")
+    if probes is not None and (not isinstance(probes, list) or
+            [item.get("id") for item in probes] != expected or
+            any(item.get("visible") is not True for item in probes)):
+        raise EvidenceError("Projection ink probes differ or failed")
+    if any(item.get("inside") is not True or not isinstance(item.get("pixel"), list) or
+           len(item["pixel"]) != 2 or any(type(v) not in (int, float) or not math.isfinite(v)
+           for v in item["pixel"]) for item in pixel):
+        raise EvidenceError("Projection pixel is outside or invalid")
+    regions = []
+    for door, anchors in (("door-south", pixel[:4]), ("door-east", pixel[4:])):
+        xs, ys = [p["pixel"][0] for p in anchors], [p["pixel"][1] for p in anchors]
+        rect = [max(0, math.floor(min(xs)) - margin_px),
+                max(0, math.floor(min(ys)) - margin_px),
+                min(parent["width"], math.ceil(max(xs)) + margin_px + 1),
+                min(parent["height"], math.ceil(max(ys)) + margin_px + 1)]
+        if rect[0] >= rect[2] or rect[1] >= rect[3]:
+            raise EvidenceError("Projected crop is empty")
+        regions.append({"label": door, "rect_px": rect})
+    return regions
 
 
 def build_regions(run_report: Path, regions: list[dict], output_name: str = "regions") -> dict:
@@ -133,10 +176,14 @@ def verify_regions(run_report: Path, manifest_path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_report", type=Path)
-    parser.add_argument("regions_json", type=Path)
+    parser.add_argument("regions_json", type=Path, nargs="?")
+    parser.add_argument("--from-projection", action="store_true")
     parser.add_argument("--output-name", default="regions")
     args = parser.parse_args()
-    regions = json.loads(args.regions_json.read_text(encoding="utf-8"))
+    if args.from_projection == (args.regions_json is not None):
+        parser.error("Pass a regions JSON or --from-projection")
+    regions = (projected_door_regions(args.run_report) if args.from_projection else
+               json.loads(args.regions_json.read_text(encoding="utf-8")))
     result = build_regions(args.run_report, regions, args.output_name)
     verify_regions(args.run_report, args.run_report.parent / args.output_name / "manifest.json")
     print(json.dumps({"manifest": str(args.run_report.parent / args.output_name / "manifest.json"),

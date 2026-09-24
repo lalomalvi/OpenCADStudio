@@ -13,6 +13,8 @@ import sys
 import time
 import uuid
 
+from PIL import Image
+
 from mcp_client import Client, ProtocolError, ToolError, UncertainMutation
 from mcp_budgeted_run import CheckpointError
 from mcp_capture_budget import CaptureBudget
@@ -547,10 +549,25 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                                        "l2-capture-" + session[:12],
                                        max_captures=1, max_bytes=20_000_000)
         capture_started_ns = time.monotonic_ns()
+        # Fixed CAD anchors for this versioned synthetic fixture. They cover each
+        # leaf and arc, allowing regions to be traced to the same rendered frame.
+        landmarks = None
+        if plan_fixture == "synthetic-two-door-wall-v8":
+            landmarks = [
+                {"id": "door-south-hinge", "point": [1, 0.1, 0]},
+                {"id": "door-south-closed", "point": [1.9, 0.1, 0]},
+                {"id": "door-south-arc-mid", "point": [1.636396103, 0.736396103, 0]},
+                {"id": "door-south-open", "point": [1, 1, 0]},
+                {"id": "door-east-hinge", "point": [2.2, 0.1, 0]},
+                {"id": "door-east-closed", "point": [3, 0.1, 0]},
+                {"id": "door-east-arc-mid", "point": [2.765685425, 0.665685425, 0]},
+                {"id": "door-east-open", "point": [2.2, 0.9, 0]},
+            ]
         budget_result = capture_budget.capture(capture_path,
                                                 document_id=state["document_id"],
                                                 geometry_revision=state["geometry_revision"],
-                                                camera_revision=state["camera_revision"])
+                                                camera_revision=state["camera_revision"],
+                                                landmarks=landmarks)
         capture = budget_result["metadata"]
         report.setdefault("client_timings_ms", {})["capture_rpc_and_artifact"] = round(
             (time.monotonic_ns() - capture_started_ns) / 1_000_000, 3)
@@ -582,6 +599,16 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         if capture.get("overlay_policy") != "drawing_only":
             raise ProtocolError("Synthetic viewport capture contains interactive overlays")
         report["capture_overlay_policy"] = capture["overlay_policy"]
+        if landmarks is not None:
+            if any(not point["inside"] for point in capture["landmarks_px"]):
+                raise ProtocolError("Synthetic door landmark is outside captured viewport")
+            report["capture_projection"] = {
+                "contract": capture["projection_contract"],
+                "landmarks_cad": landmarks,
+                "landmarks_px": capture["landmarks_px"],
+                "document_id": capture["document_id"],
+                "geometry_revision": capture["geometry_revision"],
+                "camera_revision": capture["camera_revision"]}
         report["capture_engine_timings_ms"] = capture["timings"]
         reference = artifact_ref(output, capture_path.name,
                                  document_id=capture["document_id"],
@@ -591,6 +618,23 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         if (reference["width"], reference["height"]) != (capture["width"], capture["height"]):
             raise ProtocolError("Capture PNG dimensions differ from MCP metadata")
         report["capture_artifact"] = reference
+        if landmarks is not None:
+            # This L2 fixture renders light CAD strokes on a dark viewport.
+            # Require visible ink near each independently specified CAD anchor.
+            probes = []
+            with Image.open(capture_path) as opened:
+                rgb = opened.convert("RGB")
+                for point in capture["landmarks_px"]:
+                    x, y = (round(value) for value in point["pixel"])
+                    peak = max(max(rgb.getpixel((px, py)))
+                               for px in range(max(0, x - 3), min(rgb.width, x + 4))
+                               for py in range(max(0, y - 3), min(rgb.height, y + 4)))
+                    probes.append({"id": point["id"], "radius_px": 3,
+                                   "peak_rgb_channel": peak, "threshold": 80,
+                                   "visible": peak >= 80})
+            report["capture_projection"]["pixel_probes"] = probes
+            if any(not probe["visible"] for probe in probes):
+                raise ProtocolError("Projected CAD landmark misses visible fixture ink")
         report["capture_fence"] = {key: capture[key] for key in
                                    ("rendered_geometry_revision", "rendered_camera_revision",
                                     "render_fence")}

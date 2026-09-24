@@ -106,7 +106,8 @@ class CaptureBudget:
         return records
 
     def capture(self, path: Path, *, document_id: int, geometry_revision: int,
-                camera_revision: int, max_dimension: int = 1024) -> dict:
+                camera_revision: int, max_dimension: int = 1024,
+                landmarks: list[dict] | None = None) -> dict:
         if not path.is_absolute() or path.parent.resolve() != self.path.parent.resolve() or \
                 not re.fullmatch(r"[A-Za-z0-9_-]{1,80}\.png", path.name):
             raise ValueError("Capture must be a new PNG beside its checkpoint")
@@ -144,7 +145,8 @@ class CaptureBudget:
                                "camera_revision": camera_revision})
         metadata = self.client.capture_artifact(self.session_id, path,
             document_id=document_id, geometry_revision=geometry_revision,
-            camera_revision=camera_revision, max_dimension=max_dimension)
+            camera_revision=camera_revision, max_dimension=max_dimension,
+            **({"landmarks": landmarks} if landmarks is not None else {}))
         if not path.is_file() or metadata.get("document_id") != document_id or \
                 metadata.get("geometry_revision") != geometry_revision or \
                 metadata.get("camera_revision") != camera_revision:

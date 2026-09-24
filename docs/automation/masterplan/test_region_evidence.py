@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image
 
 from artifact_evidence import EvidenceError, artifact_ref, verify_ref
-from region_evidence import build_regions, verify_regions
+from region_evidence import build_regions, projected_door_regions, verify_regions
 
 
 class RegionEvidenceTests(unittest.TestCase):
@@ -66,6 +66,28 @@ class RegionEvidenceTests(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         with self.assertRaisesRegex(EvidenceError, "pixels differ"):
             verify_regions(self.report, manifest_path)
+
+    def test_projected_regions_require_same_capture_identity(self):
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        ids = [f"{door}-{part}" for door in ("door-south", "door-east")
+               for part in ("hinge", "closed", "arc-mid", "open")]
+        report["capture_projection"] = {
+            "contract": "viewport-rte-pixels-1", "document_id": 5,
+            "geometry_revision": 8, "camera_revision": 2,
+            "landmarks_cad": [{"id": name, "point": [0, 0, 0]} for name in ids],
+            "landmarks_px": [{"id": name, "pixel": [index + 1, 3], "inside": True}
+                             for index, name in enumerate(ids)]}
+        self.report.write_text(json.dumps(report), encoding="utf-8")
+        regions = projected_door_regions(self.report, margin_px=1)
+        self.assertEqual([item["label"] for item in regions],
+                         ["door-south", "door-east"])
+        self.assertEqual(regions[0]["rect_px"], [0, 2, 6, 5])
+        build_regions(self.report, regions)
+        verify_regions(self.report, self.root / "regions/manifest.json")
+        report["capture_projection"]["camera_revision"] = 3
+        self.report.write_text(json.dumps(report), encoding="utf-8")
+        with self.assertRaisesRegex(EvidenceError, "does not belong"):
+            projected_door_regions(self.report)
 
 
 if __name__ == "__main__":

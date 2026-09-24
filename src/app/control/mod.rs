@@ -918,6 +918,27 @@ impl OpenCADStudio {
                 self.main_window
                     .ok_or_else(|| failure("gui_required", "Capture requires a GUI window"))?;
                 string(req, "path")?;
+                if let Some(landmarks) = req.get("landmarks") {
+                    let values = landmarks.as_array().filter(|items| items.len() <= 32)
+                        .ok_or_else(|| failure("capture_landmarks_invalid", "At most 32 landmarks are allowed"))?;
+                    if req["scope"] != "viewport" {
+                        return Err(failure("capture_landmarks_invalid", "Landmarks require viewport scope"));
+                    }
+                    let mut ids = Vec::new();
+                    for item in values {
+                        let id = item["id"].as_str().filter(|id| !id.is_empty() && id.len() <= 80 &&
+                            id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+                            .ok_or_else(|| failure("capture_landmarks_invalid", "Landmark ID is invalid"))?;
+                        let point = item["point"].as_array().filter(|point| point.len() == 3)
+                            .ok_or_else(|| failure("capture_landmarks_invalid", "Landmark needs xyz"))?;
+                        if ids.contains(&id) || point.iter().any(|value| value.as_f64()
+                            .is_none_or(|number| !number.is_finite() || number.abs() > 1_000_000.0)) ||
+                            item.as_object().is_none_or(|map| map.len() != 2) {
+                            return Err(failure("capture_landmarks_invalid", "Landmark is duplicate or out of range"));
+                        }
+                        ids.push(id);
+                    }
+                }
                 if req["scope"] == "viewport" {
                     if self.thumbnail_capture_clean {
                         return Err(failure("capture_busy", "Thumbnail capture is in progress"));
@@ -1288,6 +1309,8 @@ impl OpenCADStudio {
                 image::RgbaImage::from_raw(s.size.width, s.size.height, s.rgba.to_vec())
                     .ok_or("Renderer returned malformed image data")?;
             let mut actual_scope = "window";
+            let mut landmark_pixels_raw: Vec<(String, f64, f64)> = Vec::new();
+            let mut raw_viewport_size = None;
             if requested_scope == "viewport" {
                 let bounds = crate::ui::wrap_bar::dropdown_bounds(
                     crate::app::view::VIEWPORT_CAPTURE_BOUNDS_ID,
@@ -1302,6 +1325,26 @@ impl OpenCADStudio {
                     .ceil()
                     .clamp(0.0, image.height() as f32) as u32;
                 if right > left && bottom > top {
+                    raw_viewport_size = Some((right - left, bottom - top));
+                    if let Some(landmarks) = self.control.pending.as_ref()
+                        .and_then(|pending| pending.request["landmarks"].as_array()) {
+                        let camera = tab.scene.camera.borrow();
+                        let view_rot = camera.view_proj_rte(bounds);
+                        let eye = camera.eye();
+                        for landmark in landmarks {
+                            let point = landmark["point"].as_array().unwrap();
+                            let world = glam::DVec3::new(point[0].as_f64().unwrap(),
+                                point[1].as_f64().unwrap(), point[2].as_f64().unwrap());
+                            let screen = crate::scene::pick::hit_test::world_to_screen(
+                                world, view_rot, eye, bounds);
+                            if !screen.x.is_finite() || !screen.y.is_finite() {
+                                return Err("Landmark projection is not finite".into());
+                            }
+                            landmark_pixels_raw.push((landmark["id"].as_str().unwrap().to_owned(),
+                                ((bounds.x + screen.x) * scale - left as f32) as f64,
+                                ((bounds.y + screen.y) * scale - top as f32) as f64));
+                        }
+                    }
                     image = image::imageops::crop_imm(
                         &image,
                         left,
@@ -1327,6 +1370,14 @@ impl OpenCADStudio {
                     image::imageops::FilterType::Triangle,
                 );
             }
+            let landmarks_px: Vec<Value> = if let Some((raw_width, raw_height)) = raw_viewport_size {
+                landmark_pixels_raw.into_iter().map(|(id, raw_x, raw_y)| {
+                    let x = raw_x * image.width() as f64 / raw_width as f64;
+                    let y = raw_y * image.height() as f64 / raw_height as f64;
+                    json!({"id":id,"pixel":[x,y],"inside":x >= 0.0 && y >= 0.0 &&
+                        x < image.width() as f64 && y < image.height() as f64})
+                }).collect()
+            } else { Vec::new() };
             image
                 .save_with_format(&path, image::ImageFormat::Png)
                 .map_err(|e| e.to_string())?;
@@ -1335,7 +1386,7 @@ impl OpenCADStudio {
                 end.saturating_duration_since(start).as_secs_f64() * 1000.0
             };
             Ok(
-                json!({"path":path,"scope":actual_scope,"overlay_policy":if actual_scope == "viewport" && self.control_capture_clean { "drawing_only" } else { "interactive" },"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"geometry_revision":self.tabs[self.active_tab].scene.geometry_epoch,"camera_revision":self.tabs[self.active_tab].scene.camera_generation,"rendered_geometry_revision":rendered.unwrap().0,"rendered_camera_revision":rendered.unwrap().1,"render_fence":"shader_encoded_frame","timings":{"scope":"gui_process_monotonic","wait_for_encoded_frame_ms":elapsed_ms(requested_at,rendered_at),"frame_to_screenshot_callback_ms":elapsed_ms(rendered_at,screenshot_available_at),"encode_and_write_png_ms":elapsed_ms(screenshot_available_at,encoded_at),"total_ms":elapsed_ms(requested_at,encoded_at)}}),
+                json!({"path":path,"scope":actual_scope,"overlay_policy":if actual_scope == "viewport" && self.control_capture_clean { "drawing_only" } else { "interactive" },"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"projection_contract":if actual_scope == "viewport" { "viewport-rte-pixels-1" } else { "unavailable" },"landmarks_px":landmarks_px,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"geometry_revision":self.tabs[self.active_tab].scene.geometry_epoch,"camera_revision":self.tabs[self.active_tab].scene.camera_generation,"rendered_geometry_revision":rendered.unwrap().0,"rendered_camera_revision":rendered.unwrap().1,"render_fence":"shader_encoded_frame","timings":{"scope":"gui_process_monotonic","wait_for_encoded_frame_ms":elapsed_ms(requested_at,rendered_at),"frame_to_screenshot_callback_ms":elapsed_ms(rendered_at,screenshot_available_at),"encode_and_write_png_ms":elapsed_ms(screenshot_available_at,encoded_at),"total_ms":elapsed_ms(requested_at,encoded_at)}}),
             )
         })();
         match result {

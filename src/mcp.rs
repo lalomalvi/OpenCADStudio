@@ -1540,6 +1540,9 @@ fn call_tool(
                     capture[key] = value.clone();
                 }
             }
+            if let Some(landmarks) = arguments.get("landmarks") {
+                capture["landmarks"] = landmarks.clone();
+            }
             let result = client(clients, session_id)?
                 .request(capture, 30.0)?;
             if result["ok"].as_bool() != Some(true)
@@ -1581,6 +1584,8 @@ fn call_tool(
                 "rendered_geometry_revision":metadata["rendered_geometry_revision"],
                 "rendered_camera_revision":metadata["rendered_camera_revision"],
                 "render_fence":metadata["render_fence"],
+                "projection_contract":metadata["projection_contract"],
+                "landmarks_px":metadata["landmarks_px"],
                 "timings":metadata["timings"]}}))
         }
         _ => Err(format!("Unknown tool: {name}")),
@@ -1761,7 +1766,7 @@ fn tool_definitions() -> Value {
         {
             "name":"ocs_capture",
             "description":"Capture the actual current OCS drawing viewport or window as a bounded PNG for visual verification.",
-            "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"scope":{"type":"string","enum":["viewport","window"],"default":"viewport","description":"Capture only the drawing viewport by default, or the complete application window."},"max_dimension":{"type":"integer","minimum":256,"maximum":4096,"default":1600,"description":"Resize the longest image edge to at most this many pixels."},"document_id":{"type":"integer","minimum":0},"geometry_revision":{"type":"integer","minimum":0},"camera_revision":{"type":"integer","minimum":0}},"required":["ocs_session_id"],"additionalProperties":false},
+            "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"scope":{"type":"string","enum":["viewport","window"],"default":"viewport","description":"Capture only the drawing viewport by default, or the complete application window."},"max_dimension":{"type":"integer","minimum":256,"maximum":4096,"default":1600,"description":"Resize the longest image edge to at most this many pixels."},"document_id":{"type":"integer","minimum":0},"geometry_revision":{"type":"integer","minimum":0},"camera_revision":{"type":"integer","minimum":0},"landmarks":{"type":"array","maxItems":32,"description":"World xyz points projected into the fenced viewport PNG.","items":{"type":"object","properties":{"id":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,80}$"},"point":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3}},"required":["id","point"],"additionalProperties":false}}},"required":["ocs_session_id"],"additionalProperties":false},
             "annotations":{"title":"Capture OCS window","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
         }
     ])
