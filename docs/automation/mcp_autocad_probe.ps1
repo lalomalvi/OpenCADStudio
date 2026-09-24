@@ -123,6 +123,8 @@ $lispText = @"
                 (ocs_value ocs_data 40) "|" (ocs_angle ocs_data 51)) ocs_file)
       (write-line (strcat "PENWEIGHT|" (ocs_value ocs_data 5) "|"
                           (ocs_value ocs_data 370)) ocs_file)
+      (write-line (strcat "COLORDATA|" (ocs_value ocs_data 5) "|"
+                          (ocs_value ocs_data 62)) ocs_file)
       (if (= (cdr (assoc 0 ocs_data)) "TEXT")
         (write-line (strcat "TEXTDATA|" (ocs_value ocs_data 5) "|"
                             (ocs_value ocs_data 1) "|"
@@ -289,6 +291,8 @@ try {
     $plotContentComparison = @()
     $plotContentSourceValid = $null
     $plotContentExpectedCount = 4
+    $plotCtbComparison = @()
+    $plotCtbSourceValid = $null
     $modelLayoutFields = @{}
     if ($censusDone) {
         $layoutLine = $lines | Where-Object { $_.StartsWith('MODELLAYOUT|') } |
@@ -362,6 +366,58 @@ try {
                     matched = $row -and $row[1] -eq 'LINE' -and
                         (Same-Point $line.start $start) -and (Same-Point $line.end $end)
                 }
+            }
+        }
+        if ($sourceReport.schema_version -eq 'mcp-metric-ctb-l2-1' -and
+            $sourceReport.status -eq 'passed' -and
+            $sourceReport.verified_dwg.sha256 -eq $before) {
+            $plotCtbSourceValid = ((@($sourceReport.commands) -join ';') -ceq
+                'SETVAR INSUNITS 6;LINE 0,0 4,0;LINE 4,0 4,1') -and
+                $sourceReport.page_setup_before.plot_style_sheet -ceq 'monochrome.ctb' -and
+                $sourceReport.page_setup_after.plot_plot_styles -eq $true -and
+                $sourceReport.color_oracle.red_px -gt 0 -and
+                $sourceReport.color_oracle.green_px -gt 0 -and
+                $sourceReport.color_oracle.monochrome_black_at_color_px /
+                    [Math]::Max(1,$sourceReport.color_oracle.sampled_color_px) -ge 0.9
+            $setup = $sourceReport.page_setup_after
+            $expectedCodes = [ordered]@{
+                '2'='none_device'; '4'='ISO_A4_(210.00_x_297.00_MM)';
+                '7'=[string]$setup.plot_style_sheet;
+                '40'=0.0; '41'=0.0; '42'=0.0; '43'=0.0;
+                '44'=210.0; '45'=297.0; '142'=10.0; '143'=1.0;
+                '70'=1188.0; '72'=1.0; '73'=1.0; '74'=1.0;
+                '75'=1.0; '147'=254.0
+            }
+            foreach ($code in $expectedCodes.Keys) {
+                $want = $expectedCodes[$code]
+                $got = $modelLayoutFields[$code]
+                $matched = if ($code -in @('2','4','7')) {
+                    $null -ne $got -and $want -ceq $got
+                } else {
+                    $null -ne $got -and $null -ne (Read-DxfNumber $got) -and
+                        [Math]::Abs([double]$want - [double](Read-DxfNumber $got)) -le 1e-6
+                }
+                $plotCtbComparison += [ordered]@{kind='layout';code=$code;
+                    expected=$want;autocad=$got;matched=[bool]$matched}
+            }
+            for ($index=0; $index -lt 2; $index++) {
+                $handle=[string]$sourceReport.line_handles[$index]
+                $source=$sourceReport.line_entities[$index]
+                $row=$entityByHandle[$handle]
+                $colorLine=$lines | Where-Object { $_.StartsWith("COLORDATA|$handle|") } |
+                    Select-Object -First 1
+                $parts=if ($colorLine) { $colorLine -split '\|' } else { @() }
+                $want=@(1,3)[$index]
+                $matched=$source.handle -eq $handle -and $source.type -eq 'Line' -and
+                    $source.properties.common.color.Index -eq $want -and
+                    $row -and $row[1] -eq 'LINE' -and
+                    (Same-Point $source.start (Read-DxfPoint $row[9])) -and
+                    (Same-Point $source.end (Read-DxfPoint $row[16])) -and
+                    $parts.Count -eq 3 -and (Read-DxfNumber $parts[2]) -eq $want
+                $plotCtbComparison += [ordered]@{kind='colored_line';handle=$handle;
+                    expected_aci=$want;
+                    autocad_aci=if ($parts.Count -eq 3) { $parts[2] } else { $null };
+                    matched=[bool]$matched}
             }
         }
         if ($sourceReport.schema_version -in @('mcp-metric-content-l2-1',
@@ -817,6 +873,11 @@ try {
          ($plotContentComparison.Count -ne $plotContentExpectedCount -or
           $declaredCount -ne 4 -or
           $types.LINE -ne 2 -or $types.TEXT -ne 1 -or $types.DIMENSION -ne 1))
+    $plotCtbMismatch = $plotCtbSourceValid -eq $false -or
+        @($plotCtbComparison | Where-Object { -not $_.matched }).Count -gt 0 -or
+        ($plotCtbSourceValid -eq $true -and
+         ($plotCtbComparison.Count -ne 19 -or $declaredCount -ne 2 -or
+          $types.LINE -ne 2))
     $propertyComparison = @()
     if ($richSourceReport) {
         $hatch = $richSourceReport.hatch_fixture
@@ -1251,7 +1312,7 @@ try {
         $wallModelCountMatch = $declaredCount -eq ($geometryComparison.Count + 1)
     }
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-16'
+        schema_version = 'mcp-autocad-audit-l4-17'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion
@@ -1286,6 +1347,8 @@ try {
         plot_geometry_comparison = $plotGeometryComparison
         plot_content_source_valid = $plotContentSourceValid
         plot_content_comparison = $plotContentComparison
+        plot_ctb_source_valid = $plotCtbSourceValid
+        plot_ctb_comparison = $plotCtbComparison
         property_comparison = $propertyComparison
         geometry_source_valid = $geometrySourceValid
         source_report_match = $sourceReportMatch
@@ -1296,7 +1359,7 @@ try {
                               $faceFixtureMismatch -or
                               $axisDefinitionMismatch -or $axisStyleMismatch -or $axisFixtureMismatch -or
                               $propertyMismatch -or $geometryMismatch -or $lengthMismatch -or
-                              $plotMismatch -or $plotContentMismatch -or
+                              $plotMismatch -or $plotContentMismatch -or $plotCtbMismatch -or
                               $wallModelCountMatch -eq $false) {
             'mismatch'
         } elseif ($expected.Count -gt 0 -or $faceReferenceComparison.Count -gt 0 -or
@@ -1307,7 +1370,8 @@ try {
                   $propertyComparison.Count -gt 0 -or
                   $geometryComparison.Count -gt 0 -or $lengthGeometryComparison.Count -gt 0 -or
                   $plotProfileComparison.Count -gt 0 -or
-                  $plotContentComparison.Count -gt 0) {
+                  $plotContentComparison.Count -gt 0 -or
+                  $plotCtbComparison.Count -gt 0) {
             'matched_scoped'
         } else { 'unknown' }
         census_done = $censusDone
@@ -1325,7 +1389,7 @@ try {
                   $faceFixtureMismatch -or
                   $axisDefinitionMismatch -or $axisStyleMismatch -or $axisFixtureMismatch -or
                   $propertyMismatch -or $geometryMismatch -or $lengthMismatch -or
-                  $plotMismatch -or $plotContentMismatch -or
+                  $plotMismatch -or $plotContentMismatch -or $plotCtbMismatch -or
                   $wallModelCountMatch -eq $false) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {
             'partial_abnormal_exit'

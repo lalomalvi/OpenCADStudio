@@ -1690,6 +1690,7 @@ fn execute_request_schema() -> Value {
             "new_length_m":{"type":"number","minimum":0.1,"maximum":1000},
             "scale_denominator":{"type":"integer","minimum":10,"maximum":1000,"description":"Denominator of the 1:N metric model plot scale."},
             "require_page_setup":{"type":"boolean","default":false,"description":"Reject PDF export unless Model carries matching A4 metric plot settings."},
+            "plot_style":{"type":"string","enum":["none","monochrome.ctb"],"default":"none","description":"Built-in monochrome CTB or no plot style for metric Model PDF/page setup."},
             "name":{"type":"string","enum":crate::app::automation_action_names(),"description":"UI action returned by ocs_read commands."},
             "steps":{"type":"array","minItems":1,"maxItems":MAX_BATCH_STEPS,"description":"Sequential editor operations executed with fresh state and idempotency keys. Execution stops at the first failure; completed_steps says what committed.","items":batch_step_schema()},
             "commands":{"type":"array","minItems":1,"maxItems":MAX_SCRIPT_COMMANDS,"description":"Complete one-line CAD commands for a resumable high-volume drawing script. Read command manifests first; points use x,y or x,y,z.","items":{"type":"string","minLength":1,"maxLength":MAX_SCRIPT_COMMAND_BYTES}},
@@ -2518,6 +2519,7 @@ mod tests {
         assert_eq!(schema["properties"]["scale_denominator"]["minimum"], 10);
         assert_eq!(schema["properties"]["scale_denominator"]["maximum"], 1000);
         assert_eq!(schema["properties"]["require_page_setup"]["type"], "boolean");
+        assert_eq!(schema["properties"]["plot_style"]["enum"], json!(["none","monochrome.ctb"]));
         assert!(READ_OPS.contains(&"metric_page_setup"));
         assert!(EXECUTE_OPS.contains(&"set_metric_page_setup"));
         assert!(!BATCH_STEP_OPS.contains(&"set_metric_page_setup"));

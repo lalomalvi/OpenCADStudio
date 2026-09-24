@@ -1,0 +1,9 @@
+# CTB monocromático métrico, alcance sintético v1
+
+`set_metric_page_setup` y `metric_plot_pdf` aceptan el parámetro tipado `plot_style` con valores `none` (por defecto) o `monochrome.ctb`. El segundo carga exclusivamente el CTB integrado en el binario; nombres arbitrarios y rutas se rechazan antes de escribir PDF. En Model con `INSUNITS=6`, el page setup guarda `current_style_sheet=monochrome.ctb` y activa `plot_plot_styles`; `metric_page_setup` expone ambos. `metric_plot_pdf` con `require_page_setup=true` exige coincidencia de estilo, bandera, papel y escala. El perfil `none` conserva los ensayos previos.
+
+`python docs/automation/mcp_metric_ctb_smoke.py` crea dos LINE de 4×1 m con ACI 1 y 3. Tras aplicar el perfil 1:100 con CTB, guarda/reabre DWG y coteja la lectura MCP. Exporta un PDF de control sin estilo y otro con `monochrome.ctb` exigido por el page setup. Poppler rasteriza ambos a 100 dpi; el control contiene píxeles rojos y verdes, y el CTB oscurece al menos 90 % de esas mismas posiciones. El arnés verifica página A4, hashes MCP/local, rechazo de una ruta CTB arbitraria sin PDF y cierre GUI.
+
+La sonda AutoCAD L4-17 fija el hash del reporte L2 y coteja 17 códigos del Layout Model, incluidos medio A4, DXF7 `monochrome.ctb`, flags DXF70=1188, razón y papel. También coteja handle, dos geometrías y ACI1/3, Model2, INSUNITS6, AUDIT0/0 y hash DWG intacto. Una copia sintética del reporte con DXF7 esperado adulterado produce `semantic_mismatch` sin cambiar el DWG.
+
+Este gate acredita el CTB integrado y dos colores del fixture en PDF/DWG. No cubre CTB del usuario, tablas STB, mapeos personalizados de grosor/transparencia, más colores/entidades, impresora física, uso del diálogo de impresión ni legibilidad humana. Los PDF y PNG bajo `target/mcp-isolated` son evidencia sintética, no archivos privados.

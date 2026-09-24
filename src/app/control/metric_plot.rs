@@ -2,6 +2,21 @@ use super::*;
 use sha2::{Digest, Sha256};
 
 impl OpenCADStudio {
+    fn metric_plot_style(
+        request: &Value,
+    ) -> Result<Option<crate::io::plot_style::PlotStyleTable>, Value> {
+        match request.get("plot_style") {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(name)) if name == "none" => Ok(None),
+            Some(Value::String(name)) if name == "monochrome.ctb" => {
+                crate::io::plot_style::PlotStyleTable::builtin("monochrome.ctb")
+                    .map(Some)
+                    .map_err(|error| failure("plot_style_unavailable", error))
+            }
+            _ => Err(failure("invalid_plot_style", "Use none or monochrome.ctb")),
+        }
+    }
+
     pub(super) fn control_metric_page_setup(&self) -> Value {
         let scene = &self.tabs[self.active_tab].scene;
         let Some(settings) = scene.plot_settings_for("Model") else {
@@ -20,6 +35,8 @@ impl OpenCADStudio {
             "use_standard_scale":settings.flags.use_standard_scale,
             "plot_centered":settings.flags.plot_centered,
             "print_lineweights":settings.flags.print_lineweights,
+            "plot_style_sheet":settings.current_style_sheet,
+            "plot_plot_styles":settings.flags.plot_plot_styles,
             "margins_mm":[settings.margins.left,settings.margins.bottom,
                           settings.margins.right,settings.margins.top],
             "metric_scale_denominator": if ratio.is_finite() && ratio > 0.0 {
@@ -37,6 +54,7 @@ impl OpenCADStudio {
             .as_u64()
             .filter(|value| (10..=1000).contains(value))
             .ok_or_else(|| failure("invalid_scale", "Scale denominator must be 10..1000"))?;
+        let plot_style = Self::metric_plot_style(request)?;
         let i = self.active_tab;
         let scene = &self.tabs[i].scene;
         if scene.current_layout != "Model" || scene.document.header.insertion_units != 6 {
@@ -67,8 +85,12 @@ impl OpenCADStudio {
         settings.flags.plot_centered = true;
         settings.flags.print_lineweights = true;
         settings.flags.scale_lineweights = false;
-        settings.flags.plot_plot_styles = false;
         settings.flags.show_plot_styles = false;
+        settings.current_style_sheet = plot_style
+            .as_ref()
+            .map(|table| table.name.clone())
+            .unwrap_or_default();
+        settings.flags.plot_plot_styles = plot_style.is_some();
         settings.origin_x = 0.0;
         settings.origin_y = 0.0;
         self.push_undo_snapshot(i, "MCP METRIC PAGE SETUP");
@@ -121,6 +143,7 @@ impl OpenCADStudio {
             .as_u64()
             .filter(|value| (10..=1000).contains(value))
             .ok_or_else(|| failure("invalid_scale", "Scale denominator must be 10..1000"))?;
+        let plot_style = Self::metric_plot_style(request)?;
         let scene = &self.tabs[self.active_tab].scene;
         if scene.current_layout != "Model" || scene.document.header.insertion_units != 6 {
             return Err(failure(
@@ -147,6 +170,12 @@ impl OpenCADStudio {
                 || setup["use_standard_scale"] != false
                 || setup["plot_centered"] != true
                 || setup["print_lineweights"] != true
+                || setup["plot_style_sheet"]
+                    != plot_style
+                        .as_ref()
+                        .map(|table| table.name.as_str())
+                        .unwrap_or("")
+                || setup["plot_plot_styles"] != plot_style.is_some()
                 || setup["scale_numerator"]
                     .as_f64()
                     .is_none_or(|observed| (observed - 1000.0 / expected).abs() > 1e-6)
@@ -200,8 +229,9 @@ impl OpenCADStudio {
             max.y as f64 + clip_pad_m,
         ));
         self.plot_dialog = original;
-        let page =
+        let mut page =
             page.ok_or_else(|| failure("plot_unavailable", "Metric plot page could not be built"))?;
+        page.plot_style = plot_style.clone();
         if (page.paper_w - 297.0).abs() > 1e-6
             || (page.paper_h - 210.0).abs() > 1e-6
             || ((page.scale as f64) - mm_per_unit).abs() > 1e-5
@@ -227,7 +257,8 @@ impl OpenCADStudio {
             "paper":"ISO_A4_LANDSCAPE","paper_mm":[297,210],
             "model_units":"m","scale_denominator":denominator,
             "mm_per_cad_unit":mm_per_unit,"min_margin_mm":10,
-            "extent_m":[width_m,height_m],"plot_area":"Extents"
+            "extent_m":[width_m,height_m],"plot_area":"Extents",
+            "plot_style":plot_style.as_ref().map(|table| table.name.as_str()).unwrap_or("none")
         }));
         Ok(Task::none())
     }
@@ -340,5 +371,32 @@ mod tests {
             app.control_request(json!({"op":"metric_page_setup"})).0,
             initial
         );
+    }
+
+    #[test]
+    fn metric_page_setup_records_builtin_monochrome_style() {
+        let mut app = OpenCADStudio::new_for_test();
+        assert_eq!(app.automation_op(r#"{"op":"new"}"#)["ok"], true);
+        assert_eq!(
+            app.automation_op(r#"{"op":"run","cmd":"SETVAR INSUNITS 6"}"#)["ok"],
+            true
+        );
+        let invalid = send(
+            &mut app,
+            json!({"op":"set_metric_page_setup",
+            "request_id":"style-invalid","scale_denominator":100,
+            "plot_style":"../user.ctb"}),
+        );
+        assert_eq!(invalid["code"], "invalid_plot_style", "{invalid}");
+        let changed = send(
+            &mut app,
+            json!({"op":"set_metric_page_setup",
+            "request_id":"style-mono","scale_denominator":100,
+            "plot_style":"monochrome.ctb"}),
+        );
+        assert_eq!(changed["status"], "completed", "{changed}");
+        let read = app.control_request(json!({"op":"metric_page_setup"})).0;
+        assert_eq!(read["plot_style_sheet"], "monochrome.ctb");
+        assert_eq!(read["plot_plot_styles"], true);
     }
 }
