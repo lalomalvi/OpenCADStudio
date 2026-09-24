@@ -3,6 +3,7 @@ param(
     [string]$SyntheticDwg,
     [string]$AutoCadCore = 'C:\Program Files\Autodesk\AutoCAD 2025\accoreconsole.exe',
     [Nullable[int]]$ExpectedInsunits = $null,
+    [string]$ExpectedSourceReportSha256 = '',
     [int]$TimeoutSeconds = 35
 )
 
@@ -92,6 +93,10 @@ $lispText = @"
     "-"))
 (write-line (strcat "ACADVER|" (getvar "ACADVER")) ocs_file)
 (write-line (strcat "INSUNITS|" (itoa (getvar "INSUNITS"))) ocs_file)
+(setq ocs_layout_dict (dictsearch (namedobjdict) "ACAD_LAYOUT"))
+(if ocs_layout_dict
+  (write-line (strcat "MODELLAYOUT|" (vl-princ-to-string
+    (dictsearch (cdr (assoc -1 ocs_layout_dict)) "Model"))) ocs_file))
 (setq ocs_set (ssget "_X" '((410 . "Model"))))
 (if ocs_set
   (progn
@@ -266,6 +271,23 @@ try {
     $axisFixtureValid = $null
     $lengthGeometryComparison = @()
     $lengthFixtureValid = $null
+    $plotProfileComparison = @()
+    $plotGeometryComparison = @()
+    $plotSourceValid = $null
+    $modelLayoutFields = @{}
+    if ($censusDone) {
+        $layoutLine = $lines | Where-Object { $_.StartsWith('MODELLAYOUT|') } |
+            Select-Object -First 1
+        if ($layoutLine) {
+            foreach ($pair in [regex]::Matches($layoutLine,
+                '\((\d+)\s+\.\s+(.*?)\)(?=\s+\(\d+\s+\.)')) {
+                $code = $pair.Groups[1].Value
+                if (-not $modelLayoutFields.ContainsKey($code)) {
+                    $modelLayoutFields[$code] = $pair.Groups[2].Value
+                }
+            }
+        }
+    }
     $richSourceReport = $null
     $sourceReportMatch = $null
     $sourceReportPath = Join-Path ([IO.Path]::GetDirectoryName($drawing)) 'report.json'
@@ -274,7 +296,59 @@ try {
         $sourceReportMatch = $sourceReport.status -eq 'passed' -and
             ($sourceReport.verified_output.sha256 -eq $before -or
              $sourceReport.first_save.sha256 -eq $before -or
-             $sourceReport.second_save.sha256 -eq $before)
+             $sourceReport.second_save.sha256 -eq $before -or
+             $sourceReport.verified_dwg.sha256 -eq $before)
+        if ($ExpectedSourceReportSha256) {
+            $sourceReportMatch = $sourceReportMatch -and
+                (Get-FileHash -LiteralPath $sourceReportPath -Algorithm SHA256).Hash -eq
+                    $ExpectedSourceReportSha256
+        }
+        if ($sourceReport.schema_version -eq 'mcp-metric-page-setup-l2-1' -and
+            $sourceReport.status -eq 'passed' -and
+            $sourceReport.verified_dwg.sha256 -eq $before) {
+            $plotSourceValid = ((@($sourceReport.fixture_commands) -join ';') -ceq
+                'SETVAR INSUNITS 6;LINE 0,0 4,0;LINE 4,0 4,1')
+            $setup = $sourceReport.page_setup_after
+            $plotSourceValid = $plotSourceValid -and
+                $sourceReport.page_setup_before.metric_scale_denominator -eq 100 -and
+                $setup.metric_scale_denominator -eq 100 -and
+                $setup.insertion_units -eq 6 -and
+                $setup.paper_mm[0] -eq 210 -and $setup.paper_mm[1] -eq 297
+            $expectedCodes = [ordered]@{
+                '2' = [string]$setup.printer; '4' = [string]$setup.paper_size
+                '40' = 0.0; '41' = 0.0; '42' = 0.0; '43' = 0.0
+                '44' = 210.0; '45' = 297.0
+                '142' = 10.0; '143' = 1.0; '70' = 1156.0
+                '72' = 1.0; '73' = 1.0; '74' = 1.0; '75' = 1.0
+                '147' = 254.0
+            }
+            foreach ($code in $expectedCodes.Keys) {
+                $want = $expectedCodes[$code]
+                $got = $modelLayoutFields[$code]
+                $matched = if ($code -in @('2','4')) {
+                    $null -ne $got -and $want -ceq $got
+                } else {
+                    $null -ne $got -and $null -ne (Read-DxfNumber $got) -and
+                        [Math]::Abs([double]$want - [double](Read-DxfNumber $got)) -le 1e-6
+                }
+                $plotProfileComparison += [ordered]@{
+                    code = $code; expected = $want; autocad = $got; matched = $matched
+                }
+            }
+            for ($index = 0; $index -lt 2; $index++) {
+                $handle = [string]$sourceReport.line_handles[$index]
+                $row = $entityByHandle[$handle]
+                $line = $sourceReport.line_entities[$index]
+                $start = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                $end = if ($row) { Read-DxfPoint $row[16] } else { $null }
+                $plotGeometryComparison += [ordered]@{
+                    handle = $handle; expected_start = $line.start; expected_end = $line.end
+                    autocad_start = $start; autocad_end = $end
+                    matched = $row -and $row[1] -eq 'LINE' -and
+                        (Same-Point $line.start $start) -and (Same-Point $line.end $end)
+                }
+            }
+        }
         if ($sourceReport.schema_version -eq 'mcp-wall-length-l2-1' -and
             $sourceReport.status -eq 'passed' -and
             ($sourceReport.first_save.sha256 -eq $before -or
@@ -572,6 +646,12 @@ try {
     $lengthMismatch = $lengthFixtureValid -eq $false -or
         @($lengthGeometryComparison | Where-Object { -not $_.matched }).Count -gt 0 -or
         ($lengthGeometryComparison.Count -gt 0 -and $declaredCount -ne 5)
+    $plotMismatch = $plotSourceValid -eq $false -or
+        @($plotProfileComparison | Where-Object { -not $_.matched }).Count -gt 0 -or
+        @($plotGeometryComparison | Where-Object { -not $_.matched }).Count -gt 0 -or
+        ($plotSourceValid -eq $true -and
+         ($plotProfileComparison.Count -ne 16 -or $plotGeometryComparison.Count -ne 2 -or
+          $declaredCount -ne 2))
     $propertyComparison = @()
     if ($richSourceReport) {
         $hatch = $richSourceReport.hatch_fixture
@@ -1006,7 +1086,7 @@ try {
         $wallModelCountMatch = $declaredCount -eq ($geometryComparison.Count + 1)
     }
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-11'
+        schema_version = 'mcp-autocad-audit-l4-12'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion
@@ -1035,6 +1115,10 @@ try {
         axis_fixture_valid = $axisFixtureValid
         length_fixture_valid = $lengthFixtureValid
         length_geometry_comparison = $lengthGeometryComparison
+        model_layout_fields = $modelLayoutFields
+        plot_source_valid = $plotSourceValid
+        plot_profile_comparison = $plotProfileComparison
+        plot_geometry_comparison = $plotGeometryComparison
         property_comparison = $propertyComparison
         geometry_source_valid = $geometrySourceValid
         source_report_match = $sourceReportMatch
@@ -1045,6 +1129,7 @@ try {
                               $faceFixtureMismatch -or
                               $axisDefinitionMismatch -or $axisStyleMismatch -or $axisFixtureMismatch -or
                               $propertyMismatch -or $geometryMismatch -or $lengthMismatch -or
+                              $plotMismatch -or
                               $wallModelCountMatch -eq $false) {
             'mismatch'
         } elseif ($expected.Count -gt 0 -or $faceReferenceComparison.Count -gt 0 -or
@@ -1053,7 +1138,8 @@ try {
                   $axisDefinitionComparison.Count -gt 0 -or
                   $axisStyleComparison.Count -gt 0 -or
                   $propertyComparison.Count -gt 0 -or
-                  $geometryComparison.Count -gt 0 -or $lengthGeometryComparison.Count -gt 0) {
+                  $geometryComparison.Count -gt 0 -or $lengthGeometryComparison.Count -gt 0 -or
+                  $plotProfileComparison.Count -gt 0) {
             'matched_scoped'
         } else { 'unknown' }
         census_done = $censusDone
@@ -1071,6 +1157,7 @@ try {
                   $faceFixtureMismatch -or
                   $axisDefinitionMismatch -or $axisStyleMismatch -or $axisFixtureMismatch -or
                   $propertyMismatch -or $geometryMismatch -or $lengthMismatch -or
+                  $plotMismatch -or
                   $wallModelCountMatch -eq $false) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {
             'partial_abnormal_exit'

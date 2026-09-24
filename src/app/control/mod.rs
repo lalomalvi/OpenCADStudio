@@ -414,7 +414,7 @@ impl OpenCADStudio {
             "mtext_editor":self.mtext_editor.as_ref().map(|e|json!({"text":e.content.text(),"height":e.height,"style":e.style})),
             "text_editor":self.text_inline.is_some(),"event_cursor":self.control.serial,
             "operation":self.control.pending.as_ref().map(|p| &p.id),
-            "capabilities":["commands","command_manifest","step_input","batch","run_script","strict_command_validation","compact_results","entity_pick","structure_pick","selection","properties","records","record_schemas","record_filters","atomic_record_updates","edit_wall_thickness","edit_wall_length","metric_plot_pdf","layers","history","documents","events","capture","viewport_capture","measure","spatial_query","audit","verified_save","explicit_save_version"]
+            "capabilities":["commands","command_manifest","step_input","batch","run_script","strict_command_validation","compact_results","entity_pick","structure_pick","selection","properties","records","record_schemas","record_filters","atomic_record_updates","edit_wall_thickness","edit_wall_length","metric_plot_pdf","metric_page_setup","layers","history","documents","events","capture","viewport_capture","measure","spatial_query","audit","verified_save","explicit_save_version"]
         })
     }
 
@@ -438,6 +438,7 @@ impl OpenCADStudio {
                 | "header"
                 | "history"
                 | "audit"
+                | "metric_page_setup"
         );
         if !query && !self.control.enabled {
             return (
@@ -641,6 +642,8 @@ impl OpenCADStudio {
                 "history" => {
                     json!({"ok":true,"entries":self.command_line.history.iter().map(|e|json!({"kind":format!("{:?}",e.kind),"text":e.text})).collect::<Vec<_>>()})
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                "metric_page_setup" => self.control_metric_page_setup(),
                 _ => self.automation_op_inner(&req.to_string()),
             };
             return (response, Task::none());
@@ -858,6 +861,8 @@ impl OpenCADStudio {
             "edit_wall_length" => self.control_edit_wall_length(req)?,
             #[cfg(not(target_arch = "wasm32"))]
             "metric_plot_pdf" => self.control_export_metric_plot(req)?,
+            #[cfg(not(target_arch = "wasm32"))]
+            "set_metric_page_setup" => self.control_set_metric_page_setup(req)?,
             "action" => self.control_ui_action(req)?,
             #[cfg(not(target_arch = "wasm32"))]
             "embed_image" => self.control_embed_image(req)?,

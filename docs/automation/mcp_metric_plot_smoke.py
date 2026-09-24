@@ -13,13 +13,16 @@ from PIL import Image
 from pypdf import PdfReader
 
 from mcp_client import Client, ProtocolError, ToolError, UncertainMutation
-from mcp_face_dimension_smoke import request
+from mcp_face_dimension_smoke import request, save_verified
 from mcp_isolated_smoke import read_state
 
 
 def main():
     repo = Path(__file__).resolve().parents[2]
     server = Path(sys.argv[1] if len(sys.argv) > 1 else repo / "target/debug/OpenCADStudio.exe").resolve()
+    page_setup = len(sys.argv) > 2 and sys.argv[2] == "--page-setup"
+    if len(sys.argv) > 2 and not page_setup:
+        raise ValueError("Only --page-setup is supported")
     if not server.is_file():
         raise FileNotFoundError(server)
     output = repo / "target/mcp-isolated" / (time.strftime("%Y%m%d-%H%M%S") +
@@ -30,7 +33,8 @@ def main():
     environment = os.environ.copy()
     environment.update({"APPDATA": str(profile), "LOCALAPPDATA": str(profile),
                         "TEMP": str(temporary), "TMP": str(temporary)})
-    report = {"schema_version": "mcp-metric-plot-l2-1", "status": "failed",
+    report = {"schema_version": "mcp-metric-page-setup-l2-1" if page_setup else
+              "mcp-metric-plot-l2-1", "status": "failed",
               "binary_sha256": hashlib.sha256(server.read_bytes()).hexdigest().upper(),
               "output": str(output), "fixture_commands": ["SETVAR INSUNITS 6",
                   "LINE 0,0 4,0", "LINE 4,0 4,1"]}
@@ -67,12 +71,35 @@ def main():
         report["line_entities"] = [client.tool("ocs_read", {"ocs_session_id": session,
             "op": "query", "parameters": {"handle": handle, "detail": "full"}})["entities"][0]
             for handle in lines]
+        if page_setup:
+            configured = request(client, session, "set_metric_page_setup", scale_denominator=100)
+            if configured.get("status") != "completed":
+                raise ProtocolError("Metric Model page setup did not complete")
+            before_setup = client.tool("ocs_read", {"ocs_session_id": session,
+                "op": "metric_page_setup"})
+            saved = save_verified(client, session, output / "metric-model-setup.dwg")
+            request(client, session, "open", path=saved["path"])
+            after_setup = client.tool("ocs_read", {"ocs_session_id": session,
+                "op": "metric_page_setup"})
+            for field in ("paper_size", "paper_mm", "printer", "paper_units", "rotation",
+                          "plot_type", "scale_numerator", "scale_denominator", "scale_factor",
+                          "use_standard_scale", "plot_centered", "print_lineweights",
+                          "margins_mm", "metric_scale_denominator", "insertion_units"):
+                if before_setup.get(field) != after_setup.get(field):
+                    raise ProtocolError(f"DWG reopen changed page setup {field}")
+            if after_setup["metric_scale_denominator"] != 100 or \
+                    after_setup["scale_numerator"] != 10:
+                raise ProtocolError("Reopened Model page setup has wrong metric scale")
+            report["page_setup_before"] = before_setup
+            report["page_setup_after"] = after_setup
+            report["verified_dwg"] = saved
         state = read_state(client, session)
         pdf = output / "metric-a4-1-100.pdf"
         operation_id = "metric-plot-" + uuid.uuid4().hex
         payload = {"op": "metric_plot_pdf", "request_id": operation_id,
                    "document_id": state["document_id"], "revision": state["revision"],
-                   "path": str(pdf), "scale_denominator": 100}
+                   "path": str(pdf), "scale_denominator": 100,
+                   **({"require_page_setup": True} if page_setup else {})}
         first = client.tool("ocs_execute", {"ocs_session_id": session, "request": payload})
         if first.get("status") != "completed" or not pdf.is_file():
             raise ProtocolError("Metric PDF plot did not complete")
@@ -96,6 +123,16 @@ def main():
                 raise
         else:
             raise ProtocolError("Fresh request overwrote existing PDF")
+        if page_setup:
+            try:
+                client.tool("ocs_execute", {"ocs_session_id": session, "request":
+                    {**payload, "request_id": "wrong-scale-" + uuid.uuid4().hex,
+                     "path": str(output / "wrong-scale.pdf"), "scale_denominator": 50}})
+            except ToolError as error:
+                if "page_setup_mismatch" not in str(error):
+                    raise
+            else:
+                raise ProtocolError("PDF accepted a scale different from stored DWG setup")
         reader = PdfReader(str(pdf))
         if len(reader.pages) != 1:
             raise ProtocolError("Metric plot has wrong page count")
