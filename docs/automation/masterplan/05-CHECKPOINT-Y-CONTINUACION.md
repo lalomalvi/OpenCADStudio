@@ -157,3 +157,13 @@ El L2 `target/mcp-isolated/20260923-212002-owned-185c1b47/owned-report.json` pas
 ### Prompt de continuidad desde el noveno corte
 
 Reverifica remotos/SHAs y pruebas. Completa trazas M3 desde GUI/CAD hasta evidencia final con cobertura; conecta capturas reales mediante referencias y revisiones sin Base64 en JSONL. Ejecuta PlanSpec sintético por el cliente persistente, manteniendo `unsupported` como fallo de gate. Después censa e implementa M5/M6, y evalúa M7/M8 solo con cohorte y revisiones autorizadas. No abra el DWG del usuario; preserve evidencia previa y no publique en upstream.
+
+## Décimo corte PlanSpec L2 — 2026-09-23, en progreso
+
+El noveno corte se publicó en `origin/codex/mcp-transport-trace` con commit `3ca13bd1` (verificar SHA completo remoto). En `codex/mcp-planspec-l2`, el fixture versionado `fixtures/synthetic-room.planspec.json` se valida y compila antes de lanzar GUI; si el dry-run declara `unsupported`, no hay ejecución CAD. `mcp_isolated_smoke.py` envía los tres comandos del compilador al cliente persistente, comprueba tres entidades y mapea cada ID PlanSpec al handle `Added` del paso correspondiente. El primer L2 `target/mcp-isolated/20260923-212219-f47e037a/report.json` pasó ejecución, auditoría, guardado verificado y salida; el segundo `target/mcp-isolated/20260923-212302-cda4b60e/report.json` repitió y añadió trazabilidad ID→handle (`line-1`→`64`, `line-2`→`65`, `circle-1`→`66`). Ambos DWG son sintéticos, en `target`, fuera de Git. El SHA del fixture y de los comandos se generó por código en los reportes.
+
+El L2 confirma ese subconjunto geométrico en el mismo motor y formato DWG; no demuestra interpretación de imagen, arcos/cotas/bloques/HATCH, dimensiones asociativas, interoperabilidad externa ni QA visual. M4 permanece partial. El DWG del usuario y el ensayo histórico continúan intactos.
+
+### Prompt de continuidad desde el décimo corte
+
+Verifica SHA publicado del corte PlanSpec y árbol limpio. Continúa M3 con telemetría por fase y evidencia automática real, M4 con grafo de cotas y capacidades por build; censa M5 antes de implementar semántica. Luego M6 QA geométrica/persistencia y M7/M8 con gates de motor externo/casos reservados/revisión humana. Usa solo fixtures sintéticos hasta nueva autorización; no publiques datos privados ni envíes nada a `upstream`.

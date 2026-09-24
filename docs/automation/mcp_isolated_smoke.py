@@ -13,6 +13,7 @@ import time
 import uuid
 
 from mcp_client import Client, ProtocolError, ToolError, UncertainMutation
+from masterplan.planspec import dry_run
 
 
 def read_state(client: Client, session: str, *, timeout: float = 10.0) -> dict:
@@ -48,6 +49,13 @@ def main() -> None:
     report = {"schema_version": "mcp-isolated-l2-1", "status": "failed",
               "binary_sha256": hashlib.sha256(server.read_bytes()).hexdigest().upper(),
               "output": str(output)}
+    fixture = Path(__file__).resolve().parent / "masterplan/fixtures/synthetic-room.planspec.json"
+    compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")))
+    if not compiled["executable"] or len(compiled["commands"]) != 3:
+        raise ProtocolError("Synthetic PlanSpec has unsupported or missing commands")
+    report["planspec"] = {"fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
+                          "commands_sha256": compiled["commands_sha256"],
+                          "command_count": len(compiled["commands"])}
     gui = subprocess.Popen([str(server), "--new-instance"], cwd=repo, env=environment,
                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
@@ -81,9 +89,21 @@ def main() -> None:
             raise ProtocolError("New synthetic document was not activated")
         script = client.tool("ocs_execute", {"ocs_session_id": session,
             "request": {"op": "run_script", "request_id": "l2-script-" + uuid.uuid4().hex,
-                        "strict": True, "commands": ["LINE 0,0 10,0", "LINE 10,0 10,10", "CIRCLE 5,5 2"]}})
+                        "strict": True,
+                        "commands": [item["command"] for item in compiled["commands"]]}})
         if script.get("completed_commands") != 3 or script.get("added_entities") != 3:
             raise ProtocolError("Synthetic script did not create three entities")
+        handles = {}
+        for step, item in enumerate(compiled["commands"]):
+            created = [change["handle"] for change in script.get("changes", [])
+                       if change.get("step") == step and change.get("kind") == "Added"
+                       and isinstance(change.get("handle"), str)]
+            if len(created) != 1:
+                raise ProtocolError("PlanSpec command did not map to exactly one new handle")
+            handles[item["planspec_id"]] = created[0]
+        if len(set(handles.values())) != len(handles):
+            raise ProtocolError("PlanSpec handles are not unique")
+        report["planspec"]["handles_by_id"] = handles
         audit = client.tool("ocs_read", {"ocs_session_id": session, "op": "audit",
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
