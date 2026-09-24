@@ -71,3 +71,4 @@ Una versión candidata requiere todos los gates técnicos y de fidelidad de su a
 [M7-VENTANA-OESTE-REPETIBILIDAD-V1.md](M7-VENTANA-OESTE-REPETIBILIDAD-V1.md): piloto intercalado de seis llamadas Luna CLI sobre un recorte de desarrollo; candidato 3/3, baseline 1/3 con dos abstenciones, sin aceptación M7.
 [M8-CLI-PLANTA-PARCIAL-MIXTA-V1.md](M8-CLI-PLANTA-PARCIAL-MIXTA-V1.md): el CLI determinista reprodujo byte a byte un DWG de 55 entidades mixtas ya auditado 55/55 en AutoCAD; M8 sigue parcial.
 [M7-REVISION-VISUAL-PLANTA-PARCIAL-V1.md](M7-REVISION-VISUAL-PLANTA-PARCIAL-V1.md): superposición de PlanSpec sobre la fuente autorizada con calibración congelada, evidencia visual de los recintos aún faltantes y paquete L5 pendiente.
+[M7-APARTAMENTO-DIVISOR-ESTE-V1.md](M7-APARTAMENTO-DIVISOR-ESTE-V1.md): un divisor horizontal observado con oráculo previo, primer JSON inválido preservado, segundo pase Luna, PlanSpec 58 entidades, L2/L4 58/58 y negativos.
