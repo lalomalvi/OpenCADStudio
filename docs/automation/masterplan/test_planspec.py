@@ -189,6 +189,45 @@ class PlanSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(module.PlanError, "dangling line"):
             module.validate(value)
 
+    def test_v3_wall_openings_validate_but_do_not_emit_unproven_cad(self):
+        value = plan()
+        value["schema_version"] = "planspec-3"
+        value["topology"] = {"contours": []}
+        value["walls"] = [{"id": "wall-1", "start": "a", "end": "c",
+                           "thickness_m": 0.2, "layer": "0", "source": SOURCE}]
+        value["openings"] = [
+            {"id": "door-1", "wall_id": "wall-1", "offset_m": 1,
+             "width_m": 0.9, "kind": "door", "source": SOURCE},
+            {"id": "window-1", "wall_id": "wall-1", "offset_m": 3,
+             "width_m": 1, "kind": "window", "source": SOURCE}]
+        result = module.dry_run(value)
+        self.assertEqual(result["architecture"]["status"], "validated_uncompiled")
+        self.assertEqual(result["architecture"]["walls"][0]["length_m"], "5.0")
+        self.assertEqual(result["unsupported"], ["opening_compilation", "wall_compilation"])
+        self.assertFalse(result["executable"])
+        self.assertEqual(len(result["commands"]), 2)
+
+    def test_v3_rejects_opening_overlap_outside_and_dangling_wall(self):
+        value = plan()
+        value["schema_version"] = "planspec-3"
+        value["topology"] = {"contours": []}
+        value["walls"] = [{"id": "wall-1", "start": "a", "end": "c",
+                           "thickness_m": 0.2, "layer": "0", "source": SOURCE}]
+        value["openings"] = [
+            {"id": "door-1", "wall_id": "wall-1", "offset_m": 1,
+             "width_m": 1, "kind": "door", "source": SOURCE},
+            {"id": "door-2", "wall_id": "wall-1", "offset_m": 1.5,
+             "width_m": 1, "kind": "door", "source": SOURCE}]
+        with self.assertRaisesRegex(module.PlanError, "overlap or touch"):
+            module.validate(value)
+        value["openings"][1]["offset_m"] = 4.5
+        with self.assertRaisesRegex(module.PlanError, "beyond wall"):
+            module.validate(value)
+        value["openings"][1]["offset_m"] = 3
+        value["openings"][1]["wall_id"] = "absent"
+        with self.assertRaisesRegex(module.PlanError, "Opening reference"):
+            module.validate(value)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-"""PlanSpec v1/v2: strict validation and deterministic CAD command dry-run.
+"""PlanSpec v1/v2/v3: strict validation and deterministic CAD command dry-run.
 
 Only line and circle commands are compiled in this first scope. Dimensions are
 validated but reported as unsupported until native dimension semantics are proven.
@@ -65,11 +65,14 @@ def _text_dimension(value: Any) -> Decimal:
 
 
 def _validate_basic(plan: dict[str, Any]) -> None:
-    if not isinstance(plan, dict) or plan.get("schema_version") not in {"planspec-1", "planspec-2"}:
+    if not isinstance(plan, dict) or plan.get("schema_version") not in {
+            "planspec-1", "planspec-2", "planspec-3"}:
         raise PlanError("PlanSpec version unsupported")
     fields = {"schema_version", "units", "origin", "nodes", "lines", "circles", "dimensions"}
-    if plan["schema_version"] == "planspec-2":
+    if plan["schema_version"] in {"planspec-2", "planspec-3"}:
         fields.add("topology")
+    if plan["schema_version"] == "planspec-3":
+        fields.update({"walls", "openings"})
     _keys(plan, fields, "plan")
     if plan["units"] != "m":
         raise PlanError("PlanSpec version or units unsupported; explicit conversion required")
@@ -123,7 +126,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                             Decimal(str(math.hypot(float(b[0] - a[0]), float(b[1] - a[1])))))
                 if abs(distance - value) > Decimal("0.001"):
                     raise PlanError(f"Dimension {name} differs from referenced geometry")
-    if plan["schema_version"] == "planspec-2":
+    if plan["schema_version"] in {"planspec-2", "planspec-3"}:
         _keys(plan["topology"], {"contours"}, "topology")
         if not isinstance(plan["topology"]["contours"], list):
             raise PlanError("Contour collection must be an array")
@@ -145,6 +148,80 @@ def _validate_basic(plan: dict[str, Any]) -> None:
             if any(line_id not in line_ids
                    for line_id in contour["line_ids"]):
                 raise PlanError("Contour has a dangling line reference")
+    if plan["schema_version"] == "planspec-3":
+        if not isinstance(plan["walls"], list) or not isinstance(plan["openings"], list):
+            raise PlanError("Wall and opening collections must be arrays")
+        walls: dict[str, dict] = {}
+        for wall in plan["walls"]:
+            _keys(wall, {"id", "start", "end", "thickness_m", "layer", "source"}, "wall")
+            name = _id(wall["id"], "wall")
+            if name in ids:
+                raise PlanError("Duplicate PlanSpec ID")
+            ids.add(name)
+            for key in ("start", "end"):
+                if not isinstance(wall[key], str) or wall[key] not in nodes:
+                    raise PlanError("Wall has a dangling node reference")
+            if nodes[wall["start"]] == nodes[wall["end"]] or \
+                    not Decimal("0.01") <= _number(wall["thickness_m"], "wall.thickness_m") <= Decimal("2"):
+                raise PlanError("Wall length or thickness is invalid")
+            _id(wall["layer"], "wall.layer")
+            _source(wall["source"], "wall.source")
+            walls[name] = wall
+        for opening in plan["openings"]:
+            _keys(opening, {"id", "wall_id", "offset_m", "width_m", "kind", "source"}, "opening")
+            name = _id(opening["id"], "opening")
+            if name in ids:
+                raise PlanError("Duplicate PlanSpec ID")
+            ids.add(name)
+            if not isinstance(opening["wall_id"], str) or opening["wall_id"] not in walls or \
+                    not isinstance(opening["kind"], str) or \
+                    opening["kind"] not in {"door", "window"} or \
+                    _number(opening["offset_m"], "opening.offset_m") <= 0 or \
+                    _number(opening["width_m"], "opening.width_m") <= 0:
+                raise PlanError("Opening reference, kind or dimensions are invalid")
+            _source(opening["source"], "opening.source")
+
+
+def analyze_architecture(plan: dict[str, Any]) -> dict[str, Any]:
+    """Validate wall/opening identity and spacing; no wall CAD is emitted yet."""
+    _validate_basic(plan)
+    if plan["schema_version"] != "planspec-3":
+        return {"schema_version": "planspec-architecture-1", "status": "unavailable",
+                "walls": [], "openings": [], "scope": "no_explicit_walls_in_v1_v2"}
+    nodes = {node["id"]: (_number(node["x"], "node.x"),
+                          _number(node["y"], "node.y")) for node in plan["nodes"]}
+    wall_lengths: dict[str, Decimal] = {}
+    walls = []
+    for wall in sorted(plan["walls"], key=lambda item: item["id"]):
+        a, b = nodes[wall["start"]], nodes[wall["end"]]
+        distance = math.hypot(float(b[0] - a[0]), float(b[1] - a[1]))
+        if not math.isfinite(distance):
+            raise PlanError(f"Wall {wall['id']} length exceeds numeric range")
+        length = Decimal(str(distance))
+        wall_lengths[wall["id"]] = length
+        walls.append({"id": wall["id"], "length_m": format(length, "f"),
+                      "thickness_m": format(_number(wall["thickness_m"], "wall.thickness_m"), "f")})
+    openings_by_wall: dict[str, list[tuple[Decimal, Decimal, str]]] = {}
+    opening_results = []
+    for opening in sorted(plan["openings"], key=lambda item: item["id"]):
+        start = _number(opening["offset_m"], "opening.offset_m")
+        end = start + _number(opening["width_m"], "opening.width_m")
+        wall_id = opening["wall_id"]
+        if end >= wall_lengths[wall_id]:
+            raise PlanError(f"Opening {opening['id']} extends beyond wall endpoints")
+        openings_by_wall.setdefault(wall_id, []).append((start, end, opening["id"]))
+        opening_results.append({"id": opening["id"], "wall_id": wall_id,
+                                "kind": opening["kind"],
+                                "offset_m": format(start, "f"),
+                                "width_m": format(end - start, "f")})
+    for wall_id, intervals in openings_by_wall.items():
+        intervals.sort()
+        for first, second in zip(intervals, intervals[1:]):
+            if second[0] - first[1] < Decimal("0.001"):
+                raise PlanError(f"Openings {first[2]} and {second[2]} overlap or touch on {wall_id}")
+    return {"schema_version": "planspec-architecture-1", "status": "validated_uncompiled",
+            "walls": walls, "openings": opening_results,
+            "scope": "straight_wall_axes_and_opening_intervals_no_cad_compiler"}
 
 
 def analyze_topology(plan: dict[str, Any]) -> dict[str, Any]:
@@ -271,6 +348,7 @@ def validate(plan: dict[str, Any]) -> None:
         ids = ", ".join(conflict["dimension_id"] for conflict in report["conflicts"])
         raise PlanError(f"Dimension chain conflict: {ids}")
     analyze_topology(plan)
+    analyze_architecture(plan)
 
 
 def analyze_geometry(plan: dict[str, Any]) -> dict[str, Any]:
@@ -353,6 +431,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     validate(plan)
     dimension_graph = analyze_dimension_graph(plan)
     topology = analyze_topology(plan)
+    architecture = analyze_architecture(plan)
     geometry_qa = analyze_geometry(plan)
     nodes = {node["id"]: (_number(node["x"], "x"), _number(node["y"], "y"))
              for node in plan["nodes"]}
@@ -390,6 +469,10 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     missing = set()
     if plan["dimensions"]:
         missing.add("native_dimension")
+    if plan["schema_version"] == "planspec-3" and plan["walls"]:
+        missing.add("wall_compilation")
+    if plan["schema_version"] == "planspec-3" and plan["openings"]:
+        missing.add("opening_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")
     unsupported = sorted(missing)
@@ -399,6 +482,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             "dwg_unit_profile": {"plan_units": "m", "insunits": 6},
             "dimension_graph": dimension_graph,
             "topology": topology,
+            "architecture": architecture,
             "geometry_qa": geometry_qa,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
             "unsupported": unsupported, "executable": not unsupported,
