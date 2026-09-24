@@ -1082,10 +1082,13 @@ impl Scene {
                     Some(marker) => (marker, source.parameter),
                     None => source_reference(entity, *point)?,
                 };
-                let osnap_type = if matches!(entity, EntityType::Circle(_)) {
-                    10
-                } else {
-                    1
+                let osnap_type = match entity {
+                    EntityType::Circle(_) => 10,
+                    // AutoCAD resolves a LINE endpoint reference with marker 0
+                    // as the end point on DWG open. The explicit START_POINT
+                    // snap keeps the first endpoint distinct from marker 1.
+                    EntityType::Line(_) if marker == 0 => chain::osnap::START_POINT,
+                    _ => chain::osnap::END,
                 };
                 Some((source.handle, marker, parameter, osnap_type))
             })

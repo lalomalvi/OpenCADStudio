@@ -28,6 +28,23 @@ def measure(client: Client, session: str, handle: str) -> float:
     return value
 
 
+def reference_points(client: Client, session: str, handle: str) -> dict:
+    result = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                      "parameters": {"handle": handle, "detail": "full"}})
+    linear = result.get("entities", [{}])[0].get("properties", {}).get("Linear", {})
+    points = {key: linear.get(key) for key in ("first_point", "second_point")}
+    if not all(isinstance(value, dict) for value in points.values()):
+        raise ProtocolError("Synthetic dimension reference points are absent")
+    return points
+
+
+def assert_reference_points(points: dict, second_x: float) -> None:
+    first, second = points["first_point"], points["second_point"]
+    if abs(first.get("x", float("nan")) - 70.0) > 1e-6 or \
+       abs(second.get("x", float("nan")) - second_x) > 1e-6:
+        raise ProtocolError("Synthetic dimension reference points do not match line endpoints")
+
+
 def verified_save(client: Client, session: str, path: Path) -> dict:
     response = client.tool("ocs_execute", {"ocs_session_id": session,
         "request": {"op": "save_verified", "request_id": "assoc-save-" + uuid.uuid4().hex,
@@ -94,6 +111,8 @@ def main() -> None:
             raise ProtocolError("Synthetic line/dimension handles were not created")
         line, dimension = handles
         initial = measure(client, session, dimension)
+        report["initial_points"] = reference_points(client, session, dimension)
+        assert_reference_points(report["initial_points"], 72.5)
         if abs(initial - 2.5) > 1e-6:
             raise ProtocolError("Initial synthetic dimension is not 2.50")
         first = output / "before-reopen.dwg"
@@ -106,6 +125,8 @@ def main() -> None:
             "request": {"op": "open", "request_id": "assoc-open-" + uuid.uuid4().hex,
                         "path": str(first)}})
         reopened_measure = measure(client, session, dimension)
+        report["reopened_points"] = reference_points(client, session, dimension)
+        assert_reference_points(report["reopened_points"], 72.5)
         if abs(reopened_measure - 2.5) > 1e-6:
             raise ProtocolError("Dimension measure changed on first DWG reopen")
         client.tool("ocs_execute", {"ocs_session_id": session,
@@ -113,6 +134,8 @@ def main() -> None:
                         "collection": "entities", "handle": line,
                         "updates": [{"path": "/end/x", "expected": 72.5, "value": 73.5}]}})
         edited_measure = measure(client, session, dimension)
+        report["edited_points"] = reference_points(client, session, dimension)
+        assert_reference_points(report["edited_points"], 73.5)
         report["association"] = {"line_handle": line, "dimension_handle": dimension,
                                  "initial_measurement": initial,
                                  "reopened_measurement": reopened_measure,
