@@ -157,6 +157,34 @@ $lispText = @"
                           (ocs_value ocs_data 370)) ocs_file)
       (write-line (strcat "COLORDATA|" (ocs_value ocs_data 5) "|"
                           (ocs_value ocs_data 62)) ocs_file)
+      (if (= (cdr (assoc 0 ocs_data)) "HATCH")
+        (progn
+          (write-line (strcat "HATCHDATA|" (ocs_value ocs_data 5) "|"
+                              (vl-princ-to-string ocs_data)) ocs_file)
+          (setq ocs_hatch_path nil)
+          (setq ocs_hatch_edges 0)
+          (setq ocs_hatch_edge_type nil)
+          (setq ocs_hatch_start nil)
+          (setq ocs_hatch_refs nil)
+          (foreach ocs_pair ocs_data
+            (cond
+              ((= (car ocs_pair) 91) (setq ocs_hatch_path T))
+              ((and ocs_hatch_path (= (car ocs_pair) 72))
+                (setq ocs_hatch_edge_type (cdr ocs_pair)))
+              ((and ocs_hatch_path (= (car ocs_pair) 10))
+                (setq ocs_hatch_start (cdr ocs_pair)))
+              ((and ocs_hatch_path (= (car ocs_pair) 11))
+                (write-line (strcat "HATCHEDGE|" (ocs_value ocs_data 5) "|"
+                                    (itoa ocs_hatch_edges) "|"
+                                    (itoa ocs_hatch_edge_type) "|"
+                                    (ocs_point (list (cons 10 ocs_hatch_start)) 10) "|"
+                                    (ocs_point (list (cons 11 (cdr ocs_pair))) 11)) ocs_file)
+                (setq ocs_hatch_edges (1+ ocs_hatch_edges)))
+              ((and ocs_hatch_path (= (car ocs_pair) 97))
+                (setq ocs_hatch_refs T))
+              ((and ocs_hatch_refs (= (car ocs_pair) 330))
+                (write-line (strcat "HATCHREF|" (ocs_value ocs_data 5) "|"
+                                    (ocs_value (entget (cdr ocs_pair)) 5)) ocs_file))))))
       (if (= (cdr (assoc 0 ocs_data)) "TEXT")
         (write-line (strcat "TEXTDATA|" (ocs_value ocs_data 5) "|"
                             (ocs_value ocs_data 1) "|"
