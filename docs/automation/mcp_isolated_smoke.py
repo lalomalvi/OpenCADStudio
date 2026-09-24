@@ -294,6 +294,39 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                     not same_geometry(second["x_scale"], 2) or
                     not same_geometry(second["y_scale"], 2)):
                 raise ProtocolError("Block instance scale or rotation differs from fixture")
+            client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "run_script", "request_id": "l2-hatch-layer-" + uuid.uuid4().hex,
+                            "strict": True, "commands": ["LAYER NEW A-HATCH", "CLAYER A-HATCH"]}})
+            hatch = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "batch", "request_id": "l2-hatch-" + uuid.uuid4().hex,
+                            "steps": [{"op": "run", "cmd": "HATCH"},
+                                      {"op": "input", "kind": "point", "point": [23, 1, 0]},
+                                      {"op": "input", "kind": "enter"}]}})
+            if hatch.get("completed_steps") != 3:
+                raise ProtocolError("HATCH batch did not finish all steps")
+            hatch_query = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                     "parameters": {"type": "Hatch", "detail": "full"}})
+            hatch_entities = hatch_query.get("entities", [])
+            if (len(hatch_entities) != 1 or hatch_entities[0].get("type") != "Hatch" or
+                    hatch_entities[0].get("layer") != "A-HATCH"):
+                raise ProtocolError("HATCH did not create exactly one native entity")
+            hatch_entity = hatch_entities[0]
+            hatch_props = hatch_entity.get("properties", {})
+            hatch_before = {"layer": hatch_entity.get("layer"),
+                            "is_associative": hatch_props.get("is_associative"),
+                            "is_solid": hatch_props.get("is_solid"),
+                            "pattern_scale": hatch_props.get("pattern_scale"),
+                            "pattern_angle": hatch_props.get("pattern_angle"),
+                            "paths": hatch_props.get("paths")}
+            if not isinstance(hatch_before["paths"], list) or not hatch_before["paths"]:
+                raise ProtocolError("HATCH boundary paths are absent")
+            report["hatch_fixture"] = {"handle": hatch_entity["handle"],
+                                       "layer": hatch_before["layer"],
+                                       "is_associative_flag": hatch_before["is_associative"],
+                                       "is_solid": hatch_before["is_solid"],
+                                       "pattern_scale": hatch_before["pattern_scale"],
+                                       "pattern_angle": hatch_before["pattern_angle"],
+                                       "path_count": len(hatch_before["paths"])}
         audit = client.tool("ocs_read", {"ocs_session_id": session, "op": "audit",
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
@@ -323,6 +356,9 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             if verified.get("manifest", {}).get("by_type", {}).get("Block Reference") != 3:
                 raise ProtocolError("Block references did not survive DWG reopen")
             report["block_fixture"]["reopened_count"] = 3
+            if verified.get("manifest", {}).get("by_type", {}).get("Hatch") != 1:
+                raise ProtocolError("Native hatch did not survive DWG reopen")
+            report["hatch_fixture"]["reopened_count"] = 1
         actual_hash = hashlib.sha256(destination.read_bytes()).hexdigest().upper()
         if verified["sha256"].upper() != actual_hash:
             raise ProtocolError("Synthetic output hash differs from backend report")
@@ -386,6 +422,20 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             if not same_geometry(report["block_fixture"]["instances"], instances_after):
                 raise ProtocolError("Block instance transform changed after DWG reopen")
             report["block_fixture"]["roundtrip_transforms"] = "matched_1e-6_internal"
+            hatch_after_query = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                          "parameters": {"handle": hatch_entity["handle"],
+                                                                         "detail": "full"}})
+            restored_hatch = hatch_after_query.get("entities", [{}])[0]
+            restored_hatch_props = restored_hatch.get("properties", {})
+            hatch_after = {"layer": restored_hatch.get("layer"),
+                           "is_associative": restored_hatch_props.get("is_associative"),
+                           "is_solid": restored_hatch_props.get("is_solid"),
+                           "pattern_scale": restored_hatch_props.get("pattern_scale"),
+                           "pattern_angle": restored_hatch_props.get("pattern_angle"),
+                           "paths": restored_hatch_props.get("paths")}
+            if restored_hatch.get("type") != "Hatch" or not same_geometry(hatch_before, hatch_after):
+                raise ProtocolError("HATCH boundary or style changed after DWG reopen")
+            report["hatch_fixture"]["roundtrip_properties"] = "matched_1e-6_internal"
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         capture_path = (output / "capture.png").resolve()
         capture = client.capture_artifact(session, capture_path,

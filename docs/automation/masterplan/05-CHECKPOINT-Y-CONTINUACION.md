@@ -269,3 +269,13 @@ M5.4 queda **partial L2**: no se verificaron unidades de inserción, contenido g
 ### Prompt de continuidad desde el vigésimo corte
 
 Verifica Git, AGENTS y SHA remoto de `codex/mcp-block-insert-l2` antes de afirmar publicación. Completa unidades/definición de BLOCK, HATCH, estilos y perfil métrico en fixtures; prueba cotas asociadas mediante edición de referencias. Resuelve M3 render-fence, telemetría por fase y presupuesto/reanudación, M4 identidad topológica, M6 QA espacial e interoperabilidad. Reserva M7/M8 para cohortes y motor identificados; publica solo en el fork y mantiene intactos el DWG del usuario y ensayos históricos.
+
+## Vigesimoprimer corte HATCH nativo — 2026-09-23, en progreso
+
+`codex/mcp-block-insert-l2` quedó publicado en `origin` con SHA local/remoto `ca5fab46dd290bca452ab8fd1cebf511b7679fe1` y árbol limpio. Desde `codex/mcp-hatch-l2`, un batch MCP lanzó `HATCH`, seleccionó el punto interno `[23,1,0]` de la polilínea triangular cerrada y aplicó Enter. El L2 final `target/mcp-isolated/20260923-221923-92ebdb10/report.json` pasó: una entidad `Hatch` por handle en `A-HATCH`, una ruta de contorno, patrón no sólido con escala 1 y ángulo 0, flag `is_associative=true`; ruta, capa y propiedades coincidieron a 1e-6 tras reapertura interna. Auditoría sin errores, salida de GUI y `SEAL.json` v2 verificado. DWG sintético SHA-256 `8D69B7228D3F9360380B8F55689F8593DD07AE3C4FC8D04856E29C59A72A661E`; binario SHA-256 `93CB34814B68236C1E3E7BC4A7B6EF67158D34E390B4F4A952B21411CEE1B9B8`. Los L2 `20260923-221728-475df30e` y `20260923-221847-d8c87b21` pasaron antes de asignar la capa dedicada; se conservan. La captura final se inspeccionó localmente, pero su escala no permite acreditar legibilidad de patrón.
+
+M5.5 queda **partial L2**: el flag asociativo no demuestra actualización al editar el contorno; faltan escala visual, grosores e interoperabilidad externa. M3/M4/M6 restantes y M7–M8 siguen abiertos. Los runs, PNG y DWG sintéticos permanecen en `target`; el DWG del usuario no se abrió.
+
+### Prompt de continuidad desde el vigesimoprimer corte
+
+Verifica SHA remoto de `codex/mcp-hatch-l2`, Git, AGENTS y estado del worktree. Prueba edición de contorno para HATCH y referencias para cotas antes de aceptar asociatividad; completa unidades de BLOCK, perfil métrico y estilos. Aborda M3 render-fence, telemetría por fase y presupuesto; M4 topología; M6 QA espacial/motor externo; M7/M8 cohortes y entrega con revisión humana. Conserva evidencia pasada y publica únicamente al fork; no abras ni modifiques el DWG del usuario.
