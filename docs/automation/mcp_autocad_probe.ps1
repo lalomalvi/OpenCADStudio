@@ -320,7 +320,8 @@ try {
                                   'synthetic-contour.planspec.json',
                                   'synthetic-wall.planspec.json',
                                   'synthetic-wall-gap.planspec.json',
-                                  'synthetic-door-swing.planspec.json')) {
+                                  'synthetic-door-swing.planspec.json',
+                                  'synthetic-window.planspec.json')) {
             $geometrySourceValid = $false
         } else {
             $fixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $fixtureName)
@@ -422,7 +423,7 @@ try {
                  @($fixture.openings | Where-Object { $_.kind -ne 'clear' }).Count -eq 0) -or
                 ($fixture.schema_version -eq 'planspec-4' -and
                  $fixture.walls.Count -eq 1 -and $fixture.openings.Count -eq 1 -and
-                 $fixture.openings[0].kind -eq 'door')) {
+                 $fixture.openings[0].kind -in @('door', 'window'))) {
                 $wall = $fixture.walls[0]
                 $a = $nodes[$wall.start]
                 $b = $nodes[$wall.end]
@@ -496,6 +497,38 @@ try {
                     }
                 }
                 if ($fixture.schema_version -eq 'planspec-4') {
+                    if ($fixture.openings[0].kind -eq 'window') {
+                        $window = $fixture.openings[0]
+                        foreach ($rail in @(@('sill_rail', 1.0, [double]$window.elevation.sill_m),
+                                           @('head_rail', -1.0, [double]$window.elevation.head_m))) {
+                            $partId = '{0}__{1}' -f $window.id, $rail[0]
+                            $handle = [string]$richSourceReport.planspec.handles_by_id.($partId)
+                            $row = if ($handle) { $entityByHandle[$handle] } else { $null }
+                            $observedStart = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                            $observedEnd = if ($row) { Read-DxfPoint $row[16] } else { $null }
+                            $start = Wall-Point $a $ux $uy $nx $ny ([double]$window.offset_m) ([double]$rail[1] / 2.0)
+                            $end = Wall-Point $a $ux $uy $nx $ny ([double]$window.offset_m + [double]$window.width_m) ([double]$rail[1] / 2.0)
+                            $start[2] = [double]$rail[2]
+                            $end[2] = [double]$rail[2]
+                            $matched = $row -and $row[1] -eq 'LINE' -and
+                                $row[3] -eq $wall.layer -and
+                                (((Same-Point $start $observedStart) -and
+                                  (Same-Point $end $observedEnd)) -or
+                                 ((Same-Point $start $observedEnd) -and
+                                  (Same-Point $end $observedStart)))
+                            $geometryComparison += [ordered]@{
+                                planspec_id = $partId; source_id = $window.id
+                                kind = 'WINDOW_RAIL_3D'; handle = $handle
+                                expected_layer = $wall.layer
+                                expected_start = $start; expected_end = $end
+                                autocad_start = $observedStart; autocad_end = $observedEnd
+                                matched_1e_6 = [bool]$matched
+                            }
+                        }
+                    }
+                }
+                if ($fixture.schema_version -eq 'planspec-4' -and
+                    $fixture.openings[0].kind -eq 'door') {
                     $door = $fixture.openings[0]
                     $width = [double]$door.width_m
                     $distance = [double]$door.offset_m
@@ -566,11 +599,11 @@ try {
     $wallModelCountMatch = $null
     if ($richSourceReport -and $richSourceReport.planspec.fixture -in
             @('synthetic-wall.planspec.json', 'synthetic-wall-gap.planspec.json',
-              'synthetic-door-swing.planspec.json')) {
+              'synthetic-door-swing.planspec.json', 'synthetic-window.planspec.json')) {
         $wallModelCountMatch = $declaredCount -eq $geometryComparison.Count
     }
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-6'
+        schema_version = 'mcp-autocad-audit-l4-7'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion

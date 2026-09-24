@@ -312,7 +312,21 @@ class PlanSpecTests(unittest.TestCase):
         result = module.dry_run(value)
         self.assertEqual(result["architecture"]["openings"][0]["elevation"],
                          {"sill_m": 0.8, "head_m": 2.1})
-        self.assertFalse(result["executable"])
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_window_wall", "generated_parts": 10})
+        self.assertEqual([item["command"] for item in result["commands"][-2:]],
+                         ["LINE 1,0.05,0.8 1.9,0.05,0.8",
+                          "LINE 1,-0.05,2.1 1.9,-0.05,2.1"])
+        changed_height = deepcopy(value)
+        changed_height["openings"][0]["elevation"]["head_m"] = 2.2
+        self.assertNotEqual(module.dry_run(changed_height)["commands_sha256"],
+                            result["commands_sha256"])
+        multi = deepcopy(value)
+        second = deepcopy(multi["openings"][0])
+        second.update(id="window-second", offset_m=2.2, width_m=0.8)
+        multi["openings"].append(second)
+        self.assertFalse(module.dry_run(multi)["executable"])
         for sill, head in ((-0.1, 2.1), (1.2, 1.2), (2.2, 1.2)):
             changed = deepcopy(value)
             changed["openings"][0]["elevation"] = {"sill_m": sill, "head_m": head}

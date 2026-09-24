@@ -1,7 +1,7 @@
 """PlanSpec v1–v4: strict validation and deterministic CAD command dry-run.
 
-Lines, circles, and one straight wall with clear gaps compile in this scope.
-Native dimensions and symbolic doors/windows remain unsupported by the compiler.
+Lines, circles, and one straight wall with a clear gap, door, or window compile.
+Native dimensions, wall joins, and multiple symbolic openings remain unsupported.
 """
 
 from __future__ import annotations
@@ -568,6 +568,33 @@ def _single_door_symbol_commands(wall: dict, door: dict, nodes: dict,
              "layer": wall["layer"]}]
 
 
+def _single_window_symbol_commands(wall: dict, window: dict, nodes: dict,
+                                   origin: tuple[Decimal, Decimal]) -> list[dict]:
+    """Emit two 3D frame rails so sill/head heights survive DWG persistence."""
+    a, b = nodes[wall["start"]], nodes[wall["end"]]
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = (dx * dx + dy * dy).sqrt()
+    ux, uy = dx / length, dy / length
+    offset = _number(window["offset_m"], "window.offset_m")
+    width = _number(window["width_m"], "window.width_m")
+    half_rail = _number(wall["thickness_m"], "wall.thickness_m") / 4
+    result = []
+    for part, side, elevation_key in (("sill_rail", 1, "sill_m"),
+                                      ("head_rail", -1, "head_m")):
+        z = _number(window["elevation"][elevation_key], f"window.{elevation_key}")
+        def xyz(distance: Decimal) -> str:
+            x = a[0] + ux * distance - uy * half_rail * side + origin[0]
+            y = a[1] + uy * distance + ux * half_rail * side + origin[1]
+            return ",".join((_coordinate(x), _coordinate(y), _coordinate(z)))
+        start, end = xyz(offset), xyz(offset + width)
+        if start == end:
+            raise PlanError(f"Window {window['id']} rail collapses at compiler precision")
+        result.append({"planspec_id": f"{window['id']}__{part}",
+                       "source_id": window["id"], "part": part,
+                       "command": f"LINE {start} {end}", "layer": wall["layer"]})
+    return result
+
+
 def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
     dimension_graph = analyze_dimension_graph(plan)
@@ -614,6 +641,13 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             commands.extend(_single_door_symbol_commands(wall, door, nodes, origin))
             wall_parts = 10
             wall_status = "compiled_single_door_wall"
+        elif plan["schema_version"] == "planspec-4" and len(plan["walls"]) == 1 and \
+                len(plan["openings"]) == 1 and plan["openings"][0]["kind"] == "window":
+            wall, window = plan["walls"][0], plan["openings"][0]
+            commands.extend(_clear_opening_wall_commands(wall, [window], nodes, origin))
+            commands.extend(_single_window_symbol_commands(wall, window, nodes, origin))
+            wall_parts = 10
+            wall_status = "compiled_single_window_wall"
     if len({item["planspec_id"] for item in commands}) != len(commands):
         raise PlanError("Generated wall part ID collides with PlanSpec geometry ID")
     layers = sorted({item["layer"] for item in commands} - {"0"})
@@ -637,7 +671,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         missing.add("wall_compilation")
     if plan["schema_version"] in {"planspec-3", "planspec-4"} and any(
             opening["kind"] != "clear" for opening in plan["openings"]) and \
-            wall_status != "compiled_single_door_wall":
+            wall_status not in {"compiled_single_door_wall", "compiled_single_window_wall"}:
         missing.add("opening_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")
