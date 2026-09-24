@@ -1,9 +1,11 @@
 """L1 synthetic fault tests for the persistent MCP client."""
 
 import concurrent.futures
+import json
 import os
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -161,6 +163,24 @@ class ClientTests(unittest.TestCase):
         client = self.client("stderr_flood")
         for _ in range(100):
             self.assertEqual(client.rpc("ping", {}), {})
+
+    def test_rpc_trace_is_append_only_and_omits_private_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "rpc.jsonl"
+            client = Client(FIXTURE, timeout=1, command=[sys.executable, str(FIXTURE)],
+                            trace_path=trace, run_id="synthetic-trace")
+            try:
+                self.assertEqual(client.rpc("ping", {"token": "private-fixture"}), {})
+                self.assertEqual(client.rpc("ping", {"token": "another-private-fixture"}), {})
+                events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
+                self.assertEqual([event["sequence"] for event in events], [1, 2])
+                self.assertTrue(all(event["status"] == "completed" and event["elapsed_ms"] >= 0
+                                    for event in events))
+                self.assertFalse(client.trace.failed)
+                self.assertNotIn("private-fixture", trace.read_text(encoding="utf-8"))
+                self.assertNotIn("token", trace.read_text(encoding="utf-8"))
+            finally:
+                client.close()
 
 
 if __name__ == "__main__":

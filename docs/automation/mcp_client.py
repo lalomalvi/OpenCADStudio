@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import queue
+import re
 import subprocess
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Sequence
 
 
@@ -46,10 +49,54 @@ class UncertainMutation(ProtocolError):
     pass
 
 
+class TraceSink:
+    """Append only, intentionally omitting all RPC parameters and results."""
+
+    def __init__(self, path: Path, run_id: str):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", run_id):
+            raise ValueError("Invalid trace run_id")
+        self.path = path
+        self.run_id = run_id
+        self.sequence = 0
+        self.failed = False
+        self._lock = threading.Lock()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            raise FileExistsError("Trace path must be new for each run")
+        with path.open("x", encoding="utf-8"):
+            pass
+
+    def emit(self, *, method: str, status: str, began_ns: int,
+             began_utc: str, ended_utc: str) -> None:
+        # Whitelist keeps unexpected method names and exception text out of evidence.
+        if method not in {"server/discover", "initialize", "tools/list", "tools/call",
+                          "tasks/get", "tasks/cancel", "ping"}:
+            method = "other"
+        with self._lock:
+            self.sequence += 1
+            event = {"schema_version": "m3-rpc-trace-1", "run_id": self.run_id,
+                     "sequence": self.sequence, "phase": "rpc", "method": method,
+                     "status": status, "started_at_utc": began_utc,
+                     "ended_at_utc": ended_utc,
+                     "elapsed_ms": round((time.monotonic_ns() - began_ns) / 1_000_000, 3)}
+            try:
+                line = json.dumps(event, sort_keys=True, separators=(",", ":")) + "\n"
+                with self.path.open("a", encoding="utf-8") as target:
+                    target.write(line)
+                    target.flush()
+                    os.fsync(target.fileno())
+            except OSError:
+                self.failed = True
+
+
 class Client:
     def __init__(self, server: Path, *, timeout: float = 15.0, max_pending: int = 64,
                  command: Sequence[str] | None = None,
-                 environment: dict[str, str] | None = None) -> None:
+                 environment: dict[str, str] | None = None,
+                 trace_path: Path | None = None, run_id: str | None = None) -> None:
+        self.trace = TraceSink(trace_path, run_id) if trace_path is not None and run_id is not None else None
+        if (trace_path is None) != (run_id is None):
+            raise ValueError("trace_path and run_id must be supplied together")
         self.process = subprocess.Popen(
             list(command) if command is not None else [str(server), "--mcp"], stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -110,6 +157,27 @@ class Client:
             pass
 
     def rpc(self, method: str, params: dict, *, timeout: float | None = None) -> dict:
+        began_ns = time.monotonic_ns()
+        began_utc = datetime.now(timezone.utc).isoformat()
+        status = "completed"
+        try:
+            return self._rpc_impl(method, params, timeout=timeout)
+        except RpcTimeout:
+            status = "timeout"
+            raise
+        except ProtocolError:
+            status = "failed"
+            raise
+        except Exception:
+            status = "failed"
+            raise
+        finally:
+            if self.trace is not None:
+                self.trace.emit(method=method, status=status, began_ns=began_ns,
+                                began_utc=began_utc,
+                                ended_utc=datetime.now(timezone.utc).isoformat())
+
+    def _rpc_impl(self, method: str, params: dict, *, timeout: float | None = None) -> dict:
         assert self.process.stdin
         slot: queue.Queue = queue.Queue(maxsize=1)
         with self._lock:

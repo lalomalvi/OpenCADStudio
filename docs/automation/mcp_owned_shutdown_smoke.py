@@ -26,7 +26,8 @@ def main() -> None:
     environment.update({"APPDATA": str(profile), "LOCALAPPDATA": str(profile),
                         "TEMP": str(temporary), "TMP": str(temporary)})
     report = {"schema_version": "mcp-owned-shutdown-l2-1", "status": "failed", "run": str(run)}
-    client = Client(server, environment=environment)
+    trace_path = run / "rpc-trace.jsonl"
+    client = Client(server, environment=environment, trace_path=trace_path, run_id=run.name)
     try:
         client.handshake()
         selected = client.ready_session(launch_if_none=True, timeout=90)
@@ -137,6 +138,13 @@ def main() -> None:
             client.close()
         except ProtocolError:
             report["mcp_close"] = "error"
+        trace_text = trace_path.read_text(encoding="utf-8")
+        report["rpc_trace"] = {"events": len(trace_text.splitlines()),
+                               "write_failed": client.trace.failed,
+                               "contains_token_field": '"token"' in trace_text}
+        if report["status"] == "passed" and (client.trace.failed or '"token"' in trace_text
+                                                or not trace_text):
+            report["status"] = "partial"
         (run / "owned-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(report, indent=2))
 

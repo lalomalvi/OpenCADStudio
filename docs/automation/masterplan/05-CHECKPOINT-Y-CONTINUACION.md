@@ -147,3 +147,13 @@ Una revisión final corrigió el caso de un descriptor legado con nombre de sesi
 ### Prompt de continuidad desde el octavo corte
 
 Verifica commit y SHA remoto de `codex/mcp-windows-descriptor-acl` antes de afirmar publicación. Preserva todos los runs previos, incluidos los fallos. Completa M2.4 y M3 con trazas reales por fase, artefactos y sellos; integra PlanSpec en L2 sintético y después aborda M5–M8 según los gates. No reutilices automáticamente journals viejos de ACL heredado: concilia su estado antes de cualquier edición. Mantén el DWG y la evidencia histórica intactos, y publica exclusivamente en el fork.
+
+## Noveno corte M3 transporte — 2026-09-23, en progreso
+
+El octavo corte se publicó en `origin/codex/mcp-windows-descriptor-acl` con commit `2b8ff754` (verificar SHA completo remoto). La rama actual `codex/mcp-transport-trace` añade un `TraceSink` opcional al cliente persistente: un JSONL nuevo por run, append-only, con ID de run, secuencia, método MCP de lista blanca, estado, timestamps UTC y duración monotónica por RPC. Nunca serializa argumentos, resultados, tokens ni texto de error. Un fallo de escritura queda indicado por `trace.failed`, sin reinterpretar ni repetir una mutación. El test L1 envió valores privados de fixture en dos RPC y confirmó que no aparecen en el archivo. La suite Python de cliente pasó 17/17 tras la instrumentación.
+
+El L2 `target/mcp-isolated/20260923-212002-owned-185c1b47/owned-report.json` pasó cierre/propiedad y registró 27 eventos RPC; `write_failed=false` y `contains_token_field=false`. El JSONL permanece en `target`, fuera de Git. Esto acredita tiempos de transporte del cliente, **no** separación de tiempo de modelo, cola GUI, ejecución CAD o render, ni cobertura de toda la ejecución del benchmark. M3.2 sigue partial. M3 requiere todavía bitácora integral, ArtifactRef conectado a captura real, render-fence, AUDIT/SAVE/VERDICT automáticos y presupuestos/reanudación. El DWG del usuario y el ensayo histórico siguen sin abrirse ni alterarse.
+
+### Prompt de continuidad desde el noveno corte
+
+Reverifica remotos/SHAs y pruebas. Completa trazas M3 desde GUI/CAD hasta evidencia final con cobertura; conecta capturas reales mediante referencias y revisiones sin Base64 en JSONL. Ejecuta PlanSpec sintético por el cliente persistente, manteniendo `unsupported` como fallo de gate. Después censa e implementa M5/M6, y evalúa M7/M8 solo con cohorte y revisiones autorizadas. No abra el DWG del usuario; preserve evidencia previa y no publique en upstream.
