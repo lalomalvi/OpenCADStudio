@@ -957,6 +957,7 @@ try {
                                   'synthetic-three-wall-chain.planspec.json',
                                   'synthetic-three-wall-rotated.planspec.json',
                                   'synthetic-three-wall-door.planspec.json',
+                                  'synthetic-three-wall-middle-door.planspec.json',
                                   'synthetic-wall-face-dimension-readable-v7.planspec.json',
                                   'synthetic-wall-face-dimension-vertical-v7.planspec.json',
                                   'synthetic-wall-axis-span-v8.planspec.json',
@@ -1466,7 +1467,8 @@ try {
                     }
                 }
             }
-            if ($fixtureName -eq 'synthetic-three-wall-door.planspec.json') {
+            if ($fixtureName -in @('synthetic-three-wall-door.planspec.json',
+                                    'synthetic-three-wall-middle-door.planspec.json')) {
                 # Fixed independent 17-LINE + 1-ARC oracle. These coordinates
                 # are not read from the compiler output or the L2 command list.
                 $doorOracle = @(
@@ -1488,6 +1490,35 @@ try {
                     @('door-chain__jamb_end', 2.2, -0.1, 2.2, 0.1),
                     @('door-chain__leaf_open', 1.3, 0.1, 1.3, 1)
                 )
+                $arcId = 'door-chain__swing_arc'
+                $expectedArcCenter = @(1.3, 0.1, 0.0)
+                $expectedArcStart = 0.0
+                $expectedArcEnd = [Math]::PI / 2
+                if ($fixtureName -eq 'synthetic-three-wall-middle-door.planspec.json') {
+                    $doorOracle = @(
+                        @('three-wall-union__outline_0', 0, -0.1, 4, -0.1),
+                        @('three-wall-union__outline_1', 4, -0.1, 4, 0),
+                        @('three-wall-union__outline_2', 4, 0, 4.1, 0),
+                        @('three-wall-union__outline_3', 4.1, 0, 4.1, 1.05),
+                        @('three-wall-union__outline_4', 4.1, 1.95, 4.1, 2.9),
+                        @('three-wall-union__outline_5', 4.1, 2.9, 7, 2.9),
+                        @('three-wall-union__outline_6', 7, 2.9, 7, 3.1),
+                        @('three-wall-union__outline_7', 7, 3.1, 4, 3.1),
+                        @('three-wall-union__outline_8', 4, 3.1, 4, 3),
+                        @('three-wall-union__outline_9', 4, 3, 3.9, 3),
+                        @('three-wall-union__outline_10', 3.9, 3, 3.9, 1.95),
+                        @('three-wall-union__outline_11', 3.9, 1.05, 3.9, 0.1),
+                        @('three-wall-union__outline_12', 3.9, 0.1, 0, 0.1),
+                        @('three-wall-union__outline_13', 0, 0.1, 0, -0.1),
+                        @('door-middle__jamb_start', 4.1, 1.05, 3.9, 1.05),
+                        @('door-middle__jamb_end', 4.1, 1.95, 3.9, 1.95),
+                        @('door-middle__leaf_open', 3.9, 1.05, 3, 1.05)
+                    )
+                    $arcId = 'door-middle__swing_arc'
+                    $expectedArcCenter = @(3.9, 1.05, 0.0)
+                    $expectedArcStart = [Math]::PI / 2
+                    $expectedArcEnd = [Math]::PI
+                }
                 foreach ($expected in $doorOracle) {
                     $partId = [string]$expected[0]
                     $expectedStart = @([double]$expected[1], [double]$expected[2], 0.0)
@@ -1508,7 +1539,6 @@ try {
                         matched_1e_6 = [bool]$matched
                     }
                 }
-                $arcId = 'door-chain__swing_arc'
                 $arcHandle = [string]$richSourceReport.planspec.handles_by_id.($arcId)
                 $arcRow = if ($arcHandle) { $entityByHandle[$arcHandle] } else { $null }
                 $arcCenter = if ($arcRow) { Read-DxfPoint $arcRow[9] } else { $null }
@@ -1516,15 +1546,15 @@ try {
                 $arcStart = if ($arcRow) { Read-DxfNumber $arcRow[11] } else { $null }
                 $arcEnd = if ($arcRow) { Read-DxfNumber $arcRow[18] } else { $null }
                 $arcMatched = $arcRow -and $arcRow[1] -eq 'ARC' -and $arcRow[3] -eq '0' -and
-                    (Same-Point @(1.3, 0.1, 0.0) $arcCenter) -and
+                    (Same-Point $expectedArcCenter $arcCenter) -and
                     $null -ne $arcRadius -and [Math]::Abs($arcRadius - 0.9) -le 1e-6 -and
                     $null -ne $arcStart -and $null -ne $arcEnd -and
-                    (Same-Angle 0.0 $arcStart) -and
-                    (Same-Angle ([Math]::PI / 2) $arcEnd)
+                    (Same-Angle $expectedArcStart $arcStart) -and
+                    (Same-Angle $expectedArcEnd $arcEnd)
                 $geometryComparison += [ordered]@{
                     planspec_id = $arcId; kind = 'THREE_WALL_DOOR_ARC'; handle = $arcHandle
-                    expected_center = @(1.3, 0.1, 0.0); expected_radius = 0.9
-                    expected_start_angle = 0.0; expected_end_angle = [Math]::PI / 2
+                    expected_center = $expectedArcCenter; expected_radius = 0.9
+                    expected_start_angle = $expectedArcStart; expected_end_angle = $expectedArcEnd
                     autocad_center = $arcCenter; autocad_radius = $arcRadius
                     autocad_start_angle = $arcStart; autocad_end_angle = $arcEnd
                     matched_1e_6 = [bool]$arcMatched
@@ -1543,6 +1573,7 @@ try {
               'synthetic-three-wall-chain.planspec.json',
               'synthetic-three-wall-rotated.planspec.json',
               'synthetic-three-wall-door.planspec.json',
+              'synthetic-three-wall-middle-door.planspec.json',
               'synthetic-two-door-wall-v8.planspec.json',
               'synthetic-wall-axis-span-v8.planspec.json',
               'synthetic-wall-axis-span-vertical-v8.planspec.json',

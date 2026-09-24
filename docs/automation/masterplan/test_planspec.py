@@ -663,6 +663,25 @@ class PlanSpecTests(unittest.TestCase):
         middle["openings"][0]["offset_m"] = 1.05
         self.assertEqual(module.dry_run(middle)["wall_compilation"]["generated_parts"], 18)
 
+    def test_v5_middle_wall_door_fixture_has_two_open_faces(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-three-wall-middle-door.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_three_wall_single_door", "generated_parts": 18})
+        commands = {item["planspec_id"]: item["command"] for item in result["commands"]}
+        self.assertEqual(commands["three-wall-union__outline_3"], "LINE 4.1,0 4.1,1.05")
+        self.assertEqual(commands["three-wall-union__outline_4"], "LINE 4.1,1.95 4.1,2.9")
+        self.assertEqual(commands["three-wall-union__outline_10"], "LINE 3.9,3 3.9,1.95")
+        self.assertEqual(commands["three-wall-union__outline_11"], "LINE 3.9,1.05 3.9,0.1")
+        self.assertEqual(commands["door-middle__jamb_start"], "LINE 4.1,1.05 3.9,1.05")
+        self.assertEqual(commands["door-middle__leaf_open"], "LINE 3.9,1.05 3,1.05")
+        near_top_join = deepcopy(value)
+        near_top_join["openings"][0]["offset_m"] = 1.2
+        with self.assertRaisesRegex(module.PlanError, "clear distance"):
+            module.dry_run(near_top_join)
+
     def test_v6_wall_face_binding_validates_without_emitting_native_dimension(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))
