@@ -1206,7 +1206,13 @@ impl OpenCADStudio {
         }
 
         self.prepare_native_save(i);
-        let before = document_manifest(&self.tabs[i].scene.document);
+        let source_manifest = document_manifest(&self.tabs[i].scene.document);
+        // The writer bakes anonymous *D blocks on its owned snapshot. Compare
+        // the reopened file with that materialized snapshot: a dimension's
+        // generated geometry is real DWG content, absent from the live editor.
+        let mut expected = self.tabs[i].scene.document.clone();
+        crate::modules::draw::modify::explode::bake_dimension_blocks(&mut expected);
+        let before = document_manifest(&expected);
         crate::io::save_as_version(&self.tabs[i].scene.document, &path, version)
             .map_err(|error| json!({
                 "ok":false,"status":"failed","code":"save_failed","error":error,
@@ -1252,6 +1258,7 @@ impl OpenCADStudio {
                 "ok":false,"status":"failed","code":"semantic_mismatch",
                 "error":"saved drawing reopened but its entity manifest changed; file was preserved for diagnosis",
                 "saved":path,"sha256":sha256,"before":before,"after":after,
+                "source_manifest":source_manifest,
                 "target_format":if is_dxf { "dxf" } else { "dwg" },
                 "target_version":format!("{version:?}"),"dropped_on_save":dropped,
             }));
@@ -1261,6 +1268,7 @@ impl OpenCADStudio {
             "saved":path,"sha256":sha256,"bytes":std::fs::metadata(&path).map(|m|m.len()).unwrap_or(0),
             "target_format":if is_dxf { "dxf" } else { "dwg" },
             "target_version":format!("{version:?}"),"dropped_on_save":dropped,
+            "source_manifest":source_manifest,"materialized_manifest":before,
             "manifest":after,"audit":audit,"dxf_structure":dxf_structure,
         }))
     }
@@ -1376,6 +1384,41 @@ mod tests {
         assert_eq!(result["manifest"]["total"], 1, "{result}");
         assert_eq!(result["sha256"].as_str().map(str::len), Some(64));
         assert!(path.is_file());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_verified_compares_materialized_dimension_geometry() {
+        let mut app = OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        assert_eq!(
+            app.automation_op(r#"{"op":"run","cmd":"DIMLINEAR 0,0 2.5,0 1.25,1"}"#)["ok"],
+            true
+        );
+        let path = std::env::temp_dir().join(format!(
+            "ocs_verified_dimension_{}_{}.dwg",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        let result = app.save_verified_request(&serde_json::json!({
+            "path":path,
+            "target_format":"dwg",
+            "target_version":"2018",
+        })).expect("verified dimension save");
+        assert_eq!(result["manifest"]["by_type"]["Dimension"], 1, "{result}");
+        assert!(result["manifest"]["total"].as_u64().unwrap() > 1, "{result}");
+        assert_eq!(result["source_manifest"]["total"], 1, "{result}");
+        assert_eq!(result["materialized_manifest"], result["manifest"], "{result}");
+        let reopened = crate::io::load_file(&path).expect("reopen dimension");
+        let dimension = reopened.entities().find_map(|entity| match entity {
+            acadrust::EntityType::Dimension(dimension) => Some(dimension),
+            _ => None,
+        }).expect("native dimension");
+        assert!((dimension.base().actual_measurement - 2.5).abs() < 1e-6);
+        assert!(dimension.base().block_name.starts_with("*D"));
         let _ = std::fs::remove_file(path);
     }
 

@@ -208,6 +208,30 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             if layer_query.get("entities", [{}])[0].get("layer") != "A-WALL":
                 raise ProtocolError("Layer fixture line was assigned to another layer")
             report["layer_fixture"] = {"handle": layer_handles[0], "layer": "A-WALL"}
+            dimension = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "run_script", "request_id": "l2-dimension-" + uuid.uuid4().hex,
+                            "strict": True, "commands": ["LAYER NEW A-DIMS", "CLAYER A-DIMS",
+                                                          "DIMLINEAR 40,0 42.5,0 41.25,1"]}})
+            if dimension.get("completed_commands") != 3 or dimension.get("added_entities") != 1:
+                raise ProtocolError("Native linear dimension was not created")
+            dimension_handles = [change["handle"] for change in dimension.get("changes", [])
+                                 if change.get("kind") == "Added" and change.get("step") == 2]
+            if len(dimension_handles) != 1:
+                raise ProtocolError("Native dimension handle is absent")
+            dimension_query = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                        "parameters": {"handle": dimension_handles[0],
+                                                                       "detail": "full"}})
+            dimension_entity = dimension_query.get("entities", [{}])[0]
+            linear = dimension_entity.get("properties", {}).get("Linear", {})
+            measured = linear.get("base", {}).get("actual_measurement")
+            if (dimension_entity.get("type") != "Dimension" or
+                    dimension_entity.get("layer") != "A-DIMS" or
+                    not isinstance(measured, (int, float)) or abs(measured - 2.5) > 1e-6):
+                raise ProtocolError("Native dimension geometry, measure or layer differs from fixture")
+            report["dimension_fixture"] = {"handle": dimension_handles[0],
+                                           "type": "Dimension", "layer": "A-DIMS",
+                                           "actual_measurement": measured,
+                                           "associativity": "unverified"}
         audit = client.tool("ocs_read", {"ocs_session_id": session, "op": "audit",
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
@@ -230,6 +254,9 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             if verified.get("manifest", {}).get("by_layer", {}).get("A-WALL") != 1:
                 raise ProtocolError("Synthetic layer assignment did not survive DWG reopen")
             report["layer_fixture"]["reopened_count"] = 1
+            if verified.get("manifest", {}).get("by_type", {}).get("Dimension") != 1:
+                raise ProtocolError("Native dimension did not survive DWG reopen")
+            report["dimension_fixture"]["reopened_count"] = 1
         actual_hash = hashlib.sha256(destination.read_bytes()).hexdigest().upper()
         if verified["sha256"].upper() != actual_hash:
             raise ProtocolError("Synthetic output hash differs from backend report")
@@ -238,6 +265,8 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                        "audit_ok": True,
                        "verified_output": {"path": str(destination), "sha256": actual_hash,
                                            "bytes": destination.stat().st_size,
+                                           "source_manifest": verified.get("source_manifest"),
+                                           "materialized_manifest": verified.get("materialized_manifest"),
                                            "reopened_manifest": verified.get("manifest")}})
 
         # Save the working tab separately so QUIT cannot discard unsaved work.
@@ -256,6 +285,17 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             if set(native_after) != {"Arc", "Polyline"} or not same_geometry(native_before, native_after):
                 raise ProtocolError("Native primitive geometry changed after internal DWG reopen")
             report["native_primitives"]["roundtrip_geometry"] = "matched_1e-6_internal"
+            dimension_after = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                       "parameters": {"handle": dimension_handles[0],
+                                                                      "detail": "full"}})
+            restored = dimension_after.get("entities", [{}])[0]
+            restored_linear = restored.get("properties", {}).get("Linear", {})
+            restored_measure = restored_linear.get("base", {}).get("actual_measurement")
+            if (restored.get("type") != "Dimension" or restored.get("layer") != "A-DIMS" or
+                    not isinstance(restored_measure, (int, float)) or
+                    abs(restored_measure - measured) > 1e-6):
+                raise ProtocolError("Native dimension measure/layer changed after DWG reopen")
+            report["dimension_fixture"]["roundtrip_measurement"] = restored_measure
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         capture_path = (output / "capture.png").resolve()
         capture = client.capture_artifact(session, capture_path,

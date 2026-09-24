@@ -73,6 +73,23 @@ class CadSealTests(unittest.TestCase):
         with self.assertRaises(module.SealError):
             module.verify_seal(self.run, self.binary)
 
+    def test_dimension_materialization_requires_both_manifest_equalities(self):
+        source = self.report["audit_summary"]["manifest"]
+        materialized = {"total": 11, "by_type": {"Line": 7, "Circle": 1,
+                                                 "Solid": 2, "Text": 1},
+                        "by_layer": {"0": 11}}
+        saved = self.report["verified_output"]
+        saved["source_manifest"] = source
+        saved["materialized_manifest"] = materialized
+        saved["reopened_manifest"] = materialized
+        self.save_report()
+        module.seal_run(self.run, self.binary)
+        module.verify_seal(self.run, self.binary)
+        saved["source_manifest"] = materialized
+        self.save_report()
+        with self.assertRaises(module.SealError):
+            module.verify_seal(self.run, self.binary)
+
 
 if __name__ == "__main__":
     unittest.main()

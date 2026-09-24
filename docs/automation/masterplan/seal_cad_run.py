@@ -72,11 +72,17 @@ def prepare(run: Path, binary: Path) -> dict[str, Any]:
         raise SealError("PlanSpec fixture, commands or handle coverage differs")
     audit = report.get("audit_summary", {})
     saved = report.get("verified_output", {})
+    materialized = saved.get("materialized_manifest")
+    if materialized is None:
+        manifests_match = audit.get("manifest") == saved.get("reopened_manifest")
+    else:
+        manifests_match = (audit.get("manifest") == saved.get("source_manifest") and
+                           materialized == saved.get("reopened_manifest"))
     if audit.get("status") != "passed" or audit.get("summary") != {"errors": 0, "warnings": 0} \
             or audit.get("target", {}).get("lossless") is not True \
             or audit.get("unknown_entities") != 0 \
-            or audit.get("manifest") != saved.get("reopened_manifest"):
-        raise SealError("Audit and reopened manifest do not agree")
+            or not manifests_match:
+        raise SealError("Source, materialized and reopened manifests do not agree")
     drawing = Path(saved.get("path", ""))
     if drawing.resolve(strict=True).parent != root or drawing.name != "synthetic-verified.dwg":
         raise SealError("Verified drawing escapes the synthetic run")
@@ -100,6 +106,9 @@ def prepare(run: Path, binary: Path) -> dict[str, Any]:
                    "sha256": saved["sha256"], "bytes": saved["bytes"],
                    "reopened_manifest": saved["reopened_manifest"],
                    "verification_engine": "OpenCADStudio-internal"}
+    if materialized is not None:
+        save_public["source_manifest"] = saved["source_manifest"]
+        save_public["materialized_manifest"] = materialized
     verdict = {"schema_version": "m3-verdict-1", "status": "partial",
                "passed_gates": ["synthetic_planspec", "mcp_execution", "internal_audit",
                                 "internal_dwg_reopen", "gui_exit"] +
