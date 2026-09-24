@@ -98,15 +98,18 @@ def compile_bottom_chain(value: dict, *, frozen: dict,
     placements.append({"dimension_id": "span-total", "offset_m": 0.9,
                        "layer": "0", "source": source(union)})
     variant = frozen.get("style_variant")
-    if variant not in {None, "legible_25cm_v1"}:
+    if variant not in {None, "legible_25cm_v1", "legible_fixed_25cm_v2"}:
         raise AxisChainError("Dimension style variant is unsupported")
     style = ({"name": "OCS_AXIS_METRIC_LARGE", "text_height_m": 0.25,
               "arrow_size_m": 0.08, "gap_m": 0.02, "scale": 1,
               "measurement_factor": 1}
-             if variant == "legible_25cm_v1" else
+             if variant in {"legible_25cm_v1", "legible_fixed_25cm_v2"} else
              {"name": "OCS_AXIS_METRIC", "text_height_m": 0.035,
               "arrow_size_m": 0.02, "gap_m": 0.01, "scale": 1,
               "measurement_factor": 1})
+    if variant == "legible_fixed_25cm_v2":
+        style["name"] = "OCS_AXIS_METRIC_FIXED"
+        style["decimal_format"] = "fixed_2"
     return {"schema_version": "planspec-8", "units": "m",
             "origin": {"x": 0, "y": 0}, "nodes": nodes, "lines": [],
             "circles": [], "dimensions": dimensions, "topology": {"contours": []},

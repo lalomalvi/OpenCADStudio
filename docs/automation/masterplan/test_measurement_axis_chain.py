@@ -4,7 +4,7 @@ import copy
 import unittest
 
 from measurement_axis_chain import AxisChainError, compile_bottom_chain
-from planspec import dry_run
+from planspec import PlanError, dry_run
 
 
 FROZEN = {"expected_widths_m": [2.58, 2.85, 2.58, 2.85, 1.0, 2.0]}
@@ -51,6 +51,17 @@ class AxisChainTests(unittest.TestCase):
         self.assertEqual(variant["dimensions"], original["dimensions"])
         self.assertEqual(variant["dimension_style"]["text_height_m"], 0.25)
         self.assertTrue(dry_run(variant)["executable"])
+        fixed = compile_bottom_chain(
+            observation(), frozen={**FROZEN, "style_variant": "legible_fixed_25cm_v2"},
+            image_width=1000, image_height=500)
+        self.assertEqual(fixed["dimension_style"]["decimal_format"], "fixed_2")
+        commands = [item["command"] for item in dry_run(fixed)["execution_steps"]]
+        self.assertIn("DIMSTYLE SET OCS_AXIS_METRIC_FIXED dimdec 2", commands)
+        self.assertIn("DIMSTYLE SET OCS_AXIS_METRIC_FIXED dimzin 0", commands)
+        bad = copy.deepcopy(fixed)
+        bad["dimension_style"]["decimal_format"] = "fixed_3"
+        with self.assertRaises(PlanError):
+            dry_run(bad)
 
 
 if __name__ == "__main__":

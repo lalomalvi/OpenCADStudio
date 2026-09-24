@@ -637,6 +637,9 @@
         },
         "measurement_factor": {
           "const": 1
+        },
+        "decimal_format": {
+          "const": "fixed_2"
         }
       }
     },

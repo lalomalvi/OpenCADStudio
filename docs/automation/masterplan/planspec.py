@@ -328,8 +328,12 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                 raise PlanError("Every v6 dimension requires exactly one wall binding")
         if plan["schema_version"] in {"planspec-7", "planspec-8", "planspec-9"}:
             style = plan["dimension_style"]
-            _keys(style, {"name", "text_height_m", "arrow_size_m", "gap_m",
-                          "scale", "measurement_factor"}, "dimension style")
+            style_fields = {"name", "text_height_m", "arrow_size_m", "gap_m",
+                            "scale", "measurement_factor"}
+            if isinstance(style, dict) and plan["schema_version"] in {"planspec-8", "planspec-9"} and \
+                    style.get("decimal_format") == "fixed_2":
+                style_fields.add("decimal_format")
+            _keys(style, style_fields, "dimension style")
             if not _id(style["name"], "dimension style").startswith("OCS_"):
                 raise PlanError("Dimension style must use a reserved OCS_ name")
             for key in ("text_height_m", "arrow_size_m"):
@@ -1567,6 +1571,10 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             f"DIMSTYLE SET {name} dimlfac 1",
             f"CDIMSTY {name}",
             "SETVAR DIMASSOC 2"))
+        if style.get("decimal_format") == "fixed_2":
+            execution.extend({"planspec_id": None, "command": command, "layer": "0"}
+                             for command in (f"DIMSTYLE SET {name} dimdec 2",
+                                             f"DIMSTYLE SET {name} dimzin 0"))
     execution.extend({"planspec_id": None, "command": f"LAYER NEW {layer}", "layer": layer}
                      for layer in layers)
     current_layer = "0"

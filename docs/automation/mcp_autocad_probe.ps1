@@ -140,7 +140,9 @@ $lispText = @"
                       (ocs_value ocs_style 41) "|"
                       (ocs_value ocs_style 147) "|"
                       (ocs_value ocs_style 40) "|"
-                      (ocs_value ocs_style 144)) ocs_file))
+                      (ocs_value ocs_style 144) "|"
+                      (ocs_value ocs_style 271) "|"
+                      (ocs_value ocs_style 78)) ocs_file))
           (write-line (strcat "DIMDATA|" (ocs_value ocs_data 5) "|"
                               (vl-princ-to-string ocs_data)) ocs_file)
           (write-line (strcat "DIMREACTOR|" (ocs_value ocs_data 5) "|"
@@ -250,13 +252,15 @@ try {
         }
         foreach ($row in @($lines | Where-Object { $_.StartsWith('DIMSTYLE|') })) {
             $parts = $row -split '\|'
-            if ($parts.Count -eq 8) {
+            if ($parts.Count -eq 8 -or $parts.Count -eq 10) {
                 $dimensionStyles[$parts[1]] = [ordered]@{ name = $parts[2];
                     text_height_m = Read-DxfNumber $parts[3];
                     arrow_size_m = Read-DxfNumber $parts[4];
                     gap_m = Read-DxfNumber $parts[5];
                     scale = Read-DxfNumber $parts[6];
-                    measurement_factor = Read-DxfNumber $parts[7] }
+                    measurement_factor = Read-DxfNumber $parts[7];
+                    decimal_places = if ($parts.Count -eq 10) { Read-DxfNumber $parts[8] } else { $null };
+                    zero_suppression = if ($parts.Count -eq 10) { Read-DxfNumber $parts[9] } else { $null } }
             }
         }
     }
@@ -1611,6 +1615,7 @@ try {
         model_census_count = $declaredCount
         model_types = $types
         dimension_measurements = $dimensionMeasurements
+        dimension_styles = $dimensionStyles
         dimension_comparison = $dimensionComparison
         face_reference_comparison = $faceReferenceComparison
         face_style_comparison = $faceStyleComparison

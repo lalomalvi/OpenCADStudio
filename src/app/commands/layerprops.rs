@@ -1141,6 +1141,12 @@ impl OpenCADStudio {
                         let prop = parts.get(2).map(|s| s.to_lowercase()).unwrap_or_default();
                         let val_str = parts.get(3).map(|s| s.trim()).unwrap_or("");
                         if let Ok(val) = val_str.parse::<f64>() {
+                            if (prop == "dimdec" && (!val.is_finite() || val.fract() != 0.0 || !(0.0..=8.0).contains(&val)))
+                                || (prop == "dimzin" && (!val.is_finite() || val.fract() != 0.0 || !(0.0..=15.0).contains(&val)))
+                            {
+                                self.command_line.push_error(crate::t!("DIMSTYLE: invalid integer property value").as_ref());
+                                return Some(Task::none());
+                            }
                             let undo = self.begin_dim_style_undo(
                                 i,
                                 "DIMSTYLE SET",
@@ -1173,6 +1179,12 @@ impl OpenCADStudio {
                                     }
                                     "dimlfac" => {
                                         ds.dimlfac = val;
+                                    }
+                                    "dimdec" => {
+                                        ds.dimdec = val as i16;
+                                    }
+                                    "dimzin" => {
+                                        ds.dimzin = val as i16;
                                     }
                                     "dimdle" => {
                                         ds.dimdle = val;

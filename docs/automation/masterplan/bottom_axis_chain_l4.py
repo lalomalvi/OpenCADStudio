@@ -40,7 +40,7 @@ def assess(run: Path, image_path: Path, external_path: Path) -> dict:
     cad_path = cad_files[0]
     cad = verify_owned_cad_evidence(cad_path)
     handles = cad["handles_by_id"]
-    if frozen.get("style_variant") == "legible_25cm_v1":
+    if frozen.get("style_variant") in {"legible_25cm_v1", "legible_fixed_25cm_v2"}:
         reuse = report.get("model_reuse")
         source_run = run.parent / "apartment-bottom-chain-v1"
         if not isinstance(reuse, dict) or \
@@ -100,6 +100,17 @@ def assess(run: Path, image_path: Path, external_path: Path) -> dict:
             census[parts[2]] = parts
     if set(census) != set(handles.values()):
         raise BottomChainL4Error("AutoCAD handles differ")
+    if frozen.get("style_variant") == "legible_fixed_25cm_v2":
+        styles = external.get("dimension_styles", {})
+        for item in plan["dimensions"]:
+            observed = styles.get(handles[item["id"]], {})
+            if observed.get("name") != "OCS_AXIS_METRIC_FIXED" or \
+                    observed.get("decimal_places") != 2 or \
+                    observed.get("zero_suppression") != 0 or \
+                    observed.get("text_height_m") != 0.25 or \
+                    observed.get("arrow_size_m") != 0.08 or \
+                    observed.get("gap_m") != 0.02:
+                raise BottomChainL4Error("AutoCAD native dimension style differs")
     nodes = {item["id"]: (float(item["x"]), float(item["y"]), 0.0)
              for item in plan["nodes"]}
     dimensions = {item["id"]: item for item in plan["dimensions"]}
