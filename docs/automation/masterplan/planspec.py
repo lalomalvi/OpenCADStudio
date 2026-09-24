@@ -843,16 +843,16 @@ def _door_swing_extrema(wall: dict, door: dict,
 
 
 def analyze_door_clearance(plan: dict[str, Any]) -> dict[str, Any]:
-    """Report strict crossings of an open door leaf with declared source lines.
+    """Report open leaf and swept quarter-disk contacts with source lines.
 
     A line is not assumed to be an obstruction; contour membership only names
-    its source category. Contacts at endpoints and the rest of the swing sweep
-    remain outside this narrow review signal.
+    its source category. Tangent and endpoint-only contacts are excluded.
     """
     _validate_basic(plan)
     if plan["schema_version"] not in {"planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
-        return {"schema_version": "planspec-door-clearance-qa-1", "status": "unavailable",
-                "strict_crossings": [], "scope": "v4_or_later_open_leaf_against_source_lines"}
+        return {"schema_version": "planspec-door-clearance-qa-2", "status": "unavailable",
+                "strict_crossings": [], "sweep_intersections": [],
+                "scope": "v4_or_later_quarter_sweep_against_source_lines"}
     nodes = {node["id"]: (_number(node["x"], "node.x"), _number(node["y"], "node.y"))
              for node in plan["nodes"]}
     walls = {wall["id"]: wall for wall in plan["walls"]}
@@ -863,21 +863,57 @@ def analyze_door_clearance(plan: dict[str, Any]) -> dict[str, Any]:
                c: tuple[Decimal, Decimal]) -> Decimal:
         return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 
+    def segment_enters_sweep(hinge, closed, opened, a, b, width: Decimal) -> bool:
+        along = ((closed[0] - hinge[0]) / width, (closed[1] - hinge[1]) / width)
+        outward = ((opened[0] - hinge[0]) / width, (opened[1] - hinge[1]) / width)
+
+        def local(point):
+            delta = (point[0] - hinge[0], point[1] - hinge[1])
+            return (delta[0] * along[0] + delta[1] * along[1],
+                    delta[0] * outward[0] + delta[1] * outward[1])
+
+        start, end = local(a), local(b)
+        delta = (end[0] - start[0], end[1] - start[1])
+        low, high = Decimal(0), Decimal(1)
+        epsilon = Decimal("0.000000001")
+        for axis in (0, 1):
+            if delta[axis] == 0:
+                if start[axis] <= epsilon:
+                    return False
+                continue
+            edge = (epsilon - start[axis]) / delta[axis]
+            if delta[axis] > 0:
+                low = max(low, edge)
+            else:
+                high = min(high, edge)
+        if low >= high:
+            return False
+        norm = delta[0] * delta[0] + delta[1] * delta[1]
+        closest = max(low, min(high,
+            -(start[0] * delta[0] + start[1] * delta[1]) / norm))
+        point = (start[0] + delta[0] * closest, start[1] + delta[1] * closest)
+        return point[0] * point[0] + point[1] * point[1] < (width - epsilon) ** 2
+
     crossings = []
+    sweep_intersections = []
     for door in sorted((item for item in plan["openings"] if item["kind"] == "door"),
                        key=lambda item: item["id"]):
-        hinge, _, opened = _door_swing_extrema(walls[door["wall_id"]], door, nodes)[:3]
+        hinge, closed, opened = _door_swing_extrema(walls[door["wall_id"]], door, nodes)[:3]
+        width = _number(door["width_m"], "door.width_m")
         for line in sorted(plan["lines"], key=lambda item: item["id"]):
             a, b = nodes[line["start"]], nodes[line["end"]]
+            category = "contour" if line["id"] in contour_lines else "unclassified"
             if orient(hinge, opened, a) * orient(hinge, opened, b) < 0 and \
                     orient(a, b, hinge) * orient(a, b, opened) < 0:
                 crossings.append({"door_id": door["id"], "line_id": line["id"],
-                                  "line_category": "contour" if line["id"] in contour_lines
-                                                   else "unclassified"})
-    return {"schema_version": "planspec-door-clearance-qa-1",
-            "status": "review_required" if crossings else "clear",
-            "strict_crossings": crossings,
-            "scope": "v4_or_later_open_leaf_against_source_lines_no_sweep_or_endpoint_contacts"}
+                                  "line_category": category})
+            if segment_enters_sweep(hinge, closed, opened, a, b, width):
+                sweep_intersections.append({"door_id": door["id"], "line_id": line["id"],
+                                            "line_category": category})
+    return {"schema_version": "planspec-door-clearance-qa-2",
+            "status": "review_required" if crossings or sweep_intersections else "clear",
+            "strict_crossings": crossings, "sweep_intersections": sweep_intersections,
+            "scope": "v4_or_later_quarter_sweep_against_source_lines_no_tangency_or_3d"}
 
 
 def _source_bounds(plan: dict[str, Any], nodes: dict[str, tuple[Decimal, Decimal]],
@@ -1100,8 +1136,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     quality_blockers = (["dimension_line_inside_wall_bounds"]
                         if dimension_placement_qa["status"] == "inside_wall_bounds" else [])
     if any(item["line_category"] == "contour"
-           for item in door_clearance_qa["strict_crossings"]):
-        quality_blockers.append("door_open_leaf_crosses_contour")
+           for item in door_clearance_qa["sweep_intersections"]):
+        quality_blockers.append("door_swing_sweep_crosses_contour")
     wire = json.dumps(execution, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return {"schema_version": "planspec-dry-run-1", "commands": commands,
             "execution_steps": execution,
