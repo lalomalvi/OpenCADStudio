@@ -956,6 +956,7 @@ try {
                                   'synthetic-joined-door-second.planspec.json',
                                   'synthetic-three-wall-chain.planspec.json',
                                   'synthetic-three-wall-rotated.planspec.json',
+                                  'synthetic-three-wall-door.planspec.json',
                                   'synthetic-wall-face-dimension-readable-v7.planspec.json',
                                   'synthetic-wall-face-dimension-vertical-v7.planspec.json',
                                   'synthetic-wall-axis-span-v8.planspec.json',
@@ -1465,6 +1466,70 @@ try {
                     }
                 }
             }
+            if ($fixtureName -eq 'synthetic-three-wall-door.planspec.json') {
+                # Fixed independent 17-LINE + 1-ARC oracle. These coordinates
+                # are not read from the compiler output or the L2 command list.
+                $doorOracle = @(
+                    @('three-wall-union__outline_0', 0, -0.1, 1.3, -0.1),
+                    @('three-wall-union__outline_1', 2.2, -0.1, 4, -0.1),
+                    @('three-wall-union__outline_2', 4, -0.1, 4, 0),
+                    @('three-wall-union__outline_3', 4, 0, 4.1, 0),
+                    @('three-wall-union__outline_4', 4.1, 0, 4.1, 2.9),
+                    @('three-wall-union__outline_5', 4.1, 2.9, 7, 2.9),
+                    @('three-wall-union__outline_6', 7, 2.9, 7, 3.1),
+                    @('three-wall-union__outline_7', 7, 3.1, 4, 3.1),
+                    @('three-wall-union__outline_8', 4, 3.1, 4, 3),
+                    @('three-wall-union__outline_9', 4, 3, 3.9, 3),
+                    @('three-wall-union__outline_10', 3.9, 3, 3.9, 0.1),
+                    @('three-wall-union__outline_11', 3.9, 0.1, 2.2, 0.1),
+                    @('three-wall-union__outline_12', 1.3, 0.1, 0, 0.1),
+                    @('three-wall-union__outline_13', 0, 0.1, 0, -0.1),
+                    @('door-chain__jamb_start', 1.3, -0.1, 1.3, 0.1),
+                    @('door-chain__jamb_end', 2.2, -0.1, 2.2, 0.1),
+                    @('door-chain__leaf_open', 1.3, 0.1, 1.3, 1)
+                )
+                foreach ($expected in $doorOracle) {
+                    $partId = [string]$expected[0]
+                    $expectedStart = @([double]$expected[1], [double]$expected[2], 0.0)
+                    $expectedEnd = @([double]$expected[3], [double]$expected[4], 0.0)
+                    $handle = [string]$richSourceReport.planspec.handles_by_id.($partId)
+                    $row = if ($handle) { $entityByHandle[$handle] } else { $null }
+                    $observedStart = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                    $observedEnd = if ($row) { Read-DxfPoint $row[16] } else { $null }
+                    $matched = $row -and $row[1] -eq 'LINE' -and $row[3] -eq '0' -and
+                        (((Same-Point $expectedStart $observedStart) -and
+                          (Same-Point $expectedEnd $observedEnd)) -or
+                         ((Same-Point $expectedStart $observedEnd) -and
+                          (Same-Point $expectedEnd $observedStart)))
+                    $geometryComparison += [ordered]@{
+                        planspec_id = $partId; kind = 'THREE_WALL_DOOR_LINE'; handle = $handle
+                        expected_start = $expectedStart; expected_end = $expectedEnd
+                        autocad_start = $observedStart; autocad_end = $observedEnd
+                        matched_1e_6 = [bool]$matched
+                    }
+                }
+                $arcId = 'door-chain__swing_arc'
+                $arcHandle = [string]$richSourceReport.planspec.handles_by_id.($arcId)
+                $arcRow = if ($arcHandle) { $entityByHandle[$arcHandle] } else { $null }
+                $arcCenter = if ($arcRow) { Read-DxfPoint $arcRow[9] } else { $null }
+                $arcRadius = if ($arcRow) { Read-DxfNumber $arcRow[17] } else { $null }
+                $arcStart = if ($arcRow) { Read-DxfNumber $arcRow[11] } else { $null }
+                $arcEnd = if ($arcRow) { Read-DxfNumber $arcRow[18] } else { $null }
+                $arcMatched = $arcRow -and $arcRow[1] -eq 'ARC' -and $arcRow[3] -eq '0' -and
+                    (Same-Point @(1.3, 0.1, 0.0) $arcCenter) -and
+                    $null -ne $arcRadius -and [Math]::Abs($arcRadius - 0.9) -le 1e-6 -and
+                    $null -ne $arcStart -and $null -ne $arcEnd -and
+                    (Same-Angle 0.0 $arcStart) -and
+                    (Same-Angle ([Math]::PI / 2) $arcEnd)
+                $geometryComparison += [ordered]@{
+                    planspec_id = $arcId; kind = 'THREE_WALL_DOOR_ARC'; handle = $arcHandle
+                    expected_center = @(1.3, 0.1, 0.0); expected_radius = 0.9
+                    expected_start_angle = 0.0; expected_end_angle = [Math]::PI / 2
+                    autocad_center = $arcCenter; autocad_radius = $arcRadius
+                    autocad_start_angle = $arcStart; autocad_end_angle = $arcEnd
+                    matched_1e_6 = [bool]$arcMatched
+                }
+            }
         }
     }
     $geometryMismatch = ($geometrySourceValid -eq $false) -or
@@ -1477,6 +1542,7 @@ try {
               'synthetic-joined-door-second.planspec.json',
               'synthetic-three-wall-chain.planspec.json',
               'synthetic-three-wall-rotated.planspec.json',
+              'synthetic-three-wall-door.planspec.json',
               'synthetic-two-door-wall-v8.planspec.json',
               'synthetic-wall-axis-span-v8.planspec.json',
               'synthetic-wall-axis-span-vertical-v8.planspec.json',

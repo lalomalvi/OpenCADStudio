@@ -898,7 +898,8 @@ def _orthogonal_union_commands(join: dict, walls: dict[str, dict], nodes: dict,
 
 
 def _three_wall_union_commands(walls: list[dict], joins: list[dict], nodes: dict,
-                               origin: tuple[Decimal, Decimal]) -> list[dict]:
+                               origin: tuple[Decimal, Decimal],
+                               door: dict | None = None) -> list[dict]:
     """Trace one outer boundary of three axis-aligned, explicitly joined walls."""
     by_id = {wall["id"]: wall for wall in walls}
     if len(by_id) != 3 or len(joins) != 2 or any(
@@ -976,6 +977,46 @@ def _three_wall_union_commands(walls: list[dict], joins: list[dict], nodes: dict
             merged[-1] = (merged[-1][0], edge[1], edge[2])
         else:
             merged.append(edge)
+    if door is not None:
+        target = by_id[door["wall_id"]]
+        a, b = nodes[target["start"]], nodes[target["end"]]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = abs(dx) + abs(dy)  # Axis alignment was validated above.
+        ux, uy = dx / length, dy / length
+        nx, ny = -uy, ux
+        half = _number(target["thickness_m"], "wall.thickness_m") / 2
+        gap_start = _number(door["offset_m"], "door.offset_m")
+        gap_end = gap_start + _number(door["width_m"], "door.width_m")
+        # Keep the complete swing clear of both joins and both far caps. This
+        # conservative subset avoids ambiguity at outline owner transitions.
+        clearance = half + _number(door["width_m"], "door.width_m")
+        if gap_start <= clearance or gap_end >= length - clearance:
+            raise PlanError("Three-wall door needs clear distance from joins and endpoints")
+        split = []
+        faces = set()
+        for p0, p1, owner in merged:
+            if owner != target["id"]:
+                split.append((p0, p1, owner))
+                continue
+            s0 = (p0[0] - a[0]) * ux + (p0[1] - a[1]) * uy
+            s1 = (p1[0] - a[0]) * ux + (p1[1] - a[1]) * uy
+            n0 = (p0[0] - a[0]) * nx + (p0[1] - a[1]) * ny
+            n1 = (p1[0] - a[0]) * nx + (p1[1] - a[1]) * ny
+            if n0 == n1 and abs(n0) == half and \
+                    min(s0, s1) < gap_start and max(s0, s1) > gap_end:
+                first, second = ((gap_start, gap_end) if s0 < s1 else
+                                 (gap_end, gap_start))
+                q0 = (a[0] + ux * first + nx * n0,
+                      a[1] + uy * first + ny * n0)
+                q1 = (a[0] + ux * second + nx * n0,
+                      a[1] + uy * second + ny * n0)
+                split.extend(((p0, q0, owner), (q1, p1, owner)))
+                faces.add(n0)
+            else:
+                split.append((p0, p1, owner))
+        if faces != {-half, half}:
+            raise PlanError("Three-wall door does not cross two exposed wall faces")
+        merged = split
     def xy(point: tuple[Decimal, Decimal]) -> str:
         return f"{_coordinate(point[0] + origin[0])},{_coordinate(point[1] + origin[1])}"
     result = []
@@ -986,6 +1027,15 @@ def _three_wall_union_commands(walls: list[dict], joins: list[dict], nodes: dict
         result.append({"planspec_id": f"three-wall-union__outline_{index}",
                        "source_id": owner, "part": f"outline_{index}",
                        "command": f"LINE {start_xy} {end_xy}", "layer": walls[0]["layer"]})
+    if door is not None:
+        for part, station in (("jamb_start", gap_start), ("jamb_end", gap_end)):
+            points = [(a[0] + ux * station + nx * side * half,
+                       a[1] + uy * station + ny * side * half)
+                      for side in (-1, 1)]
+            result.append({"planspec_id": f"{door['id']}__{part}",
+                           "source_id": door["id"], "part": part,
+                           "command": f"LINE {xy(points[0])} {xy(points[1])}",
+                           "layer": walls[0]["layer"]})
     return result
 
 
@@ -1237,11 +1287,21 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and plan["walls"]:
         wall_status = "unsupported"
         if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and len(plan["walls"]) == 3 and \
-                len(plan["joins"]) == 2 and not plan["openings"]:
-            union = _three_wall_union_commands(plan["walls"], plan["joins"], nodes, origin)
+                len(plan["joins"]) == 2 and len(plan["openings"]) <= 1 and \
+                (not plan["openings"] or
+                 (plan["openings"][0]["kind"] == "door" and
+                  plan["openings"][0]["wall_id"] in {wall["id"] for wall in plan["walls"]})):
+            door = plan["openings"][0] if plan["openings"] else None
+            union = _three_wall_union_commands(plan["walls"], plan["joins"], nodes, origin, door)
             commands.extend(union)
-            wall_parts = len(union)
-            wall_status = "compiled_three_wall_two_join_union"
+            if door is not None:
+                target = next(wall for wall in plan["walls"] if wall["id"] == door["wall_id"])
+                commands.extend(_single_door_symbol_commands(target, door, nodes, origin,
+                    arc_midpoint_places=9 if plan["schema_version"] in
+                    {"planspec-8", "planspec-9"} else 6))
+            wall_parts = len(union) + (2 if door is not None else 0)
+            wall_status = ("compiled_three_wall_single_door" if door is not None else
+                           "compiled_three_wall_two_join_union")
         elif plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and len(plan["walls"]) == 2 and \
                 len(plan["joins"]) == 1 and len(plan["openings"]) <= 1:
             walls_by_id = {wall["id"]: wall for wall in plan["walls"]}
@@ -1433,11 +1493,13 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             opening["kind"] != "clear" for opening in plan["openings"]) and \
             wall_status not in {"compiled_single_door_wall", "compiled_multi_door_wall",
                                 "compiled_joined_wall_single_door",
+                                "compiled_three_wall_single_door",
                                 "compiled_single_window_wall"}:
         missing.add("opening_compilation")
     if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8", "planspec-9"} and plan["joins"] and \
             wall_status not in {"compiled_orthogonal_union_two_walls",
                                 "compiled_joined_wall_single_door",
+                                "compiled_three_wall_single_door",
                                 "compiled_three_wall_two_join_union"}:
         missing.add("join_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):

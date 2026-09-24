@@ -636,6 +636,33 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual(rotated_edges[0], ["-3.1,4", "-3,4"])
         self.assertEqual(rotated_edges[-1], ["-3.1,7", "-3.1,4"])
 
+    def test_v5_three_wall_chain_one_door_opens_both_faces(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-three-wall-door.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_three_wall_single_door", "generated_parts": 18})
+        commands = {item["planspec_id"]: item["command"] for item in result["commands"]}
+        self.assertEqual(len(commands), 18)
+        self.assertEqual(commands["three-wall-union__outline_0"], "LINE 0,-0.1 1.3,-0.1")
+        self.assertEqual(commands["three-wall-union__outline_1"], "LINE 2.2,-0.1 4,-0.1")
+        self.assertEqual(commands["three-wall-union__outline_11"], "LINE 3.9,0.1 2.2,0.1")
+        self.assertEqual(commands["three-wall-union__outline_12"], "LINE 1.3,0.1 0,0.1")
+        self.assertEqual(commands["door-chain__jamb_start"], "LINE 1.3,-0.1 1.3,0.1")
+        self.assertEqual(commands["door-chain__jamb_end"], "LINE 2.2,-0.1 2.2,0.1")
+        self.assertEqual(commands["door-chain__leaf_open"], "LINE 1.3,0.1 1.3,1")
+        self.assertTrue(commands["door-chain__swing_arc"].startswith("ARC 2.2,0.1 "))
+        self.assertEqual(result["commands_sha256"], module.dry_run(deepcopy(value))["commands_sha256"])
+        near_join = deepcopy(value)
+        near_join["openings"][0]["offset_m"] = 0.5
+        with self.assertRaisesRegex(module.PlanError, "clear distance"):
+            module.dry_run(near_join)
+        middle = deepcopy(value)
+        middle["openings"][0]["wall_id"] = "wall-vertical"
+        middle["openings"][0]["offset_m"] = 1.05
+        self.assertEqual(module.dry_run(middle)["wall_compilation"]["generated_parts"], 18)
+
     def test_v6_wall_face_binding_validates_without_emitting_native_dimension(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))
