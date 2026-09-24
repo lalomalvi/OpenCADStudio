@@ -201,7 +201,7 @@ class PlanSpecTests(unittest.TestCase):
             {"id": "window-1", "wall_id": "wall-1", "offset_m": 3,
              "width_m": 1, "kind": "window", "source": SOURCE}]
         result = module.dry_run(value)
-        self.assertEqual(result["architecture"]["status"], "validated_uncompiled")
+        self.assertEqual(result["architecture"]["status"], "validated")
         self.assertEqual(result["architecture"]["walls"][0]["length_m"], "5.0")
         self.assertEqual(result["unsupported"], ["opening_compilation", "wall_compilation"])
         self.assertFalse(result["executable"])
@@ -227,6 +227,24 @@ class PlanSpecTests(unittest.TestCase):
         value["openings"][1]["wall_id"] = "absent"
         with self.assertRaisesRegex(module.PlanError, "Opening reference"):
             module.validate(value)
+
+    def test_v3_single_unopened_wall_compiles_four_traceable_edges(self):
+        value = plan()
+        value["schema_version"] = "planspec-3"
+        value["lines"] = []
+        value["topology"] = {"contours": []}
+        value["walls"] = [{"id": "wall-1", "start": "a", "end": "c",
+                           "thickness_m": 0.2, "layer": "0", "source": SOURCE}]
+        value["openings"] = []
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_unopened_wall", "generated_parts": 4})
+        self.assertEqual([item["command"] for item in result["commands"]], [
+            "LINE 0,0.1 5,0.1", "LINE 5,0.1 5,-0.1",
+            "LINE 5,-0.1 0,-0.1", "LINE 0,-0.1 0,0.1"])
+        self.assertEqual([item["source_id"] for item in result["commands"]], ["wall-1"] * 4)
+        self.assertEqual(len({item["planspec_id"] for item in result["commands"]}), 4)
 
 
 if __name__ == "__main__":

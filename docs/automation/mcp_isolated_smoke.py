@@ -81,7 +81,8 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
     report = {"schema_version": "mcp-isolated-l2-1", "status": "failed",
               "binary_sha256": hashlib.sha256(server.read_bytes()).hexdigest().upper(),
               "output": str(output)}
-    if plan_fixture not in {"synthetic-room", "synthetic-layer", "synthetic-contour"}:
+    if plan_fixture not in {"synthetic-room", "synthetic-layer", "synthetic-contour",
+                            "synthetic-wall"}:
         raise ValueError("Only versioned synthetic PlanSpec fixtures are allowed")
     fixtures = Path(__file__).resolve().parent / "masterplan/fixtures"
     fixture = fixtures / f"{plan_fixture}.planspec.json"
@@ -92,13 +93,15 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             raise ProtocolError("Layer capability manifest belongs to another build")
     compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")),
                        capabilities=set(manifest["verified_capabilities"]) if manifest else None)
-    expected_count = 4 if plan_fixture == "synthetic-contour" else 3
+    expected_count = 4 if plan_fixture in {"synthetic-contour", "synthetic-wall"} else 3
     if not compiled["executable"] or len(compiled["commands"]) != expected_count:
         raise ProtocolError("Synthetic PlanSpec has unsupported or missing commands")
     report["planspec"] = {"fixture": fixture.name,
                           "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
                           "commands_sha256": compiled["commands_sha256"],
                           "topology": compiled["topology"],
+                          "architecture": compiled["architecture"],
+                          "wall_compilation": compiled["wall_compilation"],
                           "dwg_unit_profile": compiled["dwg_unit_profile"],
                           "command_count": len(compiled["commands"]),
                           "step_count": len(compiled["execution_steps"])}
@@ -174,6 +177,13 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         if len(set(handles.values())) != len(handles):
             raise ProtocolError("PlanSpec handles are not unique")
         report["planspec"]["handles_by_id"] = handles
+        handles_by_source = {}
+        for item in compiled["commands"]:
+            if item.get("source_id"):
+                handles_by_source.setdefault(item["source_id"], []).append(
+                    handles[item["planspec_id"]])
+        if handles_by_source:
+            report["planspec"]["handles_by_source"] = handles_by_source
         properties = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
                                               "parameters": {"handles": list(handles.values()),
                                                              "detail": "summary"}})

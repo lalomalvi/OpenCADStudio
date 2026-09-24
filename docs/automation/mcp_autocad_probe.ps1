@@ -196,9 +196,13 @@ try {
     }
     $expected = @{}
     $richSourceReport = $null
+    $sourceReportMatch = $null
     $sourceReportPath = Join-Path ([IO.Path]::GetDirectoryName($drawing)) 'report.json'
     if (Test-Path -LiteralPath $sourceReportPath -PathType Leaf) {
         $sourceReport = Get-Content -LiteralPath $sourceReportPath -Raw | ConvertFrom-Json
+        $sourceReportMatch = $sourceReport.status -eq 'passed' -and
+            ($sourceReport.verified_output.sha256 -eq $before -or
+             $sourceReport.second_save.sha256 -eq $before)
         if ($sourceReport.status -eq 'passed' -and
             $sourceReport.verified_output.sha256 -eq $before) {
             $richSourceReport = $sourceReport
@@ -307,7 +311,8 @@ try {
         $fixtureName = [string]$richSourceReport.planspec.fixture
         if ($fixtureName -notin @('synthetic-room.planspec.json',
                                   'synthetic-layer.planspec.json',
-                                  'synthetic-contour.planspec.json')) {
+                                  'synthetic-contour.planspec.json',
+                                  'synthetic-wall.planspec.json')) {
             $geometrySourceValid = $false
         } else {
             $fixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $fixtureName)
@@ -365,12 +370,51 @@ try {
                     matched_1e_6 = [bool]$matched
                 }
             }
+            if ($fixture.schema_version -eq 'planspec-3' -and
+                $fixture.walls.Count -eq 1 -and $fixture.openings.Count -eq 0) {
+                $wall = $fixture.walls[0]
+                $a = $nodes[$wall.start]
+                $b = $nodes[$wall.end]
+                $dx = $b[0] - $a[0]
+                $dy = $b[1] - $a[1]
+                $length = [Math]::Sqrt($dx * $dx + $dy * $dy)
+                $half = [double]$wall.thickness_m / 2.0
+                $nx = -$dy * $half / $length
+                $ny = $dx * $half / $length
+                $corners = @(
+                    @(($a[0] + $nx), ($a[1] + $ny), 0.0),
+                    @(($b[0] + $nx), ($b[1] + $ny), 0.0),
+                    @(($b[0] - $nx), ($b[1] - $ny), 0.0),
+                    @(($a[0] - $nx), ($a[1] - $ny), 0.0)
+                )
+                for ($index = 0; $index -lt 4; $index++) {
+                    $partId = '{0}__edge_{1}' -f $wall.id, $index
+                    $handle = [string]$richSourceReport.planspec.handles_by_id.($partId)
+                    $row = if ($handle) { $entityByHandle[$handle] } else { $null }
+                    $observedStart = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                    $observedEnd = if ($row) { Read-DxfPoint $row[16] } else { $null }
+                    $expectedStart = $corners[$index]
+                    $expectedEnd = $corners[($index + 1) % 4]
+                    $matched = $row -and $row[1] -eq 'LINE' -and $row[3] -eq $wall.layer -and
+                        (((Same-Point $expectedStart $observedStart) -and
+                          (Same-Point $expectedEnd $observedEnd)) -or
+                         ((Same-Point $expectedStart $observedEnd) -and
+                          (Same-Point $expectedEnd $observedStart)))
+                    $geometryComparison += [ordered]@{
+                        planspec_id = $partId; source_id = $wall.id; kind = 'WALL_EDGE'
+                        handle = $handle; expected_layer = $wall.layer
+                        expected_start = $expectedStart; expected_end = $expectedEnd
+                        autocad_start = $observedStart; autocad_end = $observedEnd
+                        matched_1e_6 = [bool]$matched
+                    }
+                }
+            }
         }
     }
     $geometryMismatch = ($geometrySourceValid -eq $false) -or
         @($geometryComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-4'
+        schema_version = 'mcp-autocad-audit-l4-5'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion
@@ -392,8 +436,10 @@ try {
         dimension_comparison = $dimensionComparison
         property_comparison = $propertyComparison
         geometry_source_valid = $geometrySourceValid
+        source_report_match = $sourceReportMatch
         geometry_comparison = $geometryComparison
-        semantic_verdict = if ($dimensionMismatch -or $propertyMismatch -or $geometryMismatch) {
+        semantic_verdict = if ($sourceReportMatch -eq $false -or $dimensionMismatch -or
+                              $propertyMismatch -or $geometryMismatch) {
             'mismatch'
         } elseif ($expected.Count -gt 0 -or $propertyComparison.Count -gt 0 -or
                   $geometryComparison.Count -gt 0) {
@@ -409,7 +455,8 @@ try {
         verdict = if (-not $auditZero -or -not $censusDone -or $before -ne $after -or
                       ($null -ne $ExpectedInsunits -and $insunits -ne $ExpectedInsunits)) {
             'failed'
-        } elseif ($dimensionMismatch -or $propertyMismatch -or $geometryMismatch) { 'semantic_mismatch'
+        } elseif ($sourceReportMatch -eq $false -or $dimensionMismatch -or
+                  $propertyMismatch -or $geometryMismatch) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {
             'partial_abnormal_exit'
         } else { 'audit_and_census_passed' }

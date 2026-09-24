@@ -219,9 +219,9 @@ def analyze_architecture(plan: dict[str, Any]) -> dict[str, Any]:
         for first, second in zip(intervals, intervals[1:]):
             if second[0] - first[1] < Decimal("0.001"):
                 raise PlanError(f"Openings {first[2]} and {second[2]} overlap or touch on {wall_id}")
-    return {"schema_version": "planspec-architecture-1", "status": "validated_uncompiled",
+    return {"schema_version": "planspec-architecture-1", "status": "validated",
             "walls": walls, "openings": opening_results,
-            "scope": "straight_wall_axes_and_opening_intervals_no_cad_compiler"}
+            "scope": "straight_wall_axes_and_opening_intervals"}
 
 
 def analyze_topology(plan: dict[str, Any]) -> dict[str, Any]:
@@ -427,6 +427,33 @@ def _coordinate(value: Decimal) -> str:
     return format(rounded, "f").rstrip("0").rstrip(".")
 
 
+def _single_wall_commands(wall: dict, nodes: dict, origin: tuple[Decimal, Decimal]) -> list[dict]:
+    """Compile one straight wall without openings as a closed four-line outline."""
+    a, b = nodes[wall["start"]], nodes[wall["end"]]
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = (dx * dx + dy * dy).sqrt()
+    if length == 0:
+        raise PlanError("Wall axis has zero length")
+    half = _number(wall["thickness_m"], "wall.thickness_m") / 2
+    offset = (-dy * half / length, dx * half / length)
+    corners = [(a[0] + offset[0], a[1] + offset[1]),
+               (b[0] + offset[0], b[1] + offset[1]),
+               (b[0] - offset[0], b[1] - offset[1]),
+               (a[0] - offset[0], a[1] - offset[1])]
+    commands = []
+    for index in range(4):
+        start, end = corners[index], corners[(index + 1) % 4]
+        coords = [*(_coordinate(start[axis] + origin[axis]) for axis in (0, 1)),
+                  *(_coordinate(end[axis] + origin[axis]) for axis in (0, 1))]
+        if coords[:2] == coords[2:]:
+            raise PlanError(f"Wall {wall['id']} outline collapses at compiler precision")
+        commands.append({"planspec_id": f"{wall['id']}__edge_{index}",
+                         "source_id": wall["id"], "part": f"edge_{index}",
+                         "command": f"LINE {coords[0]},{coords[1]} {coords[2]},{coords[3]}",
+                         "layer": wall["layer"]})
+    return commands
+
+
 def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
     dimension_graph = analyze_dimension_graph(plan)
@@ -452,7 +479,14 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         radius = _coordinate(_number(circle["radius"], "radius"))
         commands.append({"planspec_id": circle["id"], "command": f"CIRCLE {x},{y} {radius}",
                          "layer": circle["layer"]})
-    layers = sorted({item["layer"] for item in (*plan["lines"], *plan["circles"])} - {"0"})
+    wall_parts = 0
+    if plan["schema_version"] == "planspec-3" and len(plan["walls"]) == 1 and \
+            not plan["openings"]:
+        commands.extend(_single_wall_commands(plan["walls"][0], nodes, origin))
+        wall_parts = 4
+    if len({item["planspec_id"] for item in commands}) != len(commands):
+        raise PlanError("Generated wall part ID collides with PlanSpec geometry ID")
+    layers = sorted({item["layer"] for item in commands} - {"0"})
     # INSUNITS=6 is metres in DWG. A metric GUI template may otherwise default
     # to INSUNITS=4 (millimetres), silently changing insertion scale semantics.
     execution = [{"planspec_id": None, "command": "SETVAR INSUNITS 6", "layer": "0"}]
@@ -469,7 +503,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     missing = set()
     if plan["dimensions"]:
         missing.add("native_dimension")
-    if plan["schema_version"] == "planspec-3" and plan["walls"]:
+    if plan["schema_version"] == "planspec-3" and plan["walls"] and \
+            (len(plan["walls"]) != 1 or plan["openings"]):
         missing.add("wall_compilation")
     if plan["schema_version"] == "planspec-3" and plan["openings"]:
         missing.add("opening_compilation")
@@ -483,6 +518,10 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             "dimension_graph": dimension_graph,
             "topology": topology,
             "architecture": architecture,
+            "wall_compilation": {"status": "compiled_single_unopened_wall" if wall_parts else
+                                 "unsupported" if plan["schema_version"] == "planspec-3"
+                                 and plan["walls"] else "not_applicable",
+                                 "generated_parts": wall_parts},
             "geometry_qa": geometry_qa,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
             "unsupported": unsupported, "executable": not unsupported,
