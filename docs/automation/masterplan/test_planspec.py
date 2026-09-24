@@ -682,6 +682,38 @@ class PlanSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(module.PlanError, "clear distance"):
             module.dry_run(near_top_join)
 
+    def test_v8_middle_wall_door_typed_obstacle_blocks_before_cad(self):
+        fixture = (Path(__file__).with_name("fixtures") /
+                   "synthetic-three-wall-middle-door-obstacle-v8.planspec.json")
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        blocked = module.dry_run(value)
+        self.assertEqual(blocked["wall_compilation"],
+                         {"status": "compiled_three_wall_single_door", "generated_parts": 18})
+        self.assertEqual(blocked["quality_blockers"], ["door_sweep_hits_typed_obstacle"])
+        self.assertFalse(blocked["executable"])
+        self.assertEqual(blocked["door_clearance_qa"]["typed_obstacle_intersections"],
+                         [{"door_id": "door-middle", "obstacle_id": "furniture-middle",
+                           "kind": "furniture", "source_classification": "measured",
+                           "source_confidence": 1, "disposition": "blocking"}])
+        high = deepcopy(value)
+        high["obstacles"][0]["base_z_m"] = 2.1
+        clear = module.dry_run(high)
+        self.assertTrue(clear["executable"])
+        self.assertEqual(clear["door_clearance_qa"]["status"], "clear")
+        self.assertEqual(blocked["commands_sha256"], clear["commands_sha256"])
+        inferred = deepcopy(value)
+        inferred["obstacles"][0]["source"]["classification"] = "inferred"
+        review = module.dry_run(inferred)
+        self.assertFalse(review["executable"])
+        self.assertEqual(review["door_clearance_qa"]["typed_obstacle_intersections"][0]
+                         ["disposition"], "review_blocked")
+        annotation = deepcopy(value)
+        annotation["obstacles"][0]["kind"] = "annotation"
+        noted = module.dry_run(annotation)
+        self.assertTrue(noted["executable"])
+        self.assertEqual(noted["door_clearance_qa"]["typed_obstacle_intersections"][0]
+                         ["disposition"], "nonphysical")
+
     def test_v6_wall_face_binding_validates_without_emitting_native_dimension(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))
