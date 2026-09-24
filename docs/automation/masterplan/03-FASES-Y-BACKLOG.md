@@ -193,3 +193,5 @@ Cada tarea mantiene: ID, estado (pending/in_progress/passed/failed/partial/block
 El responsable es la sesión ejecutora; no se presupone trabajo paralelo de agentes. Un bloqueo no detiene tareas independientes y autorizadas.
 
 Actualización 2026-09-24, M7.2 parcial: perímetro visible de departamentos más tres tabiques verticales seleccionados después de descubrimiento Luna; 16/16 LINE cotejados por handle en AutoCAD sobre DWG sintético, con dos nuevos intentos Luna fallidos preservados. No es plano completo, cohorte reservada ni aceptación M7. Véase [M7-APARTAMENTO-TABIQUES-VISIBLES-V1.md](M7-APARTAMENTO-TABIQUES-VISIBLES-V1.md).
+
+Actualización 2026-09-24, M7.2 parcial ampliado: cinco bandas horizontales aisladas en recortes 8×, oráculos congelados antes de Luna y 21/21 LINE cotejados por handle en AutoCAD. La fuente pertenece a desarrollo y el plan sigue incompleto. Véase [M7-APARTAMENTO-RECORTES-HORIZONTALES-V1.md](M7-APARTAMENTO-RECORTES-HORIZONTALES-V1.md).
