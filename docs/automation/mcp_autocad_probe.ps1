@@ -50,6 +50,12 @@ function Same-Point($first, $second) {
     return $true
 }
 
+function Same-Angle([double]$expected, [double]$observed) {
+    $turn = 2.0 * [Math]::PI
+    $delta = [Math]::Abs(($observed - $expected) % $turn)
+    return [Math]::Min($delta, $turn - $delta) -le 1e-6
+}
+
 function Wall-Point($a, $ux, $uy, $nx, $ny, $distance, $side) {
     return ,@(($a[0] + $ux * $distance + $nx * $side),
               ($a[1] + $uy * $distance + $ny * $side), 0.0)
@@ -480,6 +486,7 @@ try {
                                   'synthetic-wall.planspec.json',
                                   'synthetic-wall-gap.planspec.json',
                                   'synthetic-door-swing.planspec.json',
+                                  'synthetic-two-door-wall-v8.planspec.json',
                                   'synthetic-window.planspec.json',
                                   'synthetic-wall-join.planspec.json',
                                   'synthetic-wall-face-dimension-readable-v7.planspec.json',
@@ -590,7 +597,10 @@ try {
                  @($fixture.openings | Where-Object { $_.kind -ne 'clear' }).Count -eq 0) -or
                 ($fixture.schema_version -eq 'planspec-4' -and
                  $fixture.walls.Count -eq 1 -and $fixture.openings.Count -eq 1 -and
-                 $fixture.openings[0].kind -in @('door', 'window'))) {
+                 $fixture.openings[0].kind -in @('door', 'window')) -or
+                ($fixture.schema_version -eq 'planspec-8' -and
+                 $fixture.walls.Count -eq 1 -and $fixture.openings.Count -eq 2 -and
+                 @($fixture.openings | Where-Object { $_.kind -eq 'door' }).Count -eq 2)) {
                 $wall = $fixture.walls[0]
                 $a = $nodes[$wall.start]
                 $b = $nodes[$wall.end]
@@ -694,9 +704,12 @@ try {
                         }
                     }
                 }
-                if ($fixture.schema_version -eq 'planspec-4' -and
-                    $fixture.openings[0].kind -eq 'door') {
-                    $door = $fixture.openings[0]
+                if (($fixture.schema_version -eq 'planspec-4' -and
+                     $fixture.openings.Count -eq 1 -and $fixture.openings[0].kind -eq 'door') -or
+                    ($fixture.schema_version -eq 'planspec-8' -and
+                     $fixture.openings.Count -eq 2 -and
+                     @($fixture.openings | Where-Object { $_.kind -eq 'door' }).Count -eq 2)) {
+                  foreach ($door in $fixture.openings) {
                     $width = [double]$door.width_m
                     $distance = [double]$door.offset_m
                     $side = if ($door.swing.side -eq 'left') { 1.0 } else { -1.0 }
@@ -744,8 +757,8 @@ try {
                         (Same-Point $hinge $arcCenter) -and $null -ne $arcRadius -and
                         [Math]::Abs($arcRadius - $width) -le 1e-6 -and
                         $null -ne $arcStart -and $null -ne $arcEnd -and
-                        [Math]::Abs((($arcStart + $turn) % $turn) - $expectedStartAngle) -le 1e-6 -and
-                        [Math]::Abs((($arcEnd + $turn) % $turn) - $expectedEndAngle) -le 1e-6
+                        (Same-Angle $expectedStartAngle $arcStart) -and
+                        (Same-Angle $expectedEndAngle $arcEnd)
                     $geometryComparison += [ordered]@{
                         planspec_id = $arcId; source_id = $door.id; kind = 'DOOR_SWING_ARC'
                         handle = $arcHandle; expected_layer = $wall.layer
@@ -757,6 +770,7 @@ try {
                         autocad_start_angle = $arcStart; autocad_end_angle = $arcEnd
                         matched_1e_6 = [bool]$arcMatched
                     }
+                  }
                 }
             }
             if ($fixture.schema_version -eq 'planspec-5' -and
@@ -816,7 +830,8 @@ try {
     if ($richSourceReport -and $richSourceReport.planspec.fixture -in
             @('synthetic-wall.planspec.json', 'synthetic-wall-gap.planspec.json',
               'synthetic-door-swing.planspec.json', 'synthetic-window.planspec.json',
-              'synthetic-wall-join.planspec.json')) {
+              'synthetic-wall-join.planspec.json',
+              'synthetic-two-door-wall-v8.planspec.json')) {
         $wallModelCountMatch = $declaredCount -eq $geometryComparison.Count
     }
     if ($richSourceReport.schema_version -eq 'mcp-wall-thickness-l2-1') {

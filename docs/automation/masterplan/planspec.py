@@ -648,10 +648,10 @@ def analyze_geometry(plan: dict[str, Any]) -> dict[str, Any]:
             "scope": "2d_line_circle_primitives_no_contour_semantics"}
 
 
-def _coordinate(value: Decimal) -> str:
+def _coordinate(value: Decimal, *, places: int = 6) -> str:
     if abs(value) > Decimal("1000000"):
         raise PlanError("Coordinate exceeds compiler range")
-    rounded = value.quantize(Decimal("0.000001"))
+    rounded = value.quantize(Decimal(1).scaleb(-places))
     if rounded == 0:
         if value != 0:
             raise PlanError("Coordinate is below compiler precision")
@@ -736,7 +736,8 @@ def _clear_opening_wall_commands(wall: dict, openings: list[dict], nodes: dict,
 
 
 def _single_door_symbol_commands(wall: dict, door: dict, nodes: dict,
-                                 origin: tuple[Decimal, Decimal]) -> list[dict]:
+                                 origin: tuple[Decimal, Decimal],
+                                 *, arc_midpoint_places: int = 6) -> list[dict]:
     """Emit one 90-degree plan-view leaf and its swing arc on the declared wall face."""
     a, b = nodes[wall["start"]], nodes[wall["end"]]
     dx, dy = b[0] - a[0], b[1] - a[1]
@@ -759,10 +760,11 @@ def _single_door_symbol_commands(wall: dict, door: dict, nodes: dict,
     midpoint = (hinge[0] + (along[0] + outward[0]) * diagonal,
                 hinge[1] + (along[1] + outward[1]) * diagonal)
 
-    def xy(point: tuple[Decimal, Decimal]) -> str:
-        return ",".join(_coordinate(point[index] + origin[index]) for index in (0, 1))
+    def xy(point: tuple[Decimal, Decimal], *, places: int = 6) -> str:
+        return ",".join(_coordinate(point[index] + origin[index], places=places)
+                        for index in (0, 1))
 
-    points = [xy(point) for point in (hinge, closed, midpoint, opened)]
+    points = [xy(hinge), xy(closed), xy(midpoint, places=arc_midpoint_places), xy(opened)]
     if len(set(points)) != 4:
         raise PlanError(f"Door {door['id']} symbol collapses at compiler precision")
     return [{"planspec_id": f"{door['id']}__leaf_open", "source_id": door["id"],
@@ -1087,12 +1089,17 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             wall_parts = 4 * (len(plan["openings"]) + 1)
             wall_status = "compiled_single_clear_opening_wall"
         elif plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"} and len(plan["walls"]) == 1 and \
-                len(plan["openings"]) == 1 and plan["openings"][0]["kind"] == "door":
-            wall, door = plan["walls"][0], plan["openings"][0]
-            commands.extend(_clear_opening_wall_commands(wall, [door], nodes, origin))
-            commands.extend(_single_door_symbol_commands(wall, door, nodes, origin))
-            wall_parts = 10
-            wall_status = "compiled_single_door_wall"
+                1 <= len(plan["openings"]) <= (2 if plan["schema_version"] == "planspec-8" else 1) and \
+                all(item["kind"] == "door" for item in plan["openings"]):
+            wall = plan["walls"][0]
+            doors = sorted(plan["openings"], key=lambda item: (_number(item["offset_m"], "door.offset_m"), item["id"]))
+            commands.extend(_clear_opening_wall_commands(wall, doors, nodes, origin))
+            for door in doors:
+                commands.extend(_single_door_symbol_commands(wall, door, nodes, origin,
+                    arc_midpoint_places=9 if plan["schema_version"] == "planspec-8" else 6))
+            wall_parts = 4 * (len(doors) + 1) + 2 * len(doors)
+            wall_status = ("compiled_single_door_wall" if len(doors) == 1 else
+                           "compiled_multi_door_wall")
         elif plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"} and len(plan["walls"]) == 1 and \
                 len(plan["openings"]) == 1 and plan["openings"][0]["kind"] == "window":
             wall, window = plan["walls"][0], plan["openings"][0]
@@ -1182,7 +1189,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         missing.add("wall_compilation")
     if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"} and any(
             opening["kind"] != "clear" for opening in plan["openings"]) and \
-            wall_status not in {"compiled_single_door_wall", "compiled_single_window_wall"}:
+            wall_status not in {"compiled_single_door_wall", "compiled_multi_door_wall",
+                                "compiled_single_window_wall"}:
         missing.add("opening_compilation")
     if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8"} and plan["joins"] and \
             wall_status != "compiled_orthogonal_union_two_walls":

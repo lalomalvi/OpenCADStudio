@@ -431,6 +431,37 @@ class PlanSpecTests(unittest.TestCase):
         with self.assertRaises(module.PlanError):
             module.validate(missing_height)
 
+    def test_v8_two_doors_compile_deterministically_and_qa_each_door(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        value = json.loads((fixtures / "synthetic-two-door-wall-v8.planspec.json")
+                           .read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_multi_door_wall", "generated_parts": 16})
+        self.assertEqual(len(result["commands"]), 20)
+        self.assertEqual([item["command"] for item in result["commands"]
+                          if item.get("part") == "swing_arc"],
+                         ["ARC 1.9,0.1 1.636396103,0.736396103 1,1",
+                          "ARC 3,0.1 2.765685425,0.665685425 2.2,0.9"])
+        self.assertEqual(result["door_clearance_qa"]["status"], "clear")
+        reversed_order = deepcopy(value)
+        reversed_order["openings"].reverse()
+        self.assertEqual(module.dry_run(reversed_order)["commands_sha256"],
+                         result["commands_sha256"])
+        overlap = deepcopy(value)
+        overlap["openings"][1]["offset_m"] = 1.7
+        with self.assertRaises(module.PlanError):
+            module.dry_run(overlap)
+        obstacle = deepcopy(value)
+        obstacle["obstacles"] = json.loads((fixtures / "synthetic-door-obstacle-v8.planspec.json")
+                                           .read_text(encoding="utf-8"))["obstacles"]
+        obstacle["obstacles"][0].update(min_x_m=2.4, max_x_m=2.5)
+        blocked = module.dry_run(obstacle)
+        self.assertEqual(blocked["quality_blockers"], ["door_sweep_hits_typed_obstacle"])
+        self.assertEqual([item["door_id"] for item in blocked["door_clearance_qa"]
+                          ["typed_obstacle_intersections"]], ["door-east"])
+
     def test_v4_window_elevation_and_kind_specific_fields(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))

@@ -13,4 +13,4 @@ python -c "import json,sys;sys.path.insert(0,'docs/automation');from masterplan.
 python -m unittest discover -s docs/automation/masterplan -p 'test_*.py'
 ```
 
-El fixture prueba solo una puerta y una huella rectangular de mobiliario. No acredita colisión de mallas 3D, espesor de hoja, tolerancias de instalación, obstáculos curvos, varias aperturas compiladas, comportamiento en DWG ni legibilidad visual. Mantener estos gates separados antes de usar el resultado como aceptación de un plano real.
+El fixture de obstáculo prueba una puerta y una huella rectangular de mobiliario. `fixtures/synthetic-two-door-wall-v8.planspec.json` comprueba por separado dos puertas sin obstáculos en el mismo muro: 20 entidades CAD, incluyendo dos arcos. El compilador limita este perfil v8 a dos puertas del mismo muro; las versiones anteriores conservan su alcance. No acredita colisión de mallas 3D, espesor de hoja, tolerancias de instalación, obstáculos curvos, puertas en muros distintos o unidos, ni legibilidad visual. Mantener estos gates separados antes de usar el resultado como aceptación de un plano real.
