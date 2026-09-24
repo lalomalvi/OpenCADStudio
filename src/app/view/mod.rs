@@ -2534,6 +2534,14 @@ impl OpenCADStudio {
         } else {
             Subscription::none()
         };
+        let control_capture = if self.capture_awaiting_render() {
+            // Timer remains live when a window is minimized and no frame
+            // notifications arrive, so the capture deadline still fails.
+            iced::time::every(std::time::Duration::from_millis(50))
+                .map(|_| Message::ControlCaptureFrame)
+        } else {
+            Subscription::none()
+        };
         // Blink the MText preview caret while the editor is open.
         let caret_blink = if self.mtext_editor.is_some() {
             iced::time::every(std::time::Duration::from_millis(530))
@@ -2756,6 +2764,7 @@ impl OpenCADStudio {
             nav_settle,
             gpu_probe,
             thumbnail_capture,
+            control_capture,
             caret_blink,
             web_fonts,
             autosave,

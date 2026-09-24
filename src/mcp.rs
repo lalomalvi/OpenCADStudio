@@ -1545,13 +1545,23 @@ fn call_tool(
                     return Err(format!("Capture {key} changed before screenshot completed"));
                 }
             }
+            if metadata["rendered_geometry_revision"] != metadata["geometry_revision"]
+                || metadata["rendered_camera_revision"] != metadata["camera_revision"]
+                || metadata["render_fence"] != "shader_encoded_frame"
+            {
+                let _ = std::fs::remove_file(&path);
+                return Err("Capture lacks matching shader render frame".into());
+            }
             let bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
             let _ = std::fs::remove_file(path);
             Ok(json!({"$image":BASE64.encode(bytes),"$meta":{
                 "ok":true,"document_id":metadata["document_id"],"revision":metadata["revision"],
                 "geometry_revision":metadata["geometry_revision"],
                 "camera_revision":metadata["camera_revision"],
-                "width":metadata["width"],"height":metadata["height"],"scope":metadata["scope"]}}))
+                "width":metadata["width"],"height":metadata["height"],"scope":metadata["scope"],
+                "rendered_geometry_revision":metadata["rendered_geometry_revision"],
+                "rendered_camera_revision":metadata["rendered_camera_revision"],
+                "render_fence":metadata["render_fence"]}}))
         }
         _ => Err(format!("Unknown tool: {name}")),
     }

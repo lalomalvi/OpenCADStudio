@@ -261,6 +261,8 @@ pub struct ViewportData {
 pub struct Primitive {
     /// One entry per viewport drawn this frame (≥1).
     pub(in crate::scene) viewports: Vec<ViewportData>,
+    pub(in crate::scene) rendered_revision:
+        Arc<std::sync::Mutex<Option<(u64, u64, std::time::Instant)>>>,
     /// Background color used to clear each viewport's MSAA buffer.
     pub(in crate::scene) bg_color: [f32; 4],
     /// Active Iced theme text colour for GPU-rendered ViewCube labels.
@@ -1309,6 +1311,7 @@ retained_contributors={}",
     ) {
         let nav_render_started = iced::time::Instant::now();
         pipeline.frame_rendered.store(true, std::sync::atomic::Ordering::Relaxed);
+        let mut encoded_revision = None;
         let clip_right = clip.x + clip.width;
         let clip_bottom = clip.y + clip.height;
         for vp in &self.viewports {
@@ -1348,12 +1351,17 @@ retained_contributors={}",
                 vp.hidden_line,
                 vp.show_3d_edges,
             );
+            encoded_revision = Some((vp.geometry_epoch, vp.camera_generation));
             // The ViewCube renders directly to the surface in the top-right corner
             // of the viewport. Skip it only when the top-right corner is off-canvas
             // or the visible area cannot fit the cube.
             if vp.show_viewcube && inner.viewcube.should_render(surface_dest, surface_clip, clip) {
                 inner.viewcube.render(encoder, target, surface_clip);
             }
+        }
+        if let Some(revision) = encoded_revision {
+            *self.rendered_revision.lock().unwrap() =
+                Some((revision.0, revision.1, std::time::Instant::now()));
         }
         let render_ms = nav_render_started.elapsed().as_secs_f64() * 1000.0;
         if let Some(sample) = self.nav_perf {
@@ -4169,6 +4177,7 @@ impl Scene {
         });
         Primitive {
             viewports,
+            rendered_revision: Arc::clone(&self.rendered_revision),
             bg_color,
             viewcube_text_color,
             selection_color: self.selection_color,
@@ -4199,6 +4208,7 @@ impl Scene {
         let Some(tile) = tiles.get(tile_idx) else {
             return Primitive {
                 viewports: vec![],
+                rendered_revision: Arc::clone(&self.rendered_revision),
                 bg_color,
                 viewcube_text_color,
                 selection_color: self.selection_color,
@@ -4261,6 +4271,7 @@ impl Scene {
         });
         Primitive {
             viewports,
+            rendered_revision: Arc::clone(&self.rendered_revision),
             bg_color,
             viewcube_text_color,
             selection_color: self.selection_color,

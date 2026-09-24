@@ -126,6 +126,8 @@ struct Operation {
     document_id: Option<u64>,
     origin_document: u64,
     geometry_revision: u64,
+    started_at: std::time::Instant,
+    capture_dispatched: bool,
     result: Value,
 }
 fn failure(code: &str, error: impl ToString) -> Value {
@@ -686,6 +688,8 @@ impl OpenCADStudio {
             document_id: doc,
             origin_document: tab.id,
             geometry_revision: tab.scene.geometry_epoch,
+            started_at: std::time::Instant::now(),
+            capture_dispatched: false,
             result: json!({}),
         });
         self.control.routing = true;
@@ -907,21 +911,16 @@ impl OpenCADStudio {
                 Task::none()
             }
             "capture" => {
-                let window = self
-                    .main_window
+                self.main_window
                     .ok_or_else(|| failure("gui_required", "Capture requires a GUI window"))?;
-                let path = string(req, "path")?.to_owned();
-                // A minimized window has a 0x0 surface and the renderer
-                // panics reading it back, so report instead of capturing.
-                iced::window::size(window).then(move |size| {
-                    let path = path.clone();
-                    if size.width <= 0.0 || size.height <= 0.0 {
-                        Task::done(Message::ControlScreenshot(path, None))
-                    } else {
-                        iced::window::screenshot(window)
-                            .map(move |s| Message::ControlScreenshot(path.clone(), Some(s)))
-                    }
-                })
+                string(req, "path")?;
+                // Keep the operation pending until a viewport shader frame
+                // encodes this document/camera revision. The frame subscription
+                // drives the screenshot or a bounded failure.
+                if let Some(pending) = self.control.pending.as_mut() {
+                    pending.pending += 1;
+                }
+                Task::none()
             }
             "stop" => {
                 self.control.enabled = false;
@@ -1156,6 +1155,68 @@ impl OpenCADStudio {
         json!({"ok":true,"document_id":tab.id,"geometry_revision":tab.scene.geometry_epoch,"measurements":out})
     }
 
+    pub(super) fn capture_awaiting_render(&self) -> bool {
+        self.control.pending.as_ref().is_some_and(|pending|
+            pending.request["op"] == "capture" && !pending.capture_dispatched)
+    }
+
+    pub(super) fn control_capture_frame(&mut self) -> Task<Message> {
+        let Some(pending) = self.control.pending.as_ref().filter(|p|
+            p.request["op"] == "capture" && !p.capture_dispatched)
+        else {
+            return Task::none();
+        };
+        let expired = pending.started_at.elapsed() >= std::time::Duration::from_secs(8);
+        let active = &self.tabs[self.active_tab];
+        let requested_doc = pending.request["document_id"].as_u64();
+        let requested_geometry = pending.request["geometry_revision"].as_u64();
+        let requested_camera = pending.request["camera_revision"].as_u64();
+        let stale = requested_doc.is_some_and(|value| value != active.id)
+            || requested_geometry.is_some_and(|value| value != active.scene.geometry_epoch)
+            || requested_camera.is_some_and(|value| value != active.scene.camera_generation);
+        let rendered = *active.scene.rendered_revision.lock().unwrap();
+        if stale || expired {
+            self.command_line.push_error(if stale {
+                "Capture document or revision changed while awaiting render"
+            } else {
+                "Viewport render did not reach capture revision within eight seconds"
+            });
+            if let Some(pending) = self.control.pending.as_mut() {
+                pending.pending = pending.pending.saturating_sub(1);
+            }
+            self.control_settle();
+            return Task::none();
+        }
+        if !rendered.is_some_and(|(geometry, camera, at)|
+            geometry == active.scene.geometry_epoch
+                && camera == active.scene.camera_generation
+                && at >= pending.started_at)
+        {
+            return Task::none();
+        }
+        let Some(window) = self.main_window else { return Task::none() };
+        let path = pending.request["path"].as_str().unwrap_or("").to_owned();
+        // A minimized window has a 0x0 surface and its screenshot readback
+        // panics. The existing screenshot handler turns None into a failure.
+        let task = iced::window::size(window).then(move |size| {
+            let path = path.clone();
+            if size.width <= 0.0 || size.height <= 0.0 {
+                Task::done(Message::ControlScreenshot(path, None))
+            } else {
+                iced::window::screenshot(window)
+                    .map(move |s| Message::ControlScreenshot(path.clone(), Some(s)))
+            }
+        });
+        if let Some(pending) = self.control.pending.as_mut() {
+            pending.capture_dispatched = true;
+        }
+        let tracked = self.control_track(task);
+        if let Some(pending) = self.control.pending.as_mut() {
+            pending.pending = pending.pending.saturating_sub(1);
+        }
+        tracked
+    }
+
     pub(super) fn control_screenshot(
         &mut self,
         path: String,
@@ -1164,6 +1225,15 @@ impl OpenCADStudio {
         let result = (|| -> Result<Value, String> {
             let s = screenshot
                 .ok_or("The window is minimized or has no size; restore it and capture again")?;
+            let tab = &self.tabs[self.active_tab];
+            let rendered = *tab.scene.rendered_revision.lock().unwrap();
+            if !rendered.is_some_and(|(geometry, camera, at)|
+                geometry == tab.scene.geometry_epoch
+                    && camera == tab.scene.camera_generation
+                    && self.control.pending.as_ref().is_some_and(|p| at >= p.started_at))
+            {
+                return Err("Viewport render revision changed before screenshot completed".into());
+            }
             let requested_scope = self
                 .control
                 .pending
@@ -1223,7 +1293,7 @@ impl OpenCADStudio {
                 .save_with_format(&path, image::ImageFormat::Png)
                 .map_err(|e| e.to_string())?;
             Ok(
-                json!({"path":path,"scope":actual_scope,"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"geometry_revision":self.tabs[self.active_tab].scene.geometry_epoch,"camera_revision":self.tabs[self.active_tab].scene.camera_generation}),
+                json!({"path":path,"scope":actual_scope,"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"geometry_revision":self.tabs[self.active_tab].scene.geometry_epoch,"camera_revision":self.tabs[self.active_tab].scene.camera_generation,"rendered_geometry_revision":rendered.unwrap().0,"rendered_camera_revision":rendered.unwrap().1,"render_fence":"shader_encoded_frame"}),
             )
         })();
         match result {

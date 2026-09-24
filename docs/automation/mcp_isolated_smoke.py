@@ -496,6 +496,9 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         if (reference["width"], reference["height"]) != (capture["width"], capture["height"]):
             raise ProtocolError("Capture PNG dimensions differ from MCP metadata")
         report["capture_artifact"] = reference
+        report["capture_fence"] = {key: capture[key] for key in
+                                   ("rendered_geometry_revision", "rendered_camera_revision",
+                                    "render_fence")}
         if any(document.get("dirty") for document in state["documents"]):
             report["shutdown"] = "waiting_user_dirty_document"
             return

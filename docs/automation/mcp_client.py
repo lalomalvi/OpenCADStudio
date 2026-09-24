@@ -287,7 +287,10 @@ class Client:
                             deadline=time.monotonic() + 45)
         metadata = result.get("structuredContent")
         if result.get("isError") or not isinstance(metadata, dict) or metadata.get("ok") is not True \
-                or any(metadata.get(key) != value for key, value in expected.items()):
+                or any(metadata.get(key) != value for key, value in expected.items()) \
+                or metadata.get("rendered_geometry_revision") != geometry_revision \
+                or metadata.get("rendered_camera_revision") != camera_revision \
+                or metadata.get("render_fence") != "shader_encoded_frame":
             raise ProtocolError("Capture identity or render revision differs")
         images = [item for item in result.get("content", [])
                   if item.get("type") == "image" and item.get("mimeType") == "image/png"]
@@ -305,7 +308,8 @@ class Client:
             os.fsync(output.fileno())
         return {key: metadata.get(key) for key in
                 ("document_id", "revision", "geometry_revision", "camera_revision",
-                 "width", "height", "scope")}
+                 "width", "height", "scope", "rendered_geometry_revision",
+                 "rendered_camera_revision", "render_fence")}
 
     @staticmethod
     def _remaining(deadline: float | None) -> float | None:

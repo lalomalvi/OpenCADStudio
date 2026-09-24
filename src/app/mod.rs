@@ -2058,6 +2058,7 @@ pub enum Message {
     ControlStep(String, Box<Message>),
     ControlTaskDone(String),
     ControlScreenshot(String, Option<iced::window::Screenshot>),
+    ControlCaptureFrame,
     ControlToggle,
     Tick(Instant),
     /// Periodic drain of plugin-to-host requests that arrived outside a host

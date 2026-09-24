@@ -551,6 +551,7 @@ impl OpenCADStudio {
                 self.control_screenshot(path, screenshot);
                 Task::none()
             }
+            Message::ControlCaptureFrame => self.control_capture_frame(),
             Message::ControlToggle => {
                 self.control.enabled = !self.control.enabled;
                 Task::none()

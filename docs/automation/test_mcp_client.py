@@ -186,7 +186,10 @@ class ClientTests(unittest.TestCase):
     def test_capture_artifact_rejects_stale_revision_without_writing(self):
         client = self.client()
         fake = {"structuredContent": {"ok": True, "document_id": 1,
-                                      "geometry_revision": 3, "camera_revision": 4},
+                                      "geometry_revision": 3, "camera_revision": 4,
+                                      "rendered_geometry_revision": 3,
+                                      "rendered_camera_revision": 4,
+                                      "render_fence": "shader_encoded_frame"},
                 "content": [{"type": "image", "mimeType": "image/png",
                              "data": base64.b64encode(b"\x89PNG\r\n\x1a\nfixture").decode()}]}
         with tempfile.TemporaryDirectory() as directory:
@@ -200,6 +203,20 @@ class ClientTests(unittest.TestCase):
                                                     geometry_revision=3, camera_revision=4)
                 self.assertEqual(metadata["geometry_revision"], 3)
                 self.assertEqual(path.read_bytes(), b"\x89PNG\r\n\x1a\nfixture")
+
+    def test_capture_artifact_rejects_missing_render_fence(self):
+        client = self.client()
+        fake = {"structuredContent": {"ok": True, "document_id": 1,
+                                      "geometry_revision": 3, "camera_revision": 4},
+                "content": [{"type": "image", "mimeType": "image/png",
+                             "data": base64.b64encode(b"\x89PNG\r\n\x1a\nfixture").decode()}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = (Path(directory) / "capture.png").resolve()
+            with patch.object(client, "_tool_result", return_value=fake):
+                with self.assertRaisesRegex(ProtocolError, "render revision differs"):
+                    client.capture_artifact("s1", path, document_id=1,
+                                            geometry_revision=3, camera_revision=4)
+            self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":
