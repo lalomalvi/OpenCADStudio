@@ -9,6 +9,7 @@ El recibo L0 de identidad/uso tomado de objetos Responses API se documenta en [M
 La prueba Luna real vía plan de Codex CLI y sus límites de procedencia están en [M7-CODEX-CLI-EXPLORATORY-V1.md](M7-CODEX-CLI-EXPLORATORY-V1.md); el pase de cinco imágenes autorizado por el usuario y su balance 3/1/1 en [M7-CINCO-MUESTRAS-V1.md](M7-CINCO-MUESTRAS-V1.md); el vínculo de verdicts AutoCAD positivos/negativos en [M7-EXTERNAL-VERDICT-BINDING-V1.md](M7-EXTERNAL-VERDICT-BINDING-V1.md). Estas pruebas de desarrollo no equivalen al experimento reservado de 36 casillas ni a un recibo directo Responses API.
 La separación de evidencia por gate para los cinco casos se documenta en [M7-CINCO-CASOS-GATES-V1.md](M7-CINCO-CASOS-GATES-V1.md); ningún caso obtiene aceptación M7 por el contraste geométrico acotado.
 El ensayo de mediciones tipadas y compilación determinista de una retícula de dos recintos está en [M7-MEDICIONES-TIPADAS-RETICULA-V1.md](M7-MEDICIONES-TIPADAS-RETICULA-V1.md); tampoco concede aceptación M7.
+Las abstenciones al distinguir cotas horizontales apiladas y el contrato tipado correspondiente están en [M7-COTAS-APILADAS-DESARROLLO-V1.md](M7-COTAS-APILADAS-DESARROLLO-V1.md).
 Convertir el ensayo Luna → MCP → OpenCADStudio en un flujo reproducible, medible y recuperable que genere CAD editable con precisión declarada. Este plan abarca arranque, transporte, ejecución, evidencia, consumo, semántica CAD, evaluación e integración. El programa probado fue OpenCADStudio; LibreCAD no participó.
 
 ## Lectura y autoridad

@@ -1,0 +1,7 @@
+# M7 desarrollo: cotas horizontales apiladas
+
+Una muestra de sección ya vista contiene dos cotas horizontales próximas. El primer protocolo pidió una única caja de referencia y falló el criterio métrico precongelado. Dos protocolos nuevos, congelados por separado, probaron primero una instrucción espacial más precisa y luego la extracción tipada de ambas cotas y la diferencia de nivel. Luna mediante Codex CLI respondió `UNSUPPORTED` en ambos. Los tres resultados se conservan sin sustitución ni promoción; ninguno de los dos intentos nuevos generó CAD.
+
+`measurement_stacked_span.py` deja preparado un contrato determinista para un futuro caso inequívoco. Exige las dos cotas, sus regiones fuente separadas en orden vertical, la diferencia de nivel, números finitos y concordancia con oráculo congelado. Solo la cota inferior define el ancho de un rectángulo de referencia de cuatro LINE. Las entidades son inferidas, no muros ni peldaños. Sus pruebas usan valores sintéticos distintos de los de la imagen. El código no altera el resultado de las dos abstenciones; cada run local incluye copia del validador/compilador y hashes previos a la llamada.
+
+Esta exploración no demuestra mejora baseline/candidato ni aceptación M7. La procedencia real del modelo y el uso por respuesta directa no están disponibles en JSONL de Codex CLI. Un nuevo intento necesitaría un protocolo y oráculo versionados, y una señal visual adicional o revisión humana que despeje la ambigüedad; no se debe completar una cota por inferencia silenciosa.

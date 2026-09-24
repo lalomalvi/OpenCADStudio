@@ -19,6 +19,7 @@ import uuid
 from PIL import Image
 
 from measurement_grid import compile_two_bay
+from measurement_stacked_span import compile_lower_span_rectangle
 from owned_cad_executor import OwnedCadExecutor, verify_owned_cad_evidence
 from planspec import dry_run
 from reserved_runner import Invocation
@@ -219,6 +220,9 @@ def main() -> None:
             ("measurement_compiler_sha256" in frozen and
              _file_sha(Path(__file__).with_name("measurement_grid.py")) !=
              frozen["measurement_compiler_sha256"]) or \
+            ("stacked_span_compiler_sha256" in frozen and
+             _file_sha(Path(__file__).with_name("measurement_stacked_span.py")) !=
+             frozen["stacked_span_compiler_sha256"]) or \
             ("validator_sha256" in frozen and
              _file_sha(Path(__file__).resolve(strict=True)) !=
              frozen["validator_sha256"]):
@@ -240,6 +244,15 @@ def main() -> None:
                 plan, width_px, height_px, frozen["expected_vertices"],
                 frozen["expected_edges"], frozen["expected_regions"])
             output_kind = "typed_measurements_compiled_deterministically"
+        elif frozen.get("shape") == "measurement_stacked_span_v1":
+            plan = compile_lower_span_rectangle(
+                plan, frozen=frozen, image_width=width_px,
+                image_height=height_px)
+            compiled = check_rectangle(
+                plan, width_px, height_px,
+                float(frozen["expected_lower_span_m"]),
+                float(frozen["expected_level_delta_m"]))
+            output_kind = "typed_stacked_spans_compiled_deterministically"
         elif frozen.get("shape", "rectangle") == "rectangle":
             compiled = check_rectangle(plan, width_px, height_px,
                                        float(frozen["expected_width_m"]),
