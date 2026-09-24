@@ -383,6 +383,54 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual(result["quality_blockers"], ["door_swing_sweep_crosses_contour"])
         self.assertFalse(result["executable"])
 
+    def test_v8_typed_obstacle_height_kind_and_containment(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        value = json.loads((fixtures / "synthetic-door-obstacle-v8.planspec.json")
+                           .read_text(encoding="utf-8"))
+        schema = json.loads((Path(__file__).with_name("planspec-8.schema.json"))
+                            .read_text(encoding="utf-8"))
+        self.assertEqual(schema["properties"]["schema_version"]["const"], "planspec-8")
+        self.assertIn("obstacles", schema["required"])
+        blocked = module.dry_run(value)
+        self.assertEqual(blocked["quality_blockers"], ["door_sweep_hits_typed_obstacle"])
+        self.assertEqual(blocked["door_clearance_qa"]["typed_obstacle_intersections"],
+                         [{"door_id": "door-south", "obstacle_id": "furniture-a",
+                           "kind": "furniture", "source_classification": "measured",
+                           "source_confidence": 1, "disposition": "blocking"}])
+        self.assertFalse(blocked["executable"])
+        above = deepcopy(value)
+        above["obstacles"][0]["base_z_m"] = 2.1
+        self.assertEqual(module.dry_run(above)["door_clearance_qa"]["status"], "clear")
+        self.assertTrue(module.dry_run(above)["executable"])
+        self.assertEqual(blocked["commands_sha256"], module.dry_run(above)["commands_sha256"])
+        annotation = deepcopy(value)
+        annotation["obstacles"][0]["kind"] = "annotation"
+        annotated = module.dry_run(annotation)
+        self.assertEqual(annotated["quality_blockers"], [])
+        self.assertEqual(annotated["door_clearance_qa"]["typed_obstacle_intersections"][0]
+                         ["disposition"], "nonphysical")
+        uncertain = deepcopy(value)
+        uncertain["obstacles"][0]["source"] = {**uncertain["obstacles"][0]["source"],
+                                                "classification": "inferred"}
+        self.assertEqual(module.dry_run(uncertain)["door_clearance_qa"]
+                         ["typed_obstacle_intersections"][0]["disposition"], "review_blocked")
+        self.assertFalse(module.dry_run(uncertain)["executable"])
+        enclosing = deepcopy(value)
+        enclosing["obstacles"][0].update(min_x_m=0.5, min_y_m=0,
+                                         max_x_m=2.5, max_y_m=1.5)
+        self.assertEqual(module.dry_run(enclosing)["quality_blockers"],
+                         ["door_sweep_hits_typed_obstacle"])
+        for field, bad in (("kind", "unknown"), ("height_m", 0),
+                           ("base_z_m", -0.1), ("max_x_m", 1.2)):
+            invalid = deepcopy(value)
+            invalid["obstacles"][0][field] = bad
+            with self.assertRaises(module.PlanError):
+                module.validate(invalid)
+        missing_height = deepcopy(value)
+        del missing_height["openings"][0]["swing"]["leaf_height_m"]
+        with self.assertRaises(module.PlanError):
+            module.validate(missing_height)
+
     def test_v4_window_elevation_and_kind_specific_fields(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))

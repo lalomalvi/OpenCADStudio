@@ -1,9 +1,10 @@
-"""PlanSpec v1–v7: strict validation and deterministic CAD command dry-run.
+"""PlanSpec v1–v8: strict validation and deterministic CAD command dry-run.
 
 Lines, circles, one straight wall with an opening, and a two-wall orthogonal
 union compile. V6 binds dimensions to wall faces or axes. V7 compiles one
 axis-aligned face thickness dimension with an explicit metric style. Other native
-dimensions and multiple symbolic openings remain unsupported.
+dimensions and multiple symbolic openings remain unsupported. V8 adds typed
+3D-height obstacles for door-clearance preflight; it does not draw obstacles.
 """
 
 from __future__ import annotations
@@ -88,19 +89,21 @@ def _wall_reference_point(ref: dict, walls: dict[str, dict],
 
 def _validate_basic(plan: dict[str, Any]) -> None:
     if not isinstance(plan, dict) or plan.get("schema_version") not in {
-            "planspec-1", "planspec-2", "planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
+            "planspec-1", "planspec-2", "planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
         raise PlanError("PlanSpec version unsupported")
     fields = {"schema_version", "units", "origin", "nodes", "lines", "circles", "dimensions"}
-    if plan["schema_version"] in {"planspec-2", "planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
+    if plan["schema_version"] in {"planspec-2", "planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
         fields.add("topology")
-    if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
+    if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
         fields.update({"walls", "openings"})
-    if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7"}:
+    if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
         fields.add("joins")
-    if plan["schema_version"] in {"planspec-6", "planspec-7"}:
+    if plan["schema_version"] in {"planspec-6", "planspec-7", "planspec-8"}:
         fields.add("dimension_bindings")
-    if plan["schema_version"] == "planspec-7":
+    if plan["schema_version"] in {"planspec-7", "planspec-8"}:
         fields.update({"dimension_style", "dimension_placements"})
+    if plan["schema_version"] == "planspec-8":
+        fields.add("obstacles")
     _keys(plan, fields, "plan")
     if plan["units"] != "m":
         raise PlanError("PlanSpec version or units unsupported; explicit conversion required")
@@ -154,7 +157,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                             Decimal(str(math.hypot(float(b[0] - a[0]), float(b[1] - a[1])))))
                 if abs(distance - value) > Decimal("0.001"):
                     raise PlanError(f"Dimension {name} differs from referenced geometry")
-    if plan["schema_version"] in {"planspec-2", "planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
+    if plan["schema_version"] in {"planspec-2", "planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
         _keys(plan["topology"], {"contours"}, "topology")
         if not isinstance(plan["topology"]["contours"], list):
             raise PlanError("Contour collection must be an array")
@@ -176,7 +179,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
             if any(line_id not in line_ids
                    for line_id in contour["line_ids"]):
                 raise PlanError("Contour has a dangling line reference")
-    if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
+    if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
         if not isinstance(plan["walls"], list) or not isinstance(plan["openings"], list):
             raise PlanError("Wall and opening collections must be arrays")
         walls: dict[str, dict] = {}
@@ -199,7 +202,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
             if not isinstance(opening, dict):
                 raise PlanError("opening: expected object")
             fields = {"id", "wall_id", "offset_m", "width_m", "kind", "source"}
-            if plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
+            if plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
                 if opening.get("kind") == "door":
                     fields.add("swing")
                 elif opening.get("kind") == "window":
@@ -216,16 +219,22 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                     _number(opening["width_m"], "opening.width_m") <= 0:
                 raise PlanError("Opening reference, kind or dimensions are invalid")
             _source(opening["source"], "opening.source")
-            if plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
+            if plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
                 if opening["kind"] == "door":
                     swing = opening["swing"]
-                    _keys(swing, {"hinge", "side", "angle_deg"}, "door.swing")
+                    swing_fields = {"hinge", "side", "angle_deg"}
+                    if plan["schema_version"] == "planspec-8":
+                        swing_fields.add("leaf_height_m")
+                    _keys(swing, swing_fields, "door.swing")
                     if not isinstance(swing["hinge"], str) or \
                             swing["hinge"] not in {"start", "end"} or \
                             not isinstance(swing["side"], str) or \
                             swing["side"] not in {"left", "right"} or \
                             type(swing["angle_deg"]) is not int or swing["angle_deg"] != 90:
                         raise PlanError("Door swing requires explicit hinge, side and 90 degrees")
+                    if plan["schema_version"] == "planspec-8" and not \
+                            Decimal("1.5") <= _number(swing["leaf_height_m"], "door.leaf_height_m") <= Decimal(4):
+                        raise PlanError("Door leaf height is out of scope")
                 elif opening["kind"] == "window":
                     elevation = opening["elevation"]
                     _keys(elevation, {"sill_m", "head_m"}, "window.elevation")
@@ -233,7 +242,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                     head = _number(elevation["head_m"], "window.elevation.head_m")
                     if sill < 0 or head <= sill:
                         raise PlanError("Window sill/head elevation is invalid")
-        if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7"}:
+        if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
             if not isinstance(plan["joins"], list):
                 raise PlanError("Join collection must be an array")
             used_ends: set[tuple[str, str]] = set()
@@ -272,7 +281,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                         _number(a_wall["thickness_m"], "wall.thickness_m") != \
                         _number(b_wall["thickness_m"], "wall.thickness_m"):
                     raise PlanError("Orthogonal join requires perpendicular axes and equal thickness")
-        if plan["schema_version"] in {"planspec-6", "planspec-7"}:
+        if plan["schema_version"] in {"planspec-6", "planspec-7", "planspec-8"}:
             if not isinstance(plan["dimension_bindings"], list):
                 raise PlanError("Dimension bindings must be an array")
             dimensions = {item["id"]: item for item in plan["dimensions"]}
@@ -313,7 +322,7 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                         raise PlanError("Dimension node differs from its bound wall reference")
             if bindings != set(dimensions):
                 raise PlanError("Every v6 dimension requires exactly one wall binding")
-        if plan["schema_version"] == "planspec-7":
+        if plan["schema_version"] in {"planspec-7", "planspec-8"}:
             style = plan["dimension_style"]
             _keys(style, {"name", "text_height_m", "arrow_size_m", "gap_m",
                           "scale", "measurement_factor"}, "dimension style")
@@ -342,12 +351,33 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                 _source(placement["source"], "dimension placement.source")
             if placements != set(dimensions):
                 raise PlanError("Every v7 dimension requires exactly one placement")
+        if plan["schema_version"] == "planspec-8":
+            if not isinstance(plan["obstacles"], list):
+                raise PlanError("Obstacle collection must be an array")
+            for obstacle in plan["obstacles"]:
+                _keys(obstacle, {"id", "kind", "min_x_m", "min_y_m", "max_x_m",
+                                 "max_y_m", "base_z_m", "height_m", "source"}, "obstacle")
+                name = _id(obstacle["id"], "obstacle")
+                if name in ids:
+                    raise PlanError("Duplicate PlanSpec ID")
+                ids.add(name)
+                if not isinstance(obstacle["kind"], str) or \
+                        obstacle["kind"] not in {"fixed_partition", "furniture", "annotation"}:
+                    raise PlanError("Obstacle kind is unsupported")
+                bounds = [_number(obstacle[key], f"obstacle.{key}") for key in
+                          ("min_x_m", "min_y_m", "max_x_m", "max_y_m")]
+                if bounds[2] <= bounds[0] or bounds[3] <= bounds[1]:
+                    raise PlanError("Obstacle XY bounds must have positive area")
+                if _number(obstacle["base_z_m"], "obstacle.base_z_m") < 0 or \
+                        _number(obstacle["height_m"], "obstacle.height_m") <= 0:
+                    raise PlanError("Obstacle elevation or height is invalid")
+                _source(obstacle["source"], "obstacle.source")
 
 
 def analyze_architecture(plan: dict[str, Any]) -> dict[str, Any]:
     """Validate wall/opening identity and spacing before any CAD command is emitted."""
     _validate_basic(plan)
-    if plan["schema_version"] not in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
+    if plan["schema_version"] not in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
         return {"schema_version": "planspec-architecture-1", "status": "unavailable",
                 "walls": [], "openings": [], "scope": "no_explicit_walls_in_v1_v2"}
     nodes = {node["id"]: (_number(node["x"], "node.x"),
@@ -390,7 +420,7 @@ def analyze_architecture(plan: dict[str, Any]) -> dict[str, Any]:
                                    "wall_b_id": item["wall_b_id"],
                                    "wall_b_end": item["wall_b_end"], "style": item["style"]}
                                   for item in plan["joins"]), key=lambda item: item["id"])}
-               if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7"} else {}),
+               if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8"} else {}),
             "scope": "straight_wall_axes_and_opening_intervals"}
 
 
@@ -843,15 +873,16 @@ def _door_swing_extrema(wall: dict, door: dict,
 
 
 def analyze_door_clearance(plan: dict[str, Any]) -> dict[str, Any]:
-    """Report open leaf and swept quarter-disk contacts with source lines.
+    """Report open leaf and swept quarter-disk contacts with source geometry.
 
     A line is not assumed to be an obstruction; contour membership only names
     its source category. Tangent and endpoint-only contacts are excluded.
     """
     _validate_basic(plan)
-    if plan["schema_version"] not in {"planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
-        return {"schema_version": "planspec-door-clearance-qa-2", "status": "unavailable",
+    if plan["schema_version"] not in {"planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"}:
+        return {"schema_version": "planspec-door-clearance-qa-3", "status": "unavailable",
                 "strict_crossings": [], "sweep_intersections": [],
+                "typed_obstacle_intersections": [],
                 "scope": "v4_or_later_quarter_sweep_against_source_lines"}
     nodes = {node["id"]: (_number(node["x"], "node.x"), _number(node["y"], "node.y"))
              for node in plan["nodes"]}
@@ -896,6 +927,7 @@ def analyze_door_clearance(plan: dict[str, Any]) -> dict[str, Any]:
 
     crossings = []
     sweep_intersections = []
+    typed_obstacle_intersections = []
     for door in sorted((item for item in plan["openings"] if item["kind"] == "door"),
                        key=lambda item: item["id"]):
         hinge, closed, opened = _door_swing_extrema(walls[door["wall_id"]], door, nodes)[:3]
@@ -910,10 +942,36 @@ def analyze_door_clearance(plan: dict[str, Any]) -> dict[str, Any]:
             if segment_enters_sweep(hinge, closed, opened, a, b, width):
                 sweep_intersections.append({"door_id": door["id"], "line_id": line["id"],
                                             "line_category": category})
-    return {"schema_version": "planspec-door-clearance-qa-2",
-            "status": "review_required" if crossings or sweep_intersections else "clear",
+        if plan["schema_version"] == "planspec-8":
+            leaf_height = _number(door["swing"]["leaf_height_m"], "door.leaf_height_m")
+            for obstacle in sorted(plan["obstacles"], key=lambda item: item["id"]):
+                base = _number(obstacle["base_z_m"], "obstacle.base_z_m")
+                if base >= leaf_height:
+                    continue
+                x0, y0, x1, y1 = (_number(obstacle[key], f"obstacle.{key}") for key in
+                                   ("min_x_m", "min_y_m", "max_x_m", "max_y_m"))
+                corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+                intersects = x0 < hinge[0] < x1 and y0 < hinge[1] < y1 or any(
+                    segment_enters_sweep(hinge, closed, opened, corners[index],
+                                         corners[(index + 1) % 4], width)
+                    for index in range(4))
+                if intersects:
+                    kind = obstacle["kind"]
+                    source = obstacle["source"]
+                    disposition = ("nonphysical" if kind == "annotation" else
+                                   "blocking" if source["classification"] == "measured" else
+                                   "review_blocked")
+                    typed_obstacle_intersections.append({"door_id": door["id"],
+                        "obstacle_id": obstacle["id"], "kind": kind,
+                        "source_classification": source["classification"],
+                        "source_confidence": source["confidence"],
+                        "disposition": disposition})
+    return {"schema_version": "planspec-door-clearance-qa-3",
+            "status": "review_required" if crossings or sweep_intersections or
+                      typed_obstacle_intersections else "clear",
             "strict_crossings": crossings, "sweep_intersections": sweep_intersections,
-            "scope": "v4_or_later_quarter_sweep_against_source_lines_no_tangency_or_3d"}
+            "typed_obstacle_intersections": typed_obstacle_intersections,
+            "scope": "v4_or_later_quarter_sweep_lines_and_v8_typed_rectangles_with_z_range"}
 
 
 def _source_bounds(plan: dict[str, Any], nodes: dict[str, tuple[Decimal, Decimal]],
@@ -1007,9 +1065,9 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                          "layer": circle["layer"]})
     wall_parts = 0
     wall_status = "not_applicable"
-    if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7"} and plan["walls"]:
+    if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"} and plan["walls"]:
         wall_status = "unsupported"
-        if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7"} and len(plan["walls"]) == 2 and \
+        if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8"} and len(plan["walls"]) == 2 and \
                 len(plan["joins"]) == 1 and not plan["openings"]:
             walls_by_id = {wall["id"]: wall for wall in plan["walls"]}
             join = plan["joins"][0]
@@ -1028,14 +1086,14 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                 plan["walls"][0], plan["openings"], nodes, origin))
             wall_parts = 4 * (len(plan["openings"]) + 1)
             wall_status = "compiled_single_clear_opening_wall"
-        elif plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7"} and len(plan["walls"]) == 1 and \
+        elif plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"} and len(plan["walls"]) == 1 and \
                 len(plan["openings"]) == 1 and plan["openings"][0]["kind"] == "door":
             wall, door = plan["walls"][0], plan["openings"][0]
             commands.extend(_clear_opening_wall_commands(wall, [door], nodes, origin))
             commands.extend(_single_door_symbol_commands(wall, door, nodes, origin))
             wall_parts = 10
             wall_status = "compiled_single_door_wall"
-        elif plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7"} and len(plan["walls"]) == 1 and \
+        elif plan["schema_version"] in {"planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"} and len(plan["walls"]) == 1 and \
                 len(plan["openings"]) == 1 and plan["openings"][0]["kind"] == "window":
             wall, window = plan["walls"][0], plan["openings"][0]
             commands.extend(_clear_opening_wall_commands(wall, [window], nodes, origin))
@@ -1045,7 +1103,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     dimension_status = "not_applicable" if not plan["dimensions"] else "unsupported"
     dimension_placement_qa = {"status": "unavailable",
                               "scope": "only_single_axis_aligned_face_thickness"}
-    if (plan["schema_version"] == "planspec-7" and len(plan["walls"]) == 1 and
+    if (plan["schema_version"] in {"planspec-7", "planspec-8"} and len(plan["walls"]) == 1 and
             not plan["lines"] and not plan["circles"] and not plan["openings"] and
             not plan["joins"] and len(plan["dimensions"]) == 1 and
             wall_status == "compiled_single_unopened_wall"):
@@ -1122,11 +1180,11 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         missing.add("native_dimension")
     if wall_status == "unsupported":
         missing.add("wall_compilation")
-    if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7"} and any(
+    if plan["schema_version"] in {"planspec-3", "planspec-4", "planspec-5", "planspec-6", "planspec-7", "planspec-8"} and any(
             opening["kind"] != "clear" for opening in plan["openings"]) and \
             wall_status not in {"compiled_single_door_wall", "compiled_single_window_wall"}:
         missing.add("opening_compilation")
-    if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7"} and plan["joins"] and \
+    if plan["schema_version"] in {"planspec-5", "planspec-6", "planspec-7", "planspec-8"} and plan["joins"] and \
             wall_status != "compiled_orthogonal_union_two_walls":
         missing.add("join_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):
@@ -1138,6 +1196,9 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     if any(item["line_category"] == "contour"
            for item in door_clearance_qa["sweep_intersections"]):
         quality_blockers.append("door_swing_sweep_crosses_contour")
+    if any(item["disposition"] in {"blocking", "review_blocked"}
+           for item in door_clearance_qa["typed_obstacle_intersections"]):
+        quality_blockers.append("door_sweep_hits_typed_obstacle")
     wire = json.dumps(execution, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return {"schema_version": "planspec-dry-run-1", "commands": commands,
             "execution_steps": execution,
