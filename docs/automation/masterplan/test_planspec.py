@@ -625,6 +625,16 @@ class PlanSpecTests(unittest.TestCase):
         # unjoined wall and must be rejected before any CAD command runs.
         with self.assertRaisesRegex(module.PlanError, "Unjoined wall rectangles"):
             module.dry_run(touching)
+        rotated = json.loads((fixture.with_name("synthetic-three-wall-rotated.planspec.json"))
+                             .read_text(encoding="utf-8"))
+        rotated_result = module.dry_run(rotated)
+        self.assertTrue(rotated_result["executable"])
+        self.assertEqual(rotated_result["wall_compilation"]["generated_parts"], 12)
+        rotated_edges = [item["command"].split()[1:] for item in rotated_result["commands"]]
+        self.assertTrue(all(end == rotated_edges[(index + 1) % 12][0]
+                            for index, (_, end) in enumerate(rotated_edges)))
+        self.assertEqual(rotated_edges[0], ["-3.1,4", "-3,4"])
+        self.assertEqual(rotated_edges[-1], ["-3.1,7", "-3.1,4"])
 
     def test_v6_wall_face_binding_validates_without_emitting_native_dimension(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"

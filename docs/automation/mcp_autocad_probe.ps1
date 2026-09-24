@@ -955,6 +955,7 @@ try {
                                   'synthetic-joined-door.planspec.json',
                                   'synthetic-joined-door-second.planspec.json',
                                   'synthetic-three-wall-chain.planspec.json',
+                                  'synthetic-three-wall-rotated.planspec.json',
                                   'synthetic-wall-face-dimension-readable-v7.planspec.json',
                                   'synthetic-wall-face-dimension-vertical-v7.planspec.json',
                                   'synthetic-wall-axis-span-v8.planspec.json',
@@ -1407,7 +1408,8 @@ try {
                         matched_1e_6 = [bool]$arcMatched }
                 }
             }
-            if ($fixtureName -eq 'synthetic-three-wall-chain.planspec.json') {
+            if ($fixtureName -in @('synthetic-three-wall-chain.planspec.json',
+                                   'synthetic-three-wall-rotated.planspec.json')) {
                 # Frozen independent coordinate oracle for the v5 synthetic
                 # chain. A changed fixture is detected by these comparisons.
                 $oracle = @(
@@ -1424,6 +1426,22 @@ try {
                     @('wall-horizontal', 3.9, 0.1, 0, 0.1),
                     @('wall-horizontal', 0, 0.1, 0, -0.1)
                 )
+                if ($fixtureName -eq 'synthetic-three-wall-rotated.planspec.json') {
+                    $oracle = @(
+                        @('wall-top', -3.1, 4, -3, 4),
+                        @('wall-vertical', -3, 4, -3, 3.9),
+                        @('wall-vertical', -3, 3.9, -0.1, 3.9),
+                        @('wall-horizontal', -0.1, 3.9, -0.1, 0),
+                        @('wall-horizontal', -0.1, 0, 0.1, 0),
+                        @('wall-horizontal', 0.1, 0, 0.1, 4),
+                        @('wall-horizontal', 0.1, 4, 0, 4),
+                        @('wall-vertical', 0, 4, 0, 4.1),
+                        @('wall-vertical', 0, 4.1, -2.9, 4.1),
+                        @('wall-top', -2.9, 4.1, -2.9, 7),
+                        @('wall-top', -2.9, 7, -3.1, 7),
+                        @('wall-top', -3.1, 7, -3.1, 4)
+                    )
+                }
                 for ($index = 0; $index -lt $oracle.Count; $index++) {
                     $partId = 'three-wall-union__outline_{0}' -f $index
                     $expected = $oracle[$index]
@@ -1458,6 +1476,7 @@ try {
               'synthetic-wall-join.planspec.json', 'synthetic-joined-door.planspec.json',
               'synthetic-joined-door-second.planspec.json',
               'synthetic-three-wall-chain.planspec.json',
+              'synthetic-three-wall-rotated.planspec.json',
               'synthetic-two-door-wall-v8.planspec.json',
               'synthetic-wall-axis-span-v8.planspec.json',
               'synthetic-wall-axis-span-vertical-v8.planspec.json',
