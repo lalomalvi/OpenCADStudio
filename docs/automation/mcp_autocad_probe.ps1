@@ -292,7 +292,8 @@ try {
                 $faceFixtureName = [string]$sourceReport.planspec.fixture
                 $faceFixtureValid = $faceFixtureName -in @(
                     'synthetic-wall-face-dimension-v7.planspec.json',
-                    'synthetic-wall-face-dimension-exterior-v7.planspec.json')
+                    'synthetic-wall-face-dimension-exterior-v7.planspec.json',
+                    'synthetic-wall-face-dimension-readable-v7.planspec.json')
                 if ($faceFixtureValid) {
                     $faceFixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $faceFixtureName)
                     $faceFixtureValid = (Get-FileHash -LiteralPath $faceFixturePath -Algorithm SHA256).Hash -eq

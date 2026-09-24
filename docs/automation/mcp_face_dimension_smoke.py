@@ -47,7 +47,8 @@ def main():
     fixture_name = (sys.argv[2] if len(sys.argv) > 2 else
                     "synthetic-wall-face-dimension-exterior-v7.planspec.json")
     if fixture_name not in {"synthetic-wall-face-dimension-v7.planspec.json",
-                            "synthetic-wall-face-dimension-exterior-v7.planspec.json"}:
+                            "synthetic-wall-face-dimension-exterior-v7.planspec.json",
+                            "synthetic-wall-face-dimension-readable-v7.planspec.json"}:
         raise ValueError("Only versioned synthetic face fixtures are allowed")
     fixture = repo / "docs/automation/masterplan/fixtures" / fixture_name
     plan = json.loads(fixture.read_text(encoding="utf-8"))

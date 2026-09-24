@@ -541,6 +541,19 @@ class PlanSpecTests(unittest.TestCase):
         door = module.dry_run(json.loads(fixture.read_text(encoding="utf-8")))
         self.assertIn("door_swing_extrema", door["source_bounds"]["unresolved"])
 
+    def test_v7_readable_style_changes_steps_without_moving_dimension(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        compact = module.dry_run(json.loads((fixtures /
+            "synthetic-wall-face-dimension-exterior-v7.planspec.json").read_text(encoding="utf-8")))
+        readable = module.dry_run(json.loads((fixtures /
+            "synthetic-wall-face-dimension-readable-v7.planspec.json").read_text(encoding="utf-8")))
+        self.assertTrue(readable["executable"])
+        self.assertEqual(compact["commands"], readable["commands"])
+        self.assertEqual(compact["source_bounds"], readable["source_bounds"])
+        self.assertNotEqual(compact["commands_sha256"], readable["commands_sha256"])
+        self.assertIn("DIMSTYLE SET OCS_WALL_READABLE dimtxt 0.07",
+                      [step["command"] for step in readable["execution_steps"]])
+
 
 if __name__ == "__main__":
     unittest.main()
