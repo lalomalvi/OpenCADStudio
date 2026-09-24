@@ -22,6 +22,7 @@ from measurement_grid import compile_five_bay, compile_three_region, compile_two
 from measurement_axis_chain import compile_bottom_chain
 from measurement_stacked_span import compile_lower_span_rectangle
 from pixel_perimeter import compile_visible_perimeter
+from pixel_interior_walls import compile_interior_walls
 from owned_cad_executor import OwnedCadExecutor, verify_owned_cad_evidence
 from planspec import dry_run
 from reserved_runner import Invocation
@@ -231,6 +232,9 @@ def main() -> None:
             ("perimeter_compiler_sha256" in frozen and
              _file_sha(Path(__file__).with_name("pixel_perimeter.py")) !=
              frozen["perimeter_compiler_sha256"]) or \
+            ("interior_compiler_sha256" in frozen and
+             _file_sha(Path(__file__).with_name("pixel_interior_walls.py")) !=
+             frozen["interior_compiler_sha256"]) or \
             ("validator_sha256" in frozen and
              _file_sha(Path(__file__).resolve(strict=True)) !=
              frozen["validator_sha256"]):
@@ -240,6 +244,7 @@ def main() -> None:
         with Image.open(image) as bitmap:
             width_px, height_px = bitmap.size
         output_kind = "planspec"
+        extraction = None
         if frozen.get("shape") == "explicit_line_graph_v1":
             compiled = check_explicit_line_graph(
                 plan, width_px, height_px, frozen["expected_vertices"],
@@ -253,6 +258,46 @@ def main() -> None:
                     len(compiled["commands"]) != len(plan["lines"]):
                 raise CliTrialError("Visible perimeter does not compile")
             output_kind = "typed_visible_perimeter_pixels_compiled_deterministically"
+        elif frozen.get("shape") in {
+                "apartment_interior_three_walls_v1",
+                "apartment_interior_discovery_derived_three_v1"}:
+            base = root.parent / "apartment-visible-perimeter-v3"
+            if _file_sha(base / "freeze.json") != frozen.get("base_freeze_sha256") or \
+                    _file_sha(base / "events.jsonl") != frozen.get("base_events_sha256") or \
+                    _file_sha(base / "report.json") != frozen.get("base_report_sha256") or \
+                    frozen.get("pixel_calibration") != json.loads(
+                        (base / "freeze.json").read_text(encoding="utf-8"))[
+                            "pixel_calibration"]:
+                raise CliTrialError("Frozen perimeter dependency differs")
+            base_observation, _ = parse_cli_events(base / "events.jsonl")
+            perimeter = compile_visible_perimeter(
+                base_observation,
+                frozen=json.loads((base / "freeze.json").read_text(encoding="utf-8")),
+                image_width=width_px, image_height=height_px)
+            if frozen["shape"] == "apartment_interior_discovery_derived_three_v1":
+                discovery = root.parent / "apartment-interior-wall-discovery-v1"
+                if frozen.get("discovery_events_sha256") != _file_sha(events) or \
+                        _file_sha(discovery / "events.jsonl") != _file_sha(events) or \
+                        frozen.get("selected_segment_ids") != ["s1", "s2", "s3"] or \
+                        not isinstance(plan.get("segments"), list) or \
+                        len(plan["segments"]) != 6 or \
+                        [segment.get("id") for segment in plan["segments"]] != \
+                            [f"s{i}" for i in range(1, 7)]:
+                    raise CliTrialError("Discovery evidence or post hoc selection differs")
+                extraction = {"source_run": discovery.name,
+                              "events_sha256": _file_sha(events),
+                              "selection": "post_hoc_first_three_of_six_not_model_retrial"}
+                plan = {**plan, "segments": plan["segments"][:3]}
+            plan = compile_interior_walls(plan, perimeter=perimeter,
+                                          frozen=frozen, image_width=width_px,
+                                          image_height=height_px)
+            compiled = dry_run(plan)
+            if not compiled["executable"] or compiled["quality_blockers"] or \
+                    len(compiled["commands"]) != 16:
+                raise CliTrialError("Perimeter plus walls does not compile")
+            output_kind = ("post_hoc_selected_three_visible_walls_plus_frozen_perimeter"
+                           if extraction else
+                           "typed_three_visible_walls_plus_frozen_perimeter")
         elif frozen.get("shape") == "measurement_grid_five_bay_v1":
             plan = compile_five_bay(plan, frozen=frozen,
                                     image_width=width_px,
@@ -344,7 +389,7 @@ def main() -> None:
                     reuse["source_report_sha256"]:
                 raise CliTrialError("Reused source run differs")
     else:
-        reuse = None
+        reuse = extraction
     profile, temporary, cad_root = (root / name for name in ("profile", "temp", "cad"))
     for path in (profile, temporary, cad_root):
         path.mkdir(exist_ok=False)

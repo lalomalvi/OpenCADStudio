@@ -191,3 +191,5 @@ No ahorrar tokens eliminando controles P0.
 ## Registro por tarea
 Cada tarea mantiene: ID, estado (pending/in_progress/passed/failed/partial/blocked), owner_role, commit, dependencias, evidencias, comando reproducible, limitaciones y siguiente acción.
 El responsable es la sesión ejecutora; no se presupone trabajo paralelo de agentes. Un bloqueo no detiene tareas independientes y autorizadas.
+
+Actualización 2026-09-24, M7.2 parcial: perímetro visible de departamentos más tres tabiques verticales seleccionados después de descubrimiento Luna; 16/16 LINE cotejados por handle en AutoCAD sobre DWG sintético, con dos nuevos intentos Luna fallidos preservados. No es plano completo, cohorte reservada ni aceptación M7. Véase [M7-APARTAMENTO-TABIQUES-VISIBLES-V1.md](M7-APARTAMENTO-TABIQUES-VISIBLES-V1.md).
