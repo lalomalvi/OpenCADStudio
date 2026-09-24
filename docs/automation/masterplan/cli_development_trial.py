@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -17,6 +18,7 @@ import uuid
 
 from PIL import Image
 
+from measurement_grid import compile_two_bay
 from owned_cad_executor import OwnedCadExecutor, verify_owned_cad_evidence
 from planspec import dry_run
 from reserved_runner import Invocation
@@ -119,6 +121,80 @@ def check_ct1(plan: dict, width_px: int, height_px: int) -> dict:
     return check_rectangle(plan, width_px, height_px, 0.20, 0.40)
 
 
+def check_explicit_line_graph(plan: dict, width_px: int, height_px: int,
+                              vertices: list, edges: list,
+                              expected_regions: int) -> dict:
+    """Compare a model graph to a private, frozen metric/topology oracle."""
+    if not isinstance(vertices, list) or not 3 <= len(vertices) <= 100 or \
+            not isinstance(edges, list) or not 3 <= len(edges) <= 200 or \
+            type(expected_regions) is not int or expected_regions < 1 or \
+            not isinstance(plan, dict) or plan.get("schema_version") != "planspec-1" or \
+            plan.get("units") != "m" or plan.get("origin") != {"x": 0, "y": 0} or \
+            plan.get("circles") != [] or plan.get("dimensions") != [] or \
+            len(plan.get("nodes", [])) != len(vertices) or \
+            len(plan.get("lines", [])) != len(edges):
+        raise CliTrialError("Frozen explicit line graph scope differs")
+    points = []
+    for vertex in vertices:
+        if not isinstance(vertex, list) or len(vertex) != 2 or \
+                any(type(value) not in {int, float} or not math.isfinite(value)
+                    for value in vertex):
+            raise CliTrialError("Frozen graph vertex is invalid")
+        points.append(tuple(float(value) for value in vertex))
+    if len(set(points)) != len(points):
+        raise CliTrialError("Frozen graph vertices duplicate")
+    expected_edges = set()
+    adjacency = {index: set() for index in range(len(points))}
+    for edge in edges:
+        if not isinstance(edge, list) or len(edge) != 2 or \
+                any(type(index) is not int or not 0 <= index < len(points)
+                    for index in edge) or edge[0] == edge[1]:
+            raise CliTrialError("Frozen graph edge is invalid")
+        key = frozenset(edge)
+        if key in expected_edges:
+            raise CliTrialError("Frozen graph edge duplicates")
+        expected_edges.add(key)
+        adjacency[edge[0]].add(edge[1])
+        adjacency[edge[1]].add(edge[0])
+    visited = {0}
+    frontier = [0]
+    while frontier:
+        for neighbor in adjacency[frontier.pop()]:
+            if neighbor not in visited:
+                visited.add(neighbor)
+                frontier.append(neighbor)
+    if len(visited) != len(points) or \
+            len(edges) - len(points) + 1 != expected_regions:
+        raise CliTrialError("Frozen graph does not contain the stated regions")
+    compiled = dry_run(plan)
+    if not compiled["executable"] or compiled["unsupported"] or \
+            compiled["quality_blockers"] or \
+            len(compiled["commands"]) != len(edges):
+        raise CliTrialError("Model graph is not executable")
+    mapping = {}
+    used = set()
+    for node in plan["nodes"]:
+        actual = float(node["x"]), float(node["y"])
+        matches = [index for index, expected in enumerate(points)
+                   if max(abs(actual[axis] - expected[axis])
+                          for axis in (0, 1)) <= 0.001]
+        if len(matches) != 1 or matches[0] in used:
+            raise CliTrialError("Model graph coordinate differs from oracle")
+        mapping[node["id"]] = matches[0]
+        used.add(matches[0])
+    observed_edges = [frozenset((mapping[line["start"]],
+                                 mapping[line["end"]]))
+                      for line in plan["lines"]]
+    if len(set(observed_edges)) != len(edges) or \
+            set(observed_edges) != expected_edges:
+        raise CliTrialError("Model graph topology differs from oracle")
+    for item in [*plan["nodes"], *plan["lines"]]:
+        x0, y0, x1, y1 = item["source"]["region_px"]
+        if x1 > width_px or y1 > height_px or not (x0 < x1 and y0 < y1):
+            raise CliTrialError("Model graph provenance region escapes image")
+    return compiled
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-root", type=Path, required=True)
@@ -137,15 +213,39 @@ def main() -> None:
             frozen.get("effort") != "medium" or \
             frozen.get("acceptance_m7") is not False or \
             _file_sha(image) != frozen.get("source_sha256") or \
-            _file_sha(prompt) != frozen.get("prompt_sha256"):
+            _file_sha(prompt) != frozen.get("prompt_sha256") or \
+            ("cad_binary_sha256" in frozen and
+             _file_sha(binary) != frozen["cad_binary_sha256"]) or \
+            ("measurement_compiler_sha256" in frozen and
+             _file_sha(Path(__file__).with_name("measurement_grid.py")) !=
+             frozen["measurement_compiler_sha256"]) or \
+            ("validator_sha256" in frozen and
+             _file_sha(Path(__file__).resolve(strict=True)) !=
+             frozen["validator_sha256"]):
         raise CliTrialError("Frozen development input changed")
     try:
         plan, usage = parse_cli_events(events)
         with Image.open(image) as bitmap:
             width_px, height_px = bitmap.size
-        compiled = check_rectangle(plan, width_px, height_px,
-                                   float(frozen["expected_width_m"]),
-                                   float(frozen["expected_depth_m"]))
+        output_kind = "planspec"
+        if frozen.get("shape") == "explicit_line_graph_v1":
+            compiled = check_explicit_line_graph(
+                plan, width_px, height_px, frozen["expected_vertices"],
+                frozen["expected_edges"], frozen["expected_regions"])
+        elif frozen.get("shape") == "measurement_grid_two_bay_v1":
+            plan = compile_two_bay(plan, frozen=frozen,
+                                   image_width=width_px,
+                                   image_height=height_px)
+            compiled = check_explicit_line_graph(
+                plan, width_px, height_px, frozen["expected_vertices"],
+                frozen["expected_edges"], frozen["expected_regions"])
+            output_kind = "typed_measurements_compiled_deterministically"
+        elif frozen.get("shape", "rectangle") == "rectangle":
+            compiled = check_rectangle(plan, width_px, height_px,
+                                       float(frozen["expected_width_m"]),
+                                       float(frozen["expected_depth_m"]))
+        else:
+            raise CliTrialError("Frozen shape contract is unsupported")
     except (CliTrialError, KeyError, TypeError, ValueError) as error:
         failed = {"schema_version": "m7-cli-development-trial-1",
                   "status": "abstained" if isinstance(error, CliAbstained)
@@ -184,6 +284,7 @@ def main() -> None:
               "freeze_sha256": _file_sha(root / "freeze.json"),
               "events_sha256": _file_sha(events), "binary_sha256": _file_sha(binary),
               "plan_sha256": _file_sha(root / "model-plan.json"),
+              "model_output_kind": output_kind,
               "model_reuse": reuse,
               "usage_cli_aggregate": usage, "l3_plan_gate": "passed_scoped",
               "geometry_check": "passed_scoped", "cad_status": "pending"}

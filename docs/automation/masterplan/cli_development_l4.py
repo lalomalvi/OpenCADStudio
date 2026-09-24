@@ -31,6 +31,12 @@ def _same(first: tuple, second: tuple) -> bool:
 
 def assess(plan_path: Path, cad_path: Path, external_path: Path) -> dict:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    if not isinstance(plan, dict) or plan.get("schema_version") != "planspec-1" or \
+            not isinstance(plan.get("lines"), list) or \
+            not 1 <= len(plan["lines"]) <= 1000 or \
+            plan.get("circles") != [] or plan.get("dimensions") != []:
+        raise CliL4Error("Scoped LINE-only PlanSpec is required")
+    expected_count = len(plan["lines"])
     cad = verify_owned_cad_evidence(cad_path)
     external = json.loads(external_path.read_text(encoding="utf-8"))
     census_path = external_path.parent / "model-census.txt"
@@ -41,8 +47,8 @@ def assess(plan_path: Path, cad_path: Path, external_path: Path) -> dict:
             external.get("input_unchanged") is not True or \
             external.get("audit_zero_errors_zero_fixes") is not True or \
             external.get("insunits") != 6 or external.get("unit_match") is not True or \
-            external.get("model_census_count") != 4 or \
-            external.get("model_types") != {"LINE": 4} or \
+            external.get("model_census_count") != expected_count or \
+            external.get("model_types") != {"LINE": expected_count} or \
             external.get("census_done") is not True or \
             external.get("forced_termination") is not False or \
             external.get("exit_code") != 0 or \

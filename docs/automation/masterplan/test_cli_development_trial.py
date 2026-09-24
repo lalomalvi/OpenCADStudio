@@ -5,7 +5,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from cli_development_trial import (CliAbstained, CliTrialError, check_ct1,
+from cli_development_trial import (CliAbstained, CliTrialError,
+                                   check_ct1, check_explicit_line_graph,
                                    check_rectangle, parse_cli_events)
 
 
@@ -22,6 +23,24 @@ def rectangle(width=0.2, height=0.4):
                       for i, (a, b) in enumerate((("a", "b"), ("b", "c"),
                                                     ("c", "d"), ("d", "a")), 1)],
             "circles": [], "dimensions": []}
+
+
+def two_bay_network():
+    source = {"region_px": [1, 1, 10, 10], "confidence": 0.9,
+              "classification": "measured"}
+    vertices = [[0, 0], [2, 0], [5, 0], [5, 1.5],
+                [2, 1.5], [0, 1.5]]
+    edges = [[0, 1], [1, 2], [2, 3], [3, 4],
+             [4, 5], [5, 0], [1, 4]]
+    plan = {"schema_version": "planspec-1", "units": "m",
+            "origin": {"x": 0, "y": 0},
+            "nodes": [{"id": f"n{i}", "x": x, "y": y, "source": source}
+                      for i, (x, y) in enumerate(vertices)],
+            "lines": [{"id": f"l{i}", "start": f"n{a}", "end": f"n{b}",
+                       "layer": "0", "source": source}
+                      for i, (a, b) in enumerate(edges)],
+            "circles": [], "dimensions": []}
+    return plan, vertices, edges
 
 
 class CliDevelopmentTrialTests(unittest.TestCase):
@@ -41,6 +60,22 @@ class CliDevelopmentTrialTests(unittest.TestCase):
     def test_other_frozen_rectangle_size(self):
         self.assertEqual(len(check_rectangle(rectangle(2.85, 3.70), 100, 100,
                                              2.85, 3.70)["commands"]), 4)
+
+    def test_explicit_two_bay_network_and_adversarial_edge(self):
+        plan, vertices, edges = two_bay_network()
+        self.assertEqual(len(check_explicit_line_graph(
+            plan, 100, 100, vertices, edges, 2)["commands"]), 7)
+        plan["lines"][-1]["end"] = "n3"
+        with self.assertRaises(CliTrialError):
+            check_explicit_line_graph(plan, 100, 100, vertices, edges, 2)
+
+    def test_explicit_graph_rejects_invalid_frozen_oracle(self):
+        plan, vertices, edges = two_bay_network()
+        with self.assertRaises(CliTrialError):
+            check_explicit_line_graph(plan, 100, 100, vertices, edges, 3)
+        with self.assertRaises(CliTrialError):
+            check_explicit_line_graph(plan, 100, 100, vertices,
+                                      edges[:-1] + [[0, 1]], 2)
 
     def test_cli_requires_single_message_and_rejects_tools(self):
         events = [{"type": "thread.started"}, {"type": "turn.started"},
