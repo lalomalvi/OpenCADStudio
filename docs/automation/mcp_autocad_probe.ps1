@@ -39,6 +39,17 @@ function Read-DxfPoint([string]$value) {
     return @($matches | ForEach-Object { Read-DxfNumber $_.Value })
 }
 
+function Same-Point($first, $second) {
+    if ($null -eq $first -or $null -eq $second -or $first.Count -ne 3 -or
+        $second.Count -ne 3) { return $false }
+    for ($axis = 0; $axis -lt 3; $axis++) {
+        if ([Math]::Abs([double]$first[$axis] - [double]$second[$axis]) -gt 1e-6) {
+            return $false
+        }
+    }
+    return $true
+}
+
 $runId = (Get-Date -Format 'yyyyMMdd-HHmmss') + '-autocad-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
 $output = Join-Path $repo (Join-Path 'target\mcp-external' $runId)
 New-Item -ItemType Directory -Path $output -ErrorAction Stop | Out-Null
@@ -80,7 +91,8 @@ $lispText = @"
                 (ocs_value ocs_data 10) "|" (ocs_value ocs_data 41) "|"
                 (ocs_value ocs_data 50) "|" (ocs_measure ocs_entity ocs_data) "|"
                 (ocs_value ocs_data 13) "|" (ocs_value ocs_data 14) "|"
-                (ocs_value ocs_data 52)) ocs_file)
+                (ocs_value ocs_data 52) "|" (ocs_value ocs_data 11) "|"
+                (ocs_value ocs_data 40)) ocs_file)
       (if (= (cdr (assoc 0 ocs_data)) "DIMENSION")
         (progn
           (write-line (strcat "DIMDATA|" (ocs_value ocs_data 5) "|"
@@ -289,8 +301,76 @@ try {
         }
     }
     $propertyMismatch = @($propertyComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
+    $geometryComparison = @()
+    $geometrySourceValid = $null
+    if ($richSourceReport -and $richSourceReport.planspec.fixture) {
+        $fixtureName = [string]$richSourceReport.planspec.fixture
+        if ($fixtureName -notin @('synthetic-room.planspec.json',
+                                  'synthetic-layer.planspec.json',
+                                  'synthetic-contour.planspec.json')) {
+            $geometrySourceValid = $false
+        } else {
+            $fixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $fixtureName)
+            $geometrySourceValid = (Test-Path -LiteralPath $fixturePath -PathType Leaf) -and
+                ((Get-FileHash -LiteralPath $fixturePath -Algorithm SHA256).Hash -eq
+                 $richSourceReport.planspec.fixture_sha256)
+        }
+        if ($geometrySourceValid) {
+            $fixture = Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json
+            $nodes = @{}
+            foreach ($node in $fixture.nodes) {
+                $nodes[$node.id] = @(
+                    ([double]$node.x + [double]$fixture.origin.x),
+                    ([double]$node.y + [double]$fixture.origin.y),
+                    0.0
+                )
+            }
+            foreach ($line in $fixture.lines) {
+                $handle = [string]$richSourceReport.planspec.handles_by_id.($line.id)
+                $row = if ($handle) { $entityByHandle[$handle] } else { $null }
+                $observedStart = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                $observedEnd = if ($row) { Read-DxfPoint $row[16] } else { $null }
+                $expectedStart = $nodes[$line.start]
+                $expectedEnd = $nodes[$line.end]
+                $matched = $row -and $row[1] -eq 'LINE' -and $row[3] -eq $line.layer -and
+                    (((Same-Point $expectedStart $observedStart) -and
+                      (Same-Point $expectedEnd $observedEnd)) -or
+                     ((Same-Point $expectedStart $observedEnd) -and
+                      (Same-Point $expectedEnd $observedStart)))
+                $geometryComparison += [ordered]@{
+                    planspec_id = $line.id; kind = 'LINE'; handle = $handle
+                    expected_layer = $line.layer
+                    expected_start = $expectedStart; expected_end = $expectedEnd
+                    autocad_start = $observedStart; autocad_end = $observedEnd
+                    matched_1e_6 = [bool]$matched
+                }
+            }
+            foreach ($circle in $fixture.circles) {
+                $handle = [string]$richSourceReport.planspec.handles_by_id.($circle.id)
+                $row = if ($handle) { $entityByHandle[$handle] } else { $null }
+                $observedCenter = if ($row) { Read-DxfPoint $row[9] } else { $null }
+                $observedRadius = if ($row) { Read-DxfNumber $row[17] } else { $null }
+                $expectedCenter = $nodes[$circle.center]
+                $expectedRadius = [double]$circle.radius
+                $matched = $row -and $row[1] -eq 'CIRCLE' -and
+                    $row[3] -eq $circle.layer -and
+                    (Same-Point $expectedCenter $observedCenter) -and
+                    $null -ne $observedRadius -and
+                    [Math]::Abs($expectedRadius - $observedRadius) -le 1e-6
+                $geometryComparison += [ordered]@{
+                    planspec_id = $circle.id; kind = 'CIRCLE'; handle = $handle
+                    expected_layer = $circle.layer
+                    expected_center = $expectedCenter; expected_radius = $expectedRadius
+                    autocad_center = $observedCenter; autocad_radius = $observedRadius
+                    matched_1e_6 = [bool]$matched
+                }
+            }
+        }
+    }
+    $geometryMismatch = ($geometrySourceValid -eq $false) -or
+        @($geometryComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-3'
+        schema_version = 'mcp-autocad-audit-l4-4'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion
@@ -311,8 +391,12 @@ try {
         dimension_measurements = $dimensionMeasurements
         dimension_comparison = $dimensionComparison
         property_comparison = $propertyComparison
-        semantic_verdict = if ($dimensionMismatch -or $propertyMismatch) { 'mismatch' }
-                           elseif ($expected.Count -gt 0 -or $propertyComparison.Count -gt 0) {
+        geometry_source_valid = $geometrySourceValid
+        geometry_comparison = $geometryComparison
+        semantic_verdict = if ($dimensionMismatch -or $propertyMismatch -or $geometryMismatch) {
+            'mismatch'
+        } elseif ($expected.Count -gt 0 -or $propertyComparison.Count -gt 0 -or
+                  $geometryComparison.Count -gt 0) {
             'matched_scoped'
         } else { 'unknown' }
         census_done = $censusDone
@@ -325,7 +409,7 @@ try {
         verdict = if (-not $auditZero -or -not $censusDone -or $before -ne $after -or
                       ($null -ne $ExpectedInsunits -and $insunits -ne $ExpectedInsunits)) {
             'failed'
-        } elseif ($dimensionMismatch -or $propertyMismatch) { 'semantic_mismatch'
+        } elseif ($dimensionMismatch -or $propertyMismatch -or $geometryMismatch) { 'semantic_mismatch'
         } elseif ($forcedTermination -or $process.ExitCode -ne 0) {
             'partial_abnormal_exit'
         } else { 'audit_and_census_passed' }
