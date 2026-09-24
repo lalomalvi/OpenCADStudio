@@ -36,6 +36,10 @@ class Invocation:
     source_sha256: str
     protocol_sha256: str
     cad_binary_sha256: str
+    supervisor_protocol_path: Path | None = None
+    supervisor_protocol_sha256: str | None = None
+    supervisor_model: str | None = None
+    supervisor_effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,7 +134,14 @@ def run_once(journal: TrialJournal, arm: str, case_id: str, repetition: int,
                             journal.image_paths[case_id], journal.arm_protocols[arm],
                             journal.arm_binaries[arm], journal.requested_model, journal.effort,
                             reserved["source_sha256"], reserved["protocol_sha256"],
-                            reserved["cad_binary_sha256"])
+                            reserved["cad_binary_sha256"],
+                            journal.supervisor_protocol_path,
+                            reserved["supervisor_contract"]["protocol_sha256"]
+                            if reserved["supervisor_contract"] else None,
+                            reserved["supervisor_contract"]["model"]
+                            if reserved["supervisor_contract"] else None,
+                            reserved["supervisor_contract"]["effort"]
+                            if reserved["supervisor_contract"] else None)
     root = journal.path.parent.resolve(strict=True)
     try:
         observed = invoke(invocation)

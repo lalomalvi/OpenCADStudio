@@ -60,7 +60,10 @@ class TrialJournal:
                  oracle_manifest_path: Path, oracle_paths: dict[str, Path],
                  oracle_root: Path, arm_protocols: dict[str, Path],
                  arm_binaries: dict[str, Path],
-                 requested_model: str, effort: str, hardware_label: str) -> None:
+                 requested_model: str, effort: str, hardware_label: str,
+                 supervisor_protocol_path: Path | None = None,
+                 supervisor_model: str | None = None,
+                 supervisor_effort: str | None = None) -> None:
         if not checkpoint.is_absolute() or checkpoint.suffix.lower() != ".jsonl" \
                 or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id) \
                 or not isinstance(requested_model, str) or not _ID.fullmatch(requested_model) \
@@ -69,6 +72,15 @@ class TrialJournal:
                 or set(arm_binaries) != set(_ARMS) \
                 or not isinstance(hardware_label, str) or not hardware_label.strip():
             raise TrialError("Trial identity, model, effort or checkpoint is invalid")
+        if (supervisor_protocol_path is None) != (supervisor_model is None) or \
+                (supervisor_protocol_path is None) != (supervisor_effort is None) or \
+                (supervisor_protocol_path is not None and (
+                    not isinstance(supervisor_protocol_path, Path) or
+                    not supervisor_protocol_path.is_absolute() or
+                    not isinstance(supervisor_model, str) or
+                    not _ID.fullmatch(supervisor_model) or
+                    supervisor_effort not in {"low", "medium", "high", "xhigh", "max"})):
+            raise TrialError("Supervisor contract must be complete before trial")
         self.path = checkpoint
         self.run_id = run_id
         self.cohort_path = cohort_path
@@ -81,6 +93,9 @@ class TrialJournal:
         self.arm_binaries = arm_binaries
         self.requested_model = requested_model
         self.effort = effort
+        self.supervisor_protocol_path = supervisor_protocol_path
+        self.supervisor_model = supervisor_model
+        self.supervisor_effort = supervisor_effort
         self.hardware_sha256 = _digest(hardware_label.encode("utf-8"))
         if checkpoint.resolve(strict=False).is_relative_to(input_root.resolve(strict=True)) \
                 or checkpoint.resolve(strict=False).is_relative_to(oracle_root.resolve(strict=True)):
@@ -130,6 +145,10 @@ class TrialJournal:
                  "requested_model": self.requested_model, "effort": self.effort,
                  "hardware_sha256": self.hardware_sha256, "arms": list(_ARMS),
                  "slots": 36}
+        if self.supervisor_protocol_path is not None:
+            start["supervisor_contract"] = {
+                "protocol_sha256": _file_sha(self.supervisor_protocol_path),
+                "model": self.supervisor_model, "effort": self.supervisor_effort}
         return start, cohort
 
     def _append(self, records: list[dict], event: dict) -> None:
@@ -246,7 +265,8 @@ class TrialJournal:
                 "repetition": repetition, "journal_sha256": _file_sha(self.path),
                 "source_sha256": case["source"]["sha256"],
                 "protocol_sha256": start["arm_contracts"][arm]["protocol_sha256"],
-                "cad_binary_sha256": start["arm_contracts"][arm]["cad_binary_sha256"]}
+                "cad_binary_sha256": start["arm_contracts"][arm]["cad_binary_sha256"],
+                "supervisor_contract": start.get("supervisor_contract")}
 
     @_locked
     def record_result(self, arm: str, case_id: str, repetition: int, request_id: str,
@@ -312,6 +332,7 @@ class TrialJournal:
                 "protocol_sha256": start["arm_contracts"][arm]["protocol_sha256"],
                 "cad_binary_sha256": start["arm_contracts"][arm]["cad_binary_sha256"],
                 "requested_model": start["requested_model"], "effort": start["effort"],
+                "supervisor_contract": start.get("supervisor_contract"),
                 "journal_sha256": _file_sha(self.path)}
 
     @_locked

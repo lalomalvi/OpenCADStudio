@@ -36,6 +36,8 @@ def inspect_slot(journal: TrialJournal, arm: str, case_id: str,
         blockers.append("invocation_not_completed")
     if slot["pending_uncertain"]:
         blockers.append("journal_has_pending_uncertain_intent")
+    if start.get("supervisor_contract") is None:
+        blockers.append("supervisor_contract_not_frozen")
     if result["evidence_file"] is None:
         blockers.append("invocation_envelope_missing")
     else:
@@ -66,6 +68,7 @@ def inspect_slot(journal: TrialJournal, arm: str, case_id: str,
             "cohort_sha256": start["cohort_sha256"],
             "oracle_manifest_sha256": start["oracle_manifest_sha256"],
             "protocol_sha256": start["arm_contracts"][arm]["protocol_sha256"],
+            "supervisor_contract": start.get("supervisor_contract"),
             "cad_binary_sha256": start["arm_contracts"][arm]["cad_binary_sha256"],
             "journal_sha256": slot["journal_sha256"],
             "invocation_envelope_sha256": evidence_sha,

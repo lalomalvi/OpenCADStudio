@@ -12,6 +12,7 @@ import uuid
 from luna_pipeline import run_reserved_pipeline
 from owned_cad_executor import OwnedCadExecutor
 from reserved_runner import verify_envelope
+from supervisor_once_adapter import request_supervisor_once
 import test_reserved_trial
 from test_luna_planspec_gate import wrapped
 from test_provider_response_receipt import response
@@ -33,6 +34,18 @@ class SyntheticLuna:
         return self.raw
 
 
+class SyntheticSupervisor:
+    max_retries = 0
+
+    def __init__(self):
+        self.responses = self
+        self.calls = 0
+
+    def create(self, **_payload):
+        self.calls += 1
+        return response("resp-synthetic-supervisor", "gpt-6-sol")
+
+
 def main():
     repo = Path(__file__).resolve().parents[3]
     binary = Path(sys.argv[1] if len(sys.argv) > 1 else repo / "target/debug/OpenCADStudio.exe").resolve()
@@ -43,6 +56,12 @@ def main():
     root.mkdir(parents=True, exist_ok=False)
     journal, _, run, _, _ = test_reserved_trial.ReservedTrialTests().make_journal(str(root))
     journal.arm_binaries = {"baseline": binary, "candidate": binary}
+    supervisor_protocol = root / "synthetic-supervisor.txt"
+    supervisor_protocol.write_text("Compare synthetic source and CAD capture.\n",
+                                   encoding="utf-8")
+    journal.supervisor_protocol_path = supervisor_protocol
+    journal.supervisor_model = "gpt-6-sol"
+    journal.supervisor_effort = "low"
     profile = root / "profile"
     profile.mkdir()
     temporary = root / "temp"
@@ -52,6 +71,7 @@ def main():
                         "TEMP": str(temporary), "TMP": str(temporary)})
     fixture = Path(__file__).with_name("fixtures") / "synthetic-wall.planspec.json"
     luna = SyntheticLuna(json.loads(fixture.read_text(encoding="utf-8")))
+    supervisor = SyntheticSupervisor()
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest().upper()
     report = {"schema_version": "m7-reserved-pipeline-l2-1", "status": "failed",
               "binary_sha256": sha(binary), "fixture_sha256": sha(fixture)}
@@ -76,29 +96,21 @@ def main():
                                               "op": "state"})
         executor = OwnedCadExecutor(client, gui, binary, run,
                                     capture_viewport=True)
-        supervisor_calls = []
-
-        def synthetic_supervisor(_invocation, evidence):
-            cad = json.loads(evidence.read_text(encoding="utf-8"))
-            if "capture" not in cad:
-                raise ProtocolError("Fenced CAD capture is missing")
-            supervisor_calls.append(evidence.name)
-            return response("resp-synthetic-supervisor", "gpt-6-sol")
-
         result = run_reserved_pipeline(
             journal, "baseline", "case-0", 1, "synthetic-pipeline-1",
             luna_client=luna, cad_execute=executor,
-            supervisor_request=synthetic_supervisor,
+            supervisor_request=lambda invocation, evidence: request_supervisor_once(
+                journal, invocation, evidence, client=supervisor),
             allowed_versions=frozenset({"planspec-3"}))
         envelope = verify_envelope(result["evidence_path"])
         cad = json.loads((run / envelope["cad_evidence"]["file"]).read_text(encoding="utf-8"))
         if result["disposition"] != "completed" or luna.calls != 1 or \
-                len(supervisor_calls) != 1 or cad["audit_ok"] is not True or \
+                supervisor.calls != 1 or cad["audit_ok"] is not True or \
                 cad["completed_commands"] != 5 or cad["added_entities"] != 4 or \
                 envelope["gates"] != "unevaluated":
             raise ProtocolError("Synthetic reserved pipeline did not complete as expected")
         report.update({"status": "passed", "luna_calls": luna.calls,
-                       "supervisor_calls": len(supervisor_calls),
+                       "supervisor_calls": supervisor.calls,
                        "journal_sha256": journal.snapshot()["journal_sha256"],
                        "envelope_sha256": sha(result["evidence_path"]),
                        "cad_evidence_sha256": sha(run / envelope["cad_evidence"]["file"]),

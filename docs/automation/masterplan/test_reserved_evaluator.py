@@ -28,6 +28,7 @@ class ReservedEvaluatorTests(unittest.TestCase):
             self.assertEqual(result["status"], "needs_independent_evidence")
             self.assertEqual(result["gates"], {f"G{i}": "pending" for i in range(11)})
             self.assertIn("provider_identity_and_usage_unverified", result["blockers"])
+            self.assertIn("supervisor_contract_not_frozen", result["blockers"])
             self.assertEqual(len(result["invocation_envelope_sha256"]), 64)
             self.assertNotIn("private-request", str(result))
             self.assertNotIn(str(journal.input_root), str(result))
