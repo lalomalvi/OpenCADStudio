@@ -157,6 +157,16 @@ $lispText = @"
                           (ocs_value ocs_data 370)) ocs_file)
       (write-line (strcat "COLORDATA|" (ocs_value ocs_data 5) "|"
                           (ocs_value ocs_data 62)) ocs_file)
+      (if (= (cdr (assoc 0 ocs_data)) "LWPOLYLINE")
+        (progn
+          (setq ocs_poly_index 0)
+          (foreach ocs_pair ocs_data
+            (if (= (car ocs_pair) 10)
+              (progn
+                (write-line (strcat "PLINEVERTEX|" (ocs_value ocs_data 5) "|"
+                                    (itoa ocs_poly_index) "|"
+                                    (ocs_point (list ocs_pair) 10)) ocs_file)
+                (setq ocs_poly_index (1+ ocs_poly_index)))))))
       (if (= (cdr (assoc 0 ocs_data)) "HATCH")
         (progn
           (write-line (strcat "HATCHDATA|" (ocs_value ocs_data 5) "|"
