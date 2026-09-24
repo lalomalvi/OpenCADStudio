@@ -5,8 +5,8 @@ Corte sintético L2 del 2026-09-23. Binario debug SHA-256 `0F9F4E42870D4AC5EDBD4
 | Necesidad M5 | Comando registrado | Generación mediante PlanSpec | Ejecución MCP L2 | Persistencia/semántica |
 |---|---|---|---|---|
 | Capas | `LAYER`, `CLAYER` | unsupported para capa distinta de `0` | no probada | pending |
-| Polilínea cerrada | `PLINE` | no implementada | passed scoped L2 | `is_closed=true`, tres vértices y tipo Polyline tras reapertura interna; grosor/uniones pending |
-| Arco nativo | `ARC` | no implementada | passed scoped L2 | radio 5, tipo Arc tras reapertura interna; ángulos completos/edición pending |
+| Polilínea cerrada | `PLINE` | no implementada | passed scoped L2 | `is_closed=true`, vértices, ancho/grosor y handle comparados pre/post reapertura interna; uniones/escala pending |
+| Arco nativo | `ARC` | no implementada | passed scoped L2 | centro/radio/ángulos/handle comparados pre/post reapertura interna; edición y motor externo pending |
 | Cota lineal/alineada | `DIMLINEAR`, `DIMALIGNED` | validación de longitud; compilación unsupported | no probada | asociatividad pending |
 | Bloque/instancia | `BLOCK`, `INSERT` | no implementada | no probada | unidades/rotación pending |
 | Relleno | `HATCH` | no implementada | no probada | contorno/guardado pending |

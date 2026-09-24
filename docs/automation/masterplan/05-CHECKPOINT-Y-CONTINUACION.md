@@ -187,3 +187,13 @@ M5.2 se acepta **solo** para creación nativa y tipo persistido internamente en 
 ### Prompt de continuidad desde el duodécimo corte
 
 Verifica SHA remoto, Git y pruebas. Extiende PlanSpec para producir ARC/PLINE mediante capacidades demostradas; prueba espesores/uniones y persistencia geométrica real. Sigue con cotas, bloques, HATCH, capas y plantilla métrica en fixtures sintéticos. Completa M3/M6 antes de evaluar M7; mantén gates de motor externo y revisión humana. Nada de DWG privado ni upstream.
+
+## Decimotercer corte QA geométrica interna M6.4 — 2026-09-23, en progreso
+
+El duodécimo corte se publicó en `origin/codex/mcp-native-primitives-l2` con commit `34bccbf3` (verificar SHA completo remoto). En `codex/mcp-geometry-roundtrip-qa` se añadió una comparación antes/después del DWG sintético, abriéndolo de nuevo como pestaña de OpenCADStudio. Para ARC compara handle, capa, centro, radio y ángulos. Para PLINE compara handle, capa, vértices, cierre, ancho constante y grosor. La tolerancia numérica es 1e-6 unidades CAD; igualdad de campos no numéricos es exacta. El L2 `target/mcp-isolated/20260923-213106-0b44cc68/report.json` pasó con `roundtrip_geometry=matched_1e-6_internal`, auditoría, salida de GUI y SHA del DWG generado por código. Dos pruebas L1 sembraron cambios en radio, ángulo, cierre, vértices y NaN y verificaron rechazo; la suite Python de automatización pasó 19/19.
+
+M6.4 queda **partial**: solo cubre dos tipos nativos y reapertura en el mismo motor. No se probó otro motor, atributos de las otras entidades ni QA visual/regional. El original del usuario y el ensayo histórico no se abrieron ni alteraron.
+
+### Prompt de continuidad desde el decimotercer corte
+
+Verifica SHA remoto y árbol Git; conserva el fixture y reportes. Completa QA para más tipos y motor externo identificado, sin llamar a una reapertura interna interoperabilidad. Cierra M3 y M4, y prueba M5 cotas/bloques/HATCH/capas con semántica verificable. Prepara protocolo M7 y entrega M8 solo cuando los gates faltantes tengan evidencia. No uses el DWG del usuario ni publiques artefactos privados/upstream.

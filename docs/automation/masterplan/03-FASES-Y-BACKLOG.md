@@ -19,7 +19,8 @@ Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejec
 | M4.1, M4.2, M4.4, M4.5, M4.6 | partial L1/L2 | PlanSpec v1 estricto y dry-run determinista de líneas/círculos; L2 sintético produjo 3 entidades y mapa ID→handle. Cotas nativas y capas distintas de 0 quedan unsupported |
 | M5 censo | passed scoped L2 | 634 comandos registrados, SHA de catálogo; matriz comando→PlanSpec→MCP→persistencia en `M5-CENSO-CAPACIDADES.md`. La presencia no acredita semántica |
 | M5.2 arcos/polilínea | partial L2 | ARC nativo radio 5 y PLINE `is_closed=true`, tres vértices, handles distintos y tipos preservados en reapertura interna del DWG sintético; anchura/uniones/ángulos completos y motor externo pendientes |
-| M3 restante, M4.3 y M4 semántico, M5 restante, M6–M8 | pending | No aceptar gates posteriores por los L1/L2 sintéticos |
+| M6.4 | partial L1/L2 | ARC y PLINE comparados por handle, coordenadas, radio, ángulos, vértices, cierre, ancho y grosor pre/post reapertura interna con tolerancia 1e-6; defectos sembrados detectados. Otras entidades y motor externo pendientes |
+| M3 restante, M4.3 y M4 semántico, M5 restante, M6 restante, M7–M8 | pending | No aceptar gates posteriores por los L1/L2 sintéticos |
 
 El owner_role de M0–M2 es la sesión ejecutora. Reproducir L1 con `python -m unittest discover -s docs/automation -p test_mcp_client.py -v` y `cargo test --lib mcp::tests`. El L2 sintético se reproduce con `python docs/automation/mcp_isolated_smoke.py` después del build. Sus gates CAD no prueban imagen, motor externo ni revisión del usuario. El caso original continúa partial.
 

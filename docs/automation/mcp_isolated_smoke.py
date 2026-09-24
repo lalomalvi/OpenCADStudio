@@ -5,6 +5,7 @@ Creates only synthetic geometry. Never discovers the normal user profile.
 
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -14,6 +15,34 @@ import uuid
 
 from mcp_client import Client, ProtocolError, ToolError, UncertainMutation
 from masterplan.planspec import dry_run
+
+
+def native_geometry(entities: list[dict]) -> dict[str, dict]:
+    result = {}
+    for entity in entities:
+        kind = entity["type"]
+        if kind == "Arc":
+            result[kind] = {key: entity[key] for key in
+                            ("handle", "layer", "center", "radius", "start_angle", "end_angle")}
+        elif kind == "Polyline":
+            result[kind] = {"handle": entity["handle"], "layer": entity["layer"],
+                            "vertices": entity["vertices"],
+                            "is_closed": entity["properties"]["is_closed"],
+                            "constant_width": entity["properties"]["constant_width"],
+                            "thickness": entity["properties"]["thickness"]}
+    return result
+
+
+def same_geometry(before: object, after: object, *, tolerance: float = 1e-6) -> bool:
+    if isinstance(before, dict) and isinstance(after, dict):
+        return before.keys() == after.keys() and all(
+            same_geometry(before[key], after[key], tolerance=tolerance) for key in before)
+    if isinstance(before, list) and isinstance(after, list):
+        return len(before) == len(after) and all(same_geometry(a, b, tolerance=tolerance)
+                                                 for a, b in zip(before, after))
+    if type(before) in (int, float) and type(after) in (int, float):
+        return math.isfinite(before) and math.isfinite(after) and abs(before - after) <= tolerance
+    return before == after
 
 
 def read_state(client: Client, session: str, *, timeout: float = 10.0) -> dict:
@@ -130,6 +159,7 @@ def main(*, semantic: bool = False) -> None:
                                            "arc_radius": arc["radius"],
                                            "polyline_vertices": len(by_type["Polyline"]["vertices"]),
                                            "polyline_closed": True}
+            native_before = native_geometry(queried["entities"])
         audit = client.tool("ocs_read", {"ocs_session_id": session, "op": "audit",
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
@@ -160,6 +190,17 @@ def main(*, semantic: bool = False) -> None:
             "request": {"op": "save", "request_id": "l2-clean-save-" + uuid.uuid4().hex,
                         "path": str(output / "synthetic-session.dwg"),
                         "target_format": "dwg", "target_version": "2018"}})
+        if semantic:
+            client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "open", "request_id": "l2-reopen-" + uuid.uuid4().hex,
+                            "path": str(destination)}})
+            reopened = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                "parameters": {"handles": native_handles,
+                                                               "detail": "full"}})
+            native_after = native_geometry(reopened.get("entities", []))
+            if set(native_after) != {"Arc", "Polyline"} or not same_geometry(native_before, native_after):
+                raise ProtocolError("Native primitive geometry changed after internal DWG reopen")
+            report["native_primitives"]["roundtrip_geometry"] = "matched_1e-6_internal"
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         if any(document.get("dirty") for document in state["documents"]):
             report["shutdown"] = "waiting_user_dirty_document"
