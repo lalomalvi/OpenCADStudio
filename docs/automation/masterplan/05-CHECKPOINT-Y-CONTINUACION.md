@@ -58,3 +58,24 @@ Verificaciones observadas: ocho pruebas L1 pasaron; `py_compile` pasó; `git dif
 ### Prompt de continuación tras este corte
 
 Lee `docs/automation/masterplan/00-INDICE.md`, los cinco documentos vinculados y este corte vigente. Empieza con `git status --short --branch`, `git remote -v`, `git log -3 --oneline` y `git ls-remote origin refs/heads/main refs/heads/codex/mcp-persistent-client`; contrasta los SHAs publicados con el checkpoint. Reproduce `python -m unittest discover -s docs/automation -p test_mcp_client.py -v` y los tests Rust focalizados. Continúa M1: añade el contrato formal `starting/ready`, selecciona sesión por identidad y documento, exige revisión antes de mutaciones, y resuelve recuperación de `run_script` por request_id sin repetir efectos. Implementa pruebas de fallos y un L2 sintético aislado antes de afirmar aceptación CAD. Preserva el DWG y el ensayo privado; no publiques secretos ni envíes nada a `upstream`.
+
+## Corte en progreso M1/M2 — 2026-09-23
+
+La sesión siguiente al corte publicado trabaja en `codex/mcp-lifecycle-and-recovery`, basada en `f785e15600bbedfc06f255aa1f40dc603820e1ed`. Al iniciar este corte, `origin/main` y `origin/codex/mcp-persistent-client` devolvieron ese mismo SHA. `origin` sigue siendo el fork `lalomalvi/OpenCADStudio`; `upstream` sigue siendo el repositorio del autor. Verificar de nuevo antes de publicar: este apartado se redactó antes del commit y push del corte.
+
+Cambios: `ocs_sessions` expone estados `absent/starting/ready/failed` y arranque sin doble lanzamiento; descriptor con PID, ejecutable e instante de inicio; descubrimiento paralelo acotado y conexión directa al descriptor elegido; precondición de documento/revisión; progreso de `run_script` consultable por `request_id` dentro del mismo proceso MCP; cliente que no reenvía mutaciones inciertas y bloquea al perder la prueba de resultado. El journal entre reinicios, ACL de descriptor en Windows, heartbeat, cuarentena y cierre formal de sesión propia siguen pendientes. `mcp_client.md` delimita el contrato.
+
+Ensayos L2 bajo `target/mcp-isolated`:
+
+- `20260923-184721-770a24ab`: **failed** por modales de inicio; `report.json` original preservado.
+- `20260923-185016-a0cf7e3e`: **failed** por sondeo transitorio de sesión; `report.json` original preservado.
+- `20260923-185109-3e55f0f9`: **passed** con binario anterior a la última corrección; 3 entidades sintéticas, audit/save_verified/hash y salida.
+- `20260923-185832-eab9a934`: **failed** porque `close_modal` reveló otro modal y el cliente trató `waiting_input` como fallo incierto; `report.json` preservado.
+- `20260923-190435-10a7ca1c`: **passed**; `report.json` generado contiene hashes del binario y DWG sintético, tamaño, PID y sesión. Tres entidades, `save_verified` y salida del PID propio. Los PID de los tres ensayos fallidos también salieron tras cierre de ventana con ruta de ejecutable comprobada; no se forzó terminación.
+- `20260923-191629-18cb7573`: **passed** con el binario reconstruido tras el límite de descriptor y la marca de inicio obtenida del SO; `report.json` local contiene hashes y `gui_exited: true`. Es el L2 final del corte.
+
+Los artefactos L2 no se añaden a Git. No se abrió ni modificó el DWG del usuario, y no se cambió el ensayo histórico. El L2 no acredita L3 (interpretación de imagen), L4 (motor externo) ni L5 (revisión humana). Las pruebas L1 Python más recientes dieron 15/15; Rust focalizado dio 15/15. `cargo test --lib` dio 1667 passed, 24 ignored y cero fallos. La medición directa del binario de test en diez repeticiones con 100 descriptores sintéticos muertos dio 1851.7–1909.1 ms, p50 1869.7 ms y p95 conservador 1909.1 ms. La revisión final del diff estaba pendiente al redactar.
+
+### Prompt de continuidad desde este corte
+
+En el worktree `C:/Users/Luis Martinez/.codex/worktrees/mcp-robustness-masterplan/OPEN CAD`, lee el índice y los cinco documentos. Verifica `AGENTS.md`, Git/remotos, estado local, SHA remoto y pruebas: no des por publicado este corte sin `git ls-remote`. Conserva los fallos L2 originales. Completa M1.6 con recuperación durable o declara claramente la brecha; después M2 con identidad de proceso, política de documentos sucios y cierre de sesión propia, midiendo p50/p95 de descubrimiento. Prosigue M3–M8 por gates y fixtures sintéticos sin abrir el DWG del usuario ni publicar artefactos privados. Si un gate exige oracle, motor externo o revisión del usuario, registra exactamente qué evidencia falta. Mantén `upstream` intacto.

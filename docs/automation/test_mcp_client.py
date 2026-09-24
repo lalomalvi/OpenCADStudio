@@ -32,6 +32,18 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(selected["session_id"], "s1")
         self.assertEqual(client.tool("ocs_sessions", {"launch_if_none": False})["launches"], 1)
 
+    def test_waits_for_existing_session_without_launch(self):
+        client = self.client("existing_starting")
+        selected = client.ready_session(wait_for_existing=True, timeout=2)
+        self.assertEqual(selected["session_id"], "s1")
+        self.assertEqual(client.tool("ocs_sessions", {"launch_if_none": False})["launches"], 0)
+
+    def test_selected_session_supplies_document_preconditions(self):
+        client = self.client()
+        client.ready_session()
+        result = client.mutate("s1", {"op": "run", "request_id": "bound-1", "cmd": "LINE 0,0 1,0"})
+        self.assertEqual(result["status"], "completed")
+
     def test_ambiguous_session_rejected(self):
         client = self.client("ambiguous")
         with self.assertRaisesRegex(ProtocolError, "specify session_id"):
@@ -48,7 +60,8 @@ class ClientTests(unittest.TestCase):
 
     def test_lost_reply_queries_operation_once(self):
         client = self.client("lost_mutation", timeout=0.5)
-        request = {"op": "run", "request_id": "synthetic-1", "cmd": "LINE 0,0 1,0"}
+        request = {"op": "run", "request_id": "synthetic-1", "cmd": "LINE 0,0 1,0",
+                   "document_id": 1, "revision": 0}
         result = client.mutate("s1", request)
         self.assertEqual(result["effects"], 1)
         self.assertEqual(client.mutate("s1", request)["effects"], 1)
@@ -56,9 +69,41 @@ class ClientTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reused"):
             client.mutate("s1", {**request, "cmd": "CIRCLE 0,0 1"})
 
+    def test_running_batch_progresses_by_operation_query_without_replay(self):
+        client = self.client("running_batch")
+        request = {"op": "run_script", "request_id": "batch-progress", "document_id": 1,
+                   "revision": 0, "commands": ["LINE 0,0 1,0"]}
+        result = client.mutate("s1", request)
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["effects"], 1)
+        self.assertEqual(client.tool_calls, 3)  # execute, operation, operation
+        self.assertEqual(client.mutate("s1", request)["effects"], 1)
+
+    def test_close_modal_can_reveal_another_modal(self):
+        client = self.client("chained_modals")
+        request = {"op": "action", "name": "close_modal", "request_id": "modal-1",
+                   "document_id": 1, "revision": 0}
+        self.assertEqual(client.mutate("s1", request)["status"], "waiting_input")
+        self.assertEqual(client.mutate("s1", request)["status"], "waiting_input")
+        self.assertEqual(client.tool_calls, 1)
+
+    def test_lost_partial_batch_reports_progress(self):
+        client = self.client("lost_partial", timeout=0.5)
+        request = {"op": "run_script", "request_id": "synthetic-partial",
+                   "commands": ["LINE 0,0 1,0", "INVALID"], "document_id": 1, "revision": 0}
+        with self.assertRaises(ToolError) as caught:
+            client.mutate("s1", request)
+        self.assertEqual(caught.exception.result["completed_commands"], 1)
+        self.assertEqual(caught.exception.result["next_command"], 1)
+        self.assertEqual(client.tool_calls, 2)  # No execute replay.
+        with self.assertRaisesRegex(UncertainMutation, "unresolved mutation"):
+            client.mutate("s1", {"op": "run", "request_id": "next-after-partial",
+                                 "cmd": "LINE 1,0 2,0", "document_id": 1, "revision": 1})
+
     def test_unknown_operation_stops_without_replay(self):
         client = self.client("unknown_operation", timeout=0.05)
-        request = {"op": "run", "request_id": "synthetic-uncertain", "cmd": "LINE 0,0 1,0"}
+        request = {"op": "run", "request_id": "synthetic-uncertain", "cmd": "LINE 0,0 1,0",
+                   "document_id": 1, "revision": 0}
         # A successful immediate reply cannot exercise recovery; simulate loss.
         with patch.object(client, "_tool_raw", side_effect=[ProtocolError("lost"),
                      ProtocolError("unknown_operation")]) as calls:
@@ -69,12 +114,32 @@ class ClientTests(unittest.TestCase):
             with self.assertRaises(ProtocolError):
                 client.mutate("s1", request)
             self.assertEqual(calls.call_count, 1)  # Only an operation query.
+        with self.assertRaisesRegex(UncertainMutation, "unresolved mutation"):
+            client.mutate("s1", {**request, "request_id": "another-id"})
+
+    def test_lost_reply_then_unknown_operation_blocks_new_mutation(self):
+        client = self.client()
+        request = {"op": "run", "request_id": "lost-journal", "cmd": "LINE 0,0 1,0",
+                   "document_id": 1, "revision": 0}
+        with patch.object(client, "_tool_raw", side_effect=[ProtocolError("lost"),
+                     ToolError({"ok": False, "code": "unknown_operation", "status": "failed"})]):
+            with self.assertRaises(ToolError):
+                client.mutate("s1", request)
+        with self.assertRaisesRegex(UncertainMutation, "unresolved mutation"):
+            client.mutate("s1", {**request, "request_id": "next"})
 
     def test_explicit_server_failure_is_reported(self):
         client = self.client("explicit_failure")
         with self.assertRaises(ToolError):
-            client.mutate("s1", {"op": "run", "request_id": "bad-1", "cmd": "INVALID"})
+            client.mutate("s1", {"op": "run", "request_id": "bad-1", "cmd": "INVALID",
+                                 "document_id": 1, "revision": 0})
         self.assertEqual(client.tool_calls, 1)
+
+    def test_mutation_requires_document_state(self):
+        client = self.client()
+        with self.assertRaisesRegex(ValueError, "document_id and revision required"):
+            client.mutate("s1", {"op": "run", "request_id": "missing-state", "cmd": "LINE 0,0 1,0"})
+        self.assertEqual(client.tool_calls, 0)
 
     def test_invalid_json_and_eof_fail_closed(self):
         for mode in ("invalid_json", "eof"):

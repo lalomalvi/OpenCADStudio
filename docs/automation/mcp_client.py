@@ -37,6 +37,10 @@ class RpcTimeout(ProtocolError):
 class ToolError(ProtocolError):
     """The server returned an explicit tool failure."""
 
+    def __init__(self, result: dict):
+        self.result = result
+        super().__init__(str(result))
+
 
 class UncertainMutation(ProtocolError):
     pass
@@ -44,11 +48,12 @@ class UncertainMutation(ProtocolError):
 
 class Client:
     def __init__(self, server: Path, *, timeout: float = 15.0, max_pending: int = 64,
-                 command: Sequence[str] | None = None) -> None:
+                 command: Sequence[str] | None = None,
+                 environment: dict[str, str] | None = None) -> None:
         self.process = subprocess.Popen(
             list(command) if command is not None else [str(server), "--mcp"], stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            encoding="utf-8", bufsize=1,
+            encoding="utf-8", bufsize=1, env=environment,
         )
         self.timeout = timeout
         self.max_pending = max_pending
@@ -62,6 +67,8 @@ class Client:
         self._lock = threading.Lock()
         self._fatal: str | None = None
         self._mutations: dict[str, tuple[str, dict | None]] = {}
+        self._sessions: dict[str, dict] = {}
+        self._blocked_sessions: dict[str, str] = {}
         threading.Thread(target=self._read_stdout, daemon=True).start()
         threading.Thread(target=self._drain_stderr, daemon=True).start()
 
@@ -152,7 +159,15 @@ class Client:
                                deadline=deadline,
                                **{key: value for key, value in arguments.items()
                                   if key not in {"ocs_session_id", "request"}})
-        return self._tool_raw(name, arguments, deadline=deadline)
+        result = self._tool_raw(name, arguments, deadline=deadline)
+        if name == "ocs_read" and arguments.get("op") == "state":
+            self._remember_state(arguments["ocs_session_id"], result)
+        return result
+
+    def _remember_state(self, session_id: str, state: dict) -> None:
+        if isinstance(state.get("document_id"), int) and isinstance(state.get("revision"), int):
+            self._sessions[session_id] = {"document_id": state["document_id"],
+                                          "revision": state["revision"]}
 
     def _tool_raw(self, name: str, arguments: dict, *, deadline: float | None = None) -> dict:
         if deadline is None:
@@ -176,7 +191,7 @@ class Client:
                     break
         structured = result.get("structuredContent")
         if structured is None or structured.get("ok") is False or result.get("isError"):
-            raise ToolError(str(structured or result))
+            raise ToolError(structured or result)
         return structured
 
     @staticmethod
@@ -189,20 +204,33 @@ class Client:
         return remaining
 
     def ready_session(self, *, session_id: str | None = None,
-                      launch_if_none: bool = False, timeout: float = 90.0) -> dict:
+                      launch_if_none: bool = False, wait_for_existing: bool = False,
+                      timeout: float = 90.0) -> dict:
         deadline = time.monotonic() + timeout
         launched = False
         interval = 0.1
         while True:
             try:
-                sessions = self.tool("ocs_sessions", {"launch_if_none": launch_if_none and not launched},
-                                     deadline=deadline)["result"]
+                discovery = self.tool("ocs_sessions", {"launch_if_none": launch_if_none and not launched},
+                                      deadline=deadline)
                 launched = True
+                if discovery.get("status") == "starting":
+                    remaining = self._remaining(deadline)
+                    pause = max(0.01, discovery.get("retry_after_ms", 200) / 1000)
+                    time.sleep(min(pause, remaining))
+                    continue
+                if discovery.get("status") == "failed":
+                    raise ProtocolError(f"Editor startup failed: {discovery.get('reason')}")
+                if discovery.get("status") == "absent" and wait_for_existing:
+                    time.sleep(min(0.2, self._remaining(deadline)))
+                    continue
+                sessions = discovery["result"]
                 if session_id is None and len(sessions) != 1:
                     raise ProtocolError(f"Expected one session, found {len(sessions)}; specify session_id")
                 matching = [s for s in sessions if s["session_id"] == session_id] if session_id else sessions
                 if len(matching) != 1:
                     raise ProtocolError("Selected session is absent or ambiguous")
+                self._remember_state(matching[0]["session_id"], matching[0])
                 return matching[0]
             except ProtocolError as exc:
                 if "still starting" not in str(exc):
@@ -214,6 +242,8 @@ class Client:
 
     def mutate(self, session_id: str, request: dict, *, deadline: float | None = None,
                **options: Any) -> dict:
+        if deadline is None:
+            deadline = time.monotonic() + max(self.timeout, 90.0)
         request_id = request.get("request_id")
         if not isinstance(request_id, str) or not request_id:
             raise ValueError("Mutation requires a stable request_id")
@@ -225,33 +255,81 @@ class Client:
             if previous[1] is not None:
                 return previous[1]
             return self.recover(session_id, request_id, deadline=deadline)
+        if session_id in self._blocked_sessions:
+            raise UncertainMutation(
+                f"Session has unresolved mutation {self._blocked_sessions[session_id]}; reconcile before editing")
+        effective = request.copy()
+        if request.get("op") not in {"new", "open", "stop", "activate"}:
+            state = self._sessions.get(session_id)
+            if state is None and ("document_id" not in effective or "revision" not in effective):
+                raise ValueError("Select/read the session before editing; document_id and revision required")
+            if state:
+                effective.setdefault("document_id", state["document_id"])
+                effective.setdefault("revision", state["revision"])
         self._mutations[request_id] = (digest, None)
         try:
-            result = self._tool_raw("ocs_execute", {"ocs_session_id": session_id, "request": request, **options},
+            result = self._tool_raw("ocs_execute", {"ocs_session_id": session_id, "request": effective, **options},
                                     deadline=deadline)
-        except ToolError:
+        except ToolError as exc:
+            if exc.result.get("completed_commands", 0) or exc.result.get("changes"):
+                self._blocked_sessions[session_id] = request_id
             raise
         except (RpcTimeout, ProtocolError) as exc:
             # A transport failure may occur after the editor commits. Query only.
             try:
                 return self.recover(session_id, request_id, deadline=deadline)
+            except ToolError as recovery_exc:
+                if recovery_exc.result.get("completed_commands", 0) or recovery_exc.result.get("changes"):
+                    self._blocked_sessions[session_id] = request_id
+                raise  # Known failed/partial operation includes progress.
             except (RpcTimeout, ProtocolError) as recovery_exc:
+                self._blocked_sessions[session_id] = request_id
                 raise UncertainMutation(f"{request_id}: outcome unknown; {recovery_exc}") from exc
+        if result.get("status") in {"accepted", "running"}:
+            return self.recover(session_id, request_id, deadline=deadline)
+        if result.get("status") == "waiting_input" and not (
+                request.get("op") == "action" and request.get("name") == "close_modal"):
+            self._blocked_sessions[session_id] = request_id
+            raise UncertainMutation(f"{request_id}: operation awaits input; preserve progress")
         self._mutations[request_id] = (digest, result)
+        if isinstance(result.get("state"), dict):
+            self._remember_state(session_id, result["state"])
         return result
 
     def recover(self, session_id: str, request_id: str, *, deadline: float | None = None) -> dict:
-        operation = self.tool("ocs_read", {"ocs_session_id": session_id, "op": "operation",
-                                            "parameters": {"request_id": request_id}}, deadline=deadline)
-        if operation.get("status") in {"accepted", "running", "waiting_input"}:
-            raise UncertainMutation(f"{request_id}: operation not complete; preserve progress")
+        if deadline is None:
+            deadline = time.monotonic() + max(self.timeout, 90.0)
+        while True:
+            try:
+                operation = self.tool("ocs_read", {"ocs_session_id": session_id, "op": "operation",
+                                                    "parameters": {"request_id": request_id}}, deadline=deadline)
+            except ToolError as exc:
+                self._blocked_sessions[session_id] = request_id
+                raise
+            if operation.get("status") in {"accepted", "running"}:
+                try:
+                    time.sleep(min(0.1, self._remaining(deadline)))
+                except RpcTimeout as exc:
+                    self._blocked_sessions[session_id] = request_id
+                    raise UncertainMutation(f"{request_id}: still running; preserve progress") from exc
+                continue
+            break
+        if operation.get("status") == "waiting_input":
+            self._blocked_sessions[session_id] = request_id
+            raise UncertainMutation(f"{request_id}: operation awaits input; preserve progress")
         if operation.get("request_id") != request_id:
+            self._blocked_sessions[session_id] = request_id
             raise UncertainMutation(f"{request_id}: operation identity not confirmed")
         if operation.get("ok") is not True or operation.get("status") != "completed":
+            self._blocked_sessions[session_id] = request_id
             raise UncertainMutation(f"{request_id}: operation did not complete successfully")
         previous = self._mutations.get(request_id)
         if previous:
             self._mutations[request_id] = (previous[0], operation)
+        if self._blocked_sessions.get(session_id) == request_id:
+            self._blocked_sessions.pop(session_id)
+        if isinstance(operation.get("state"), dict):
+            self._remember_state(session_id, operation["state"])
         return operation
 
     def close(self) -> None:

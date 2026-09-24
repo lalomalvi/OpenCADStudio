@@ -13,6 +13,8 @@ use std::{
     net::TcpStream,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::atomic::{AtomicUsize, Ordering},
+    sync::{Mutex, OnceLock},
     thread,
     time::{Duration, Instant},
 };
@@ -21,6 +23,7 @@ const PROTOCOL_VERSION: &str = "2025-11-25";
 const MODERN_PROTOCOL_VERSION: &str = "2026-07-28";
 const MAX_REQUEST: usize = 1_048_576;
 const MAX_RESPONSE: u64 = 16 * 1024 * 1024;
+const MAX_DESCRIPTOR: u64 = 8 * 1024;
 const CACHE_TTL_MS: u64 = 3_600_000;
 const INSTRUCTIONS: &str = "Call ocs_sessions, then pass its session_id as ocs_session_id to ocs_read, ocs_execute and ocs_capture. Read capabilities to discover the complete CAD automation surface. Call record_schema to discover every record type, property path, JSON type, enum, unit, constraint and write rule before editing unfamiliar data. Use records to inspect every serializable entity, object, table, header and document record; filter with RFC 6901 JSON Pointer paths. Use set_properties for atomic, type-checked record edits and preserve document_id, revision and request_id. Use commands with parameters.name for a command manifest. Use run_script for a long, known sequence of complete command lines; it is resumable, strict by default and returns a compact summary. Use batch when operations other than command lines must be mixed, and request changed_entities only when resulting geometry is needed. For interactive work, call start and follow state.command.accepts, options and input_example. A run.cmd contains the command name followed by prompt answers separated by spaces; points use x,y or x,y,z. After a timeout, query the existing operation and never replay a mutation with a new request_id. waiting_input and running are not completion. Let OCS and its geometry kernel calculate geometry; use query near, contains_point and intersections for exact relationships. Before delivery call audit with the intended target_format and target_version; use save_verified with an explicit absolute path to save, reopen, hash and compare the semantic manifest.";
 const READ_OPS: &[&str] = &[
@@ -90,7 +93,22 @@ struct Descriptor {
     session_id: String,
     port: u16,
     token: String,
+    #[serde(default)]
+    pid: Option<u32>,
+    #[serde(default)]
+    executable: Option<String>,
+    #[serde(default)]
+    started_at_unix_ms: Option<u64>,
 }
+
+#[derive(Default)]
+struct LaunchState {
+    child: Option<Child>,
+    started: Option<Instant>,
+    failure: Option<String>,
+}
+
+static LAUNCH: OnceLock<Mutex<LaunchState>> = OnceLock::new();
 
 struct GuiClient {
     descriptor: Descriptor,
@@ -225,10 +243,7 @@ fn exchange(descriptor: &Descriptor, request: Value, timeout: Duration) -> Resul
     serde_json::from_str(response.trim_end()).map_err(|error| error.to_string())
 }
 
-fn descriptors() -> Result<Vec<(Descriptor, Value)>, String> {
-    let directory = crate::config::config_dir()
-        .ok_or_else(|| "No user configuration directory".to_string())?
-        .join("automation");
+fn descriptors_in(directory: &Path) -> Result<Vec<(Descriptor, Value)>, String> {
     let Ok(entries) = directory.read_dir() else {
         return Ok(Vec::new());
     };
@@ -236,30 +251,76 @@ fn descriptors() -> Result<Vec<(Descriptor, Value)>, String> {
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("json"))
+        .filter(|path| path.symlink_metadata().is_ok_and(|meta| meta.file_type().is_file()))
         .collect();
-    paths.sort();
-
-    let mut found = Vec::new();
-    for path in paths {
-        if !private_descriptor(&path) {
-            continue;
+    paths.sort_by_key(|path| std::cmp::Reverse(
+        path.metadata().and_then(|m| m.modified()).ok()));
+    let next = AtomicUsize::new(0);
+    let found = Mutex::new(Vec::new());
+    thread::scope(|scope| {
+        for _ in 0..paths.len().min(16) {
+            let paths = &paths;
+            let next = &next;
+            let found = &found;
+            scope.spawn(move || {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(path) = paths.get(index) else { break };
+                    if !private_descriptor(path)
+                        || !path.metadata().is_ok_and(|meta| meta.len() <= MAX_DESCRIPTOR) { continue; }
+                    let Ok(text) = std::fs::read_to_string(path) else { continue };
+                    let Ok(descriptor) = serde_json::from_str::<Descriptor>(&text) else { continue };
+                    let Ok(state) = exchange(&descriptor, json!({"op":"hello"}), Duration::from_millis(250)) else { continue };
+                    if state["ok"].as_bool() == Some(true)
+                        && state["session_id"].as_str() == Some(descriptor.session_id.as_str())
+                    {
+                        if let Ok(mut matches) = found.lock() {
+                            matches.push((descriptor, state));
+                        }
+                    }
+                }
+            });
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(descriptor) = serde_json::from_str::<Descriptor>(&text) else {
-            continue;
-        };
-        let Ok(state) = exchange(&descriptor, json!({"op":"hello"}), Duration::from_secs(1)) else {
-            continue;
-        };
-        if state["ok"].as_bool() == Some(true)
-            && state["session_id"].as_str() == Some(descriptor.session_id.as_str())
-        {
-            found.push((descriptor, state));
-        }
-    }
+    });
+    let mut found = found.into_inner().map_err(|_| "Discovery lock poisoned".to_string())?;
+    found.sort_by(|a, b| a.0.session_id.cmp(&b.0.session_id));
     Ok(found)
+}
+
+fn descriptors() -> Result<Vec<(Descriptor, Value)>, String> {
+    let directory = crate::config::config_dir()
+        .ok_or_else(|| "No user configuration directory".to_string())?
+        .join("automation");
+    descriptors_in(&directory)
+}
+
+fn descriptor_for_session(session_id: &str) -> Result<(Descriptor, Value), String> {
+    if session_id.len() != 32 || !session_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("session_id must be a 32-character hexadecimal ID".into());
+    }
+    let path = crate::config::config_dir()
+        .ok_or_else(|| "No user configuration directory".to_string())?
+        .join("automation")
+        .join(format!("{session_id}.json"));
+    if !path.symlink_metadata().is_ok_and(|meta| meta.file_type().is_file() && meta.len() <= MAX_DESCRIPTOR)
+        || !private_descriptor(&path)
+    {
+        return Err("Selected session descriptor is absent or unsafe".into());
+    }
+    let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let descriptor: Descriptor = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    if descriptor.session_id != session_id {
+        return Err("Selected session descriptor identity differs".into());
+    }
+    // A cold GUI can briefly exceed the discovery probe's 250 ms budget.
+    // Probe only this selected descriptor with a bounded, longer handshake.
+    let state = exchange(&descriptor, json!({"op":"hello"}), Duration::from_secs(2))?;
+    if state["ok"].as_bool() != Some(true)
+        || state["session_id"].as_str() != Some(session_id)
+    {
+        return Err("Selected session handshake failed".into());
+    }
+    Ok((descriptor, state))
 }
 
 fn log_file() -> Result<File, String> {
@@ -287,26 +348,53 @@ fn start_gui() -> Result<Child, String> {
         .map_err(|error| error.to_string())
 }
 
-fn sessions(launch_if_none: bool) -> Result<Vec<Value>, String> {
-    let mut available = descriptors()?;
-    if available.is_empty() && launch_if_none {
-        let mut child = start_gui()?;
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while Instant::now() < deadline {
-            if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-                return Err(format!("OpenCADStudio exited while starting ({status})"));
-            }
-            thread::sleep(Duration::from_millis(200));
-            available = descriptors()?;
-            if !available.is_empty() {
-                break;
-            }
+fn sessions(launch_if_none: bool) -> Result<Value, String> {
+    let available = descriptors()?;
+    if !available.is_empty() {
+        return Ok(json!({"ok":true,"status":"ready","result":
+            available.into_iter().map(|(descriptor, mut state)| {
+                if let Some(object) = state.as_object_mut() {
+                    object.insert("process_id".into(), json!(descriptor.pid));
+                    object.insert("executable_path".into(), json!(descriptor.executable));
+                    object.insert("process_started_at_unix_ms".into(), json!(descriptor.started_at_unix_ms));
+                }
+                state
+            }).collect::<Vec<_>>()}));
+    }
+    let mut launch = LAUNCH.get_or_init(|| Mutex::new(LaunchState::default()))
+        .lock().map_err(|_| "Launch state lock poisoned".to_string())?;
+    if let Some(reason) = &launch.failure {
+        return Ok(json!({"ok":false,"status":"failed","reason":reason,"result":[]}));
+    }
+    if let Some(child) = launch.child.as_mut() {
+        if child.try_wait().map_err(|error| error.to_string())?.is_some() {
+            launch.failure = Some("launched_editor_exited".into());
+        } else if launch.started.is_some_and(|at| at.elapsed() >= Duration::from_secs(90)) {
+            launch.failure = Some("readiness_deadline_exceeded".into());
         }
-        if available.is_empty() {
-            return Err("OpenCADStudio is still starting; call ocs_sessions again".into());
+        if let Some(reason) = &launch.failure {
+            return Ok(json!({"ok":false,"status":"failed","reason":reason,"result":[]}));
+        }
+        let remaining = 90_000u128.saturating_sub(
+            launch.started.map_or(0, |at| at.elapsed().as_millis()));
+        return Ok(json!({"ok":true,"status":"starting","reason":"waiting_for_editor_descriptor",
+            "retry_after_ms":200,"deadline_remaining_ms":remaining,"result":[]}));
+    }
+    if !launch_if_none {
+        return Ok(json!({"ok":true,"status":"absent","result":[]}));
+    }
+    match start_gui() {
+        Ok(child) => {
+            launch.child = Some(child);
+            launch.started = Some(Instant::now());
+            Ok(json!({"ok":true,"status":"starting","reason":"editor_launch_requested",
+                "retry_after_ms":200,"deadline_remaining_ms":90_000,"result":[]}))
+        }
+        Err(_) => {
+            launch.failure = Some("editor_launch_failed".into());
+            Ok(json!({"ok":false,"status":"failed","reason":"editor_launch_failed","result":[]}))
         }
     }
-    Ok(available.into_iter().map(|(_, state)| state).collect())
 }
 
 fn insert_default(object: &mut Map<String, Value>, key: &str, value: Value) {
@@ -316,18 +404,28 @@ fn insert_default(object: &mut Map<String, Value>, key: &str, value: Value) {
 }
 
 impl GuiClient {
-    fn connect(session_id: &str) -> Result<Self, String> {
-        let mut matching: Vec<_> = descriptors()?
-            .into_iter()
-            .filter(|(descriptor, _)| descriptor.session_id == session_id)
-            .collect();
-        if matching.len() != 1 {
-            return Err(format!(
-                "Choose session_id from ocs_sessions; found {} matching sessions",
-                matching.len()
-            ));
+    #[cfg(test)]
+    fn batch_operation(&self, id: &str) -> Option<Value> {
+        self.batches.iter().find(|batch| batch.id == id).map(|batch| {
+            batch.terminal.clone().unwrap_or_else(|| batch_result(batch, "running", true))
+        })
+    }
+
+    fn resume_batch_operation(&mut self, id: &str) -> Result<Option<Value>, String> {
+        let Some(batch) = self.batches.iter().find(|batch| batch.id == id) else {
+            return Ok(None);
+        };
+        if let Some(terminal) = &batch.terminal {
+            return Ok(Some(terminal.clone()));
         }
-        let (descriptor, state) = matching.remove(0);
+        // A previous MCP response may have been lost. Resume from the saved
+        // step and query an active GUI request_id; never issue it again.
+        let request = batch.request.clone();
+        self.execute_batch(request, 30.0).map(Some)
+    }
+
+    fn connect(session_id: &str) -> Result<Self, String> {
+        let (descriptor, state) = descriptor_for_session(session_id)?;
         Ok(Self {
             descriptor,
             state,
@@ -409,6 +507,15 @@ impl GuiClient {
             }
             batch
         } else {
+            let expected_document = request["document_id"].as_u64()
+                .ok_or_else(|| "batch requires document_id from selected session".to_string())?;
+            let expected_revision = request["revision"].as_u64()
+                .ok_or_else(|| "batch requires revision from selected session".to_string())?;
+            let current = self.request(json!({"op":"state"}), 0.0)?;
+            if current["document_id"].as_u64() != Some(expected_document)
+                || current["revision"].as_u64() != Some(expected_revision) {
+                return Err("Selected document or revision changed; read state before editing".into());
+            }
             let steps = request["steps"]
                 .as_array()
                 .cloned()
@@ -917,7 +1024,7 @@ fn call_tool(
     match name {
         "ocs_sessions" => {
             let launch = arguments["launch_if_none"].as_bool().unwrap_or(true);
-            Ok(Value::Array(sessions(launch)?))
+            sessions(launch)
         }
         "ocs_read" => {
             let session_id = required_string(arguments, "ocs_session_id")?;
@@ -930,7 +1037,15 @@ fn call_tool(
                 .cloned()
                 .unwrap_or_default();
             request.insert("op".into(), Value::String(op.into()));
-            client(clients, session_id)?.request(Value::Object(request), 30.0)
+            let gui = client(clients, session_id)?;
+            if op == "operation" {
+                if let Some(id) = request.get("request_id").and_then(Value::as_str) {
+                    if let Some(batch) = gui.resume_batch_operation(id)? {
+                        return Ok(batch);
+                    }
+                }
+            }
+            gui.request(Value::Object(request), 30.0)
         }
         "ocs_execute" => {
             let session_id = required_string(arguments, "ocs_session_id")?;
@@ -1086,8 +1201,8 @@ fn execute_request_schema() -> Value {
             {"properties":{"op":{"const":"save"}}},
             {"properties":{"op":{"const":"save_verified"}},"required":["path"]},
             {"properties":{"op":{"const":"stop"}}},
-            {"properties":{"op":{"const":"batch"}},"required":["steps"]},
-            {"properties":{"op":{"const":"run_script"}},"required":["commands"]}
+            {"properties":{"op":{"const":"batch"}},"required":["steps","document_id","revision"]},
+            {"properties":{"op":{"const":"run_script"}},"required":["commands","document_id","revision"]}
         ]
     })
 }
@@ -1124,7 +1239,7 @@ fn tool_definitions() -> Value {
             "name":"ocs_sessions",
             "description":"List real OpenCADStudio GUI sessions and documents. Launch the installed editor if none is running.",
             "inputSchema":{"type":"object","properties":{"launch_if_none":{"type":"boolean","default":true,"description":"Launch OpenCADStudio when no live session exists."}},"additionalProperties":false},
-            "outputSchema":{"type":"object","properties":{"result":{"type":"array","items":{"type":"object","properties":{"ok":{"const":true},"session_id":{"type":"string"},"document_id":{"type":"integer"},"revision":{"type":"integer"},"selection":{"type":"array","items":{"type":"string"}},"documents":{"type":"array"}},"required":["ok","session_id","document_id","revision","selection","documents"],"additionalProperties":true}}},"required":["result"],"additionalProperties":false},
+            "outputSchema":{"type":"object","properties":{"ok":{"type":"boolean"},"status":{"type":"string","enum":["absent","starting","ready","failed"]},"reason":{"type":"string"},"retry_after_ms":{"type":"integer"},"deadline_remaining_ms":{"type":"integer"},"result":{"type":"array","items":{"type":"object","properties":{"ok":{"const":true},"session_id":{"type":"string"},"document_id":{"type":"integer"},"revision":{"type":"integer"},"selection":{"type":"array","items":{"type":"string"}},"documents":{"type":"array"}},"required":["ok","session_id","document_id","revision","selection","documents"],"additionalProperties":true}}},"required":["ok","status","result"],"additionalProperties":false},
             "annotations":{"title":"List OCS sessions","readOnlyHint":false,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
         },
         {
@@ -1442,6 +1557,79 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn batch_operation_exposes_progress_without_replaying() {
+        let mut gui = GuiClient {
+            descriptor: Descriptor { session_id: "fixture".into(), port: 0, token: String::new(), pid: None, executable: None, started_at_unix_ms: None },
+            state: json!({}),
+            client_id: "fixture-client".into(),
+            batches: VecDeque::new(),
+        };
+        gui.batches.push_back(BatchExecution {
+            id: "script-1".into(),
+            request: json!({"op":"run_script","request_id":"script-1"}),
+            steps: vec![json!({"op":"run"}), json!({"op":"run"})],
+            next: 1,
+            active: Some("step-2".into()),
+            results: vec![json!({"ok":true,"status":"completed"})],
+            changes: vec![],
+            state: None,
+            terminal: None,
+        });
+        let progress = gui.batch_operation("script-1").unwrap();
+        assert_eq!(progress["status"], "running");
+        assert_eq!(progress["completed_commands"], 1);
+        assert_eq!(progress["next_command"], 1);
+        assert_eq!(gui.batches[0].next, 1);
+        gui.batches[0].terminal = Some(json!({"ok":false,"status":"failed", "request_id":"script-1", "completed_commands":1}));
+        assert_eq!(gui.batch_operation("script-1").unwrap()["status"], "failed");
+    }
+
+    #[test]
+    fn discovery_is_bounded_with_many_unresponsive_descriptors() {
+        use std::net::TcpListener;
+        use std::sync::atomic::AtomicBool;
+        let directory = std::env::current_dir().unwrap().join("target/mcp-discovery-tests")
+            .join(random_id().unwrap());
+        std::fs::create_dir_all(&directory).unwrap();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        listener.set_nonblocking(true).unwrap();
+        let done = std::sync::Arc::new(AtomicBool::new(false));
+        let worker_done = done.clone();
+        let worker = thread::spawn(move || {
+            let mut held = Vec::new();
+            while !worker_done.load(Ordering::Relaxed) {
+                match listener.accept() {
+                    Ok((stream, _)) => held.push(stream),
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock =>
+                        thread::sleep(Duration::from_millis(2)),
+                    Err(_) => break,
+                }
+            }
+        });
+        for count in [0, 1, 20, 100] {
+            let existing = directory.read_dir().unwrap().count();
+            for index in existing..count {
+                std::fs::write(directory.join(format!("{index:03}.json")),
+                    json!({"session_id":format!("dead-{index}"),"port":port,"token":"fixture"}).to_string()).unwrap();
+            }
+            let began = Instant::now();
+            assert!(descriptors_in(&directory).unwrap().is_empty());
+            let elapsed = began.elapsed();
+            if count == 100 {
+                eprintln!("dead_descriptor_count={count} discovery_ms={:.1}", elapsed.as_secs_f64() * 1000.0);
+                assert!(elapsed < Duration::from_secs(8), "100 stale descriptors took {elapsed:?}");
+            }
+        }
+        done.store(true, Ordering::Relaxed);
+        worker.join().unwrap();
+        for entry in directory.read_dir().unwrap() {
+            std::fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        std::fs::remove_dir(directory).unwrap();
+    }
 
     #[test]
     fn advertises_the_shared_tools() {

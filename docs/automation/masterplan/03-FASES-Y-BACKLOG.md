@@ -7,13 +7,15 @@ Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejec
 |---|---|---|
 | M0.1–M0.4 | passed | Git/remotos/AGENTS, matriz de ocho commits y 28 paths en `M0-INTEGRACION.md`; baseline generado por código sin leer el DWG |
 | M0.5 | passed | Rama de implementación y merge explícito; build debug, smoke del mismo binario, 13/13 tests MCP y suite lib 1665 passed, 24 ignored; commit de código `6db1b790` publicado en `origin/main` y rama de respaldo |
-| M1.1–M1.3 | passed L1 | Biblioteca `mcp_client.py` reutilizada por tres harnesses; ocho pruebas sintéticas de transporte |
-| M1.4 | partial | Backoff y un solo intento de lanzamiento; estado formal `starting/ready` y `retry_after_ms` del servidor pendientes |
-| M1.5 | partial | Selección explícita ante sesiones ambiguas; precondición obligatoria de `document_id/revision` pendiente |
-| M1.6 | partial | Consulta de operación tras timeout de mutación sin replay; lote `run_script` incierto y journal durable pendientes |
-| M2–M8 | pending | Fuera de este corte |
+| M1.1–M1.3 | passed L1 | Biblioteca reutilizada por tres harnesses; 15 pruebas sintéticas de transporte en el corte nuevo |
+| M1.4 | passed L1/L2 | Estados formales de disponibilidad, deadline y un solo launch; GUI fría aislada verificada |
+| M1.5 | passed L1/L2 | Sesión seleccionada por ID y handshake; document_id/revision exigidos antes de editar |
+| M1.6 | partial L1/L2 | Lote en curso recuperable dentro del mismo proceso MCP; tras reinicio del MCP falta journal durable; unknown_operation bloquea nuevas mutaciones |
+| M2.1 | partial L1/L2 | Descubrimiento concurrente 0/1/20/100 y conexión directa; 10 muestras con 100 descriptores sintéticos muertos: p50 1869.7 ms, p95 conservador 1909.1 ms; ACL Windows pendiente |
+| M2.2–M2.4 | partial/pending | Salida limpia del L2 y cierre manual de ensayos fallidos con identidad comprobada; heartbeat, cuarentena y shutdown_owned_session formal pendientes |
+| M3–M8 | pending | No aceptar gates posteriores por el L2 sintético |
 
-El owner_role del corte M0/M1 es la sesión ejecutora. Reproducir L1 con `python -m unittest discover -s docs/automation -p test_mcp_client.py -v`. No hay gate L2–L5 aceptado por estos tests. El caso original continúa partial.
+El owner_role de M0–M2 es la sesión ejecutora. Reproducir L1 con `python -m unittest discover -s docs/automation -p test_mcp_client.py -v` y `cargo test --lib mcp::tests`. El L2 sintético se reproduce con `python docs/automation/mcp_isolated_smoke.py` después del build. Sus gates CAD no prueban imagen, motor externo ni revisión del usuario. El caso original continúa partial.
 
 ## Dependencias
 M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7 → M8.

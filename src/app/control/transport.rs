@@ -12,6 +12,23 @@ use std::{
     time::Duration,
 };
 
+#[cfg(windows)]
+fn process_started_at_unix_ms() -> Option<u64> {
+    use windows_sys::Win32::{Foundation::FILETIME, System::Threading::{GetCurrentProcess, GetProcessTimes}};
+    let mut created: FILETIME = unsafe { std::mem::zeroed() };
+    let mut exited: FILETIME = unsafe { std::mem::zeroed() };
+    let mut kernel: FILETIME = unsafe { std::mem::zeroed() };
+    let mut user: FILETIME = unsafe { std::mem::zeroed() };
+    if unsafe { GetProcessTimes(GetCurrentProcess(), &mut created, &mut exited, &mut kernel, &mut user) } == 0 {
+        return None;
+    }
+    let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+    ticks.checked_sub(116_444_736_000_000_000).map(|value| value / 10_000)
+}
+
+#[cfg(not(windows))]
+fn process_started_at_unix_ms() -> Option<u64> { None }
+
 pub(in crate::app) fn subscribe() -> iced::Subscription<Envelope> {
     iced::Subscription::run(worker)
 }
@@ -41,7 +58,10 @@ fn listen(sender: mpsc::Sender<Envelope>) -> std::io::Result<()> {
     let mut secret = [0u8; 32];
     getrandom::fill(&mut secret).map_err(std::io::Error::other)?;
     let token: String = secret.iter().map(|v| format!("{v:02x}")).collect();
-    let descriptor = json!({"protocol":1,"session_id":session_id(),"pid":std::process::id(),"port":listener.local_addr()?.port(),"token":token,"executable":std::env::current_exe()?.to_string_lossy()});
+    let started_at_unix_ms = process_started_at_unix_ms();
+    let descriptor = json!({"protocol":1,"session_id":session_id(),"pid":std::process::id(),
+        "started_at_unix_ms":started_at_unix_ms,"port":listener.local_addr()?.port(),
+        "token":token,"executable":std::env::current_exe()?.to_string_lossy()});
     let path = dir.join(format!("{}.json", session_id()));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
