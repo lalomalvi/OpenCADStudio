@@ -1003,6 +1003,7 @@ fn batch_result(batch: &BatchExecution, status: &str, ok: bool) -> Value {
             "code":failed_result.as_ref().and_then(|result| result.get("code")).cloned(),
             "error":failed_result.as_ref().and_then(|result| result.get("error")).cloned(),
             "completed_commands":batch.next,
+            "attempted_commands":batch.next,
             "successful_commands":if ok { batch.next } else { batch.next.saturating_sub(1) },
             "failed_command":(!ok).then(|| batch.next.saturating_sub(1)),
             "total_commands":batch.steps.len(),
@@ -2119,6 +2120,28 @@ mod tests {
         assert_eq!(gui.batches[0].next, 1);
         gui.batches[0].terminal = Some(json!({"ok":false,"status":"failed", "request_id":"script-1", "completed_commands":1}));
         assert_eq!(gui.batch_operation("script-1").unwrap()["status"], "failed");
+    }
+
+    #[test]
+    fn failed_first_script_command_is_attempted_but_not_successful() {
+        let batch = BatchExecution {
+            id: "failed-script".into(),
+            request: json!({"op":"run_script","request_id":"failed-script"}),
+            steps: vec![json!({"op":"run","cmd":"DIMSTYLE SET Standard dimdec -1"})],
+            next: 1,
+            active: None,
+            results: vec![json!({"ok":false,"status":"failed",
+                "error":"DIMSTYLE: invalid integer property value"})],
+            changes: vec![],
+            state: Some(json!({"document_id":2,"revision":2,"geometry_revision":0})),
+            terminal: None,
+        };
+        let result = batch_result(&batch, "failed", false);
+        assert_eq!(result["attempted_commands"], 1);
+        assert_eq!(result["completed_commands"], 1); // legacy attempted count
+        assert_eq!(result["successful_commands"], 0);
+        assert_eq!(result["failed_command"], 0);
+        assert_eq!(result["changes"], json!([]));
     }
 
     #[test]
