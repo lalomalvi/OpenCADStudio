@@ -1543,6 +1543,10 @@ fn call_tool(
                 return Err(result.to_string());
             }
             let metadata = &result["result"];
+            if metadata["scope"] != scope {
+                let _ = std::fs::remove_file(&path);
+                return Err("Capture scope differs from requested scope".into());
+            }
             for key in ["document_id", "geometry_revision", "camera_revision"] {
                 if arguments.get(key).is_some() && arguments[key] != metadata[key] {
                     let _ = std::fs::remove_file(&path);

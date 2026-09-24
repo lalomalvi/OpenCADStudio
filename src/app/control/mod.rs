@@ -1263,29 +1263,30 @@ impl OpenCADStudio {
                     .ok_or("Renderer returned malformed image data")?;
             let mut actual_scope = "window";
             if requested_scope == "viewport" {
-                if let Some(bounds) = crate::ui::wrap_bar::dropdown_bounds(
+                let bounds = crate::ui::wrap_bar::dropdown_bounds(
                     crate::app::view::VIEWPORT_CAPTURE_BOUNDS_ID,
-                ) {
-                    let scale = s.scale_factor;
-                    let left = (bounds.x * scale).floor().clamp(0.0, image.width() as f32) as u32;
-                    let top = (bounds.y * scale).floor().clamp(0.0, image.height() as f32) as u32;
-                    let right = ((bounds.x + bounds.width) * scale)
-                        .ceil()
-                        .clamp(0.0, image.width() as f32) as u32;
-                    let bottom = ((bounds.y + bounds.height) * scale)
-                        .ceil()
-                        .clamp(0.0, image.height() as f32) as u32;
-                    if right > left && bottom > top {
-                        image = image::imageops::crop_imm(
-                            &image,
-                            left,
-                            top,
-                            right - left,
-                            bottom - top,
-                        )
-                        .to_image();
-                        actual_scope = "viewport";
-                    }
+                ).ok_or("Viewport bounds are unavailable for capture")?;
+                let scale = s.scale_factor;
+                let left = (bounds.x * scale).floor().clamp(0.0, image.width() as f32) as u32;
+                let top = (bounds.y * scale).floor().clamp(0.0, image.height() as f32) as u32;
+                let right = ((bounds.x + bounds.width) * scale)
+                    .ceil()
+                    .clamp(0.0, image.width() as f32) as u32;
+                let bottom = ((bounds.y + bounds.height) * scale)
+                    .ceil()
+                    .clamp(0.0, image.height() as f32) as u32;
+                if right > left && bottom > top {
+                    image = image::imageops::crop_imm(
+                        &image,
+                        left,
+                        top,
+                        right - left,
+                        bottom - top,
+                    )
+                    .to_image();
+                    actual_scope = "viewport";
+                } else {
+                    return Err("Viewport bounds are empty for capture".into());
                 }
             }
             let longest = image.width().max(image.height());

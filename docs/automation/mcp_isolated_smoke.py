@@ -550,7 +550,8 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         reference = artifact_ref(output, capture_path.name,
                                  document_id=capture["document_id"],
                                  geometry_revision=capture["geometry_revision"],
-                                 camera_revision=capture["camera_revision"])
+                                 camera_revision=capture["camera_revision"],
+                                 region=capture["scope"])
         if (reference["width"], reference["height"]) != (capture["width"], capture["height"]):
             raise ProtocolError("Capture PNG dimensions differ from MCP metadata")
         report["capture_artifact"] = reference

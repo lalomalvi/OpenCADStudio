@@ -292,6 +292,8 @@ class Client:
                 or metadata.get("rendered_camera_revision") != camera_revision \
                 or metadata.get("render_fence") != "shader_encoded_frame":
             raise ProtocolError("Capture identity or render revision differs")
+        if metadata.get("scope") != "viewport":
+            raise ProtocolError("Capture scope differs from requested viewport")
         images = [item for item in result.get("content", [])
                   if item.get("type") == "image" and item.get("mimeType") == "image/png"]
         if len(images) != 1 or not isinstance(images[0].get("data"), str):
