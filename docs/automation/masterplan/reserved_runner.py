@@ -63,8 +63,16 @@ def _evidence_ref(path: Path | None, run_root: Path) -> dict | None:
     resolved = path.resolve(strict=True)
     if not resolved.is_relative_to(run_root) or resolved.name == "attempts.jsonl":
         raise ValueError("CAD evidence must remain inside the run directory")
+    _verify_nested_cad(resolved)
     return {"file": resolved.relative_to(run_root).as_posix(),
             "sha256": _file_sha(resolved)}
+
+
+def _verify_nested_cad(path: Path) -> None:
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(report, dict) and report.get("schema_version") == "m7-owned-cad-evidence-1":
+        from owned_cad_executor import verify_owned_cad_evidence
+        verify_owned_cad_evidence(path)
 
 
 def verify_envelope(path: Path) -> dict:
@@ -103,6 +111,7 @@ def verify_envelope(path: Path) -> dict:
         if not evidence.is_relative_to(root) or evidence == path.resolve(strict=True) \
                 or _file_sha(evidence) != ref["sha256"]:
             raise ValueError("CAD evidence changed after invocation")
+        _verify_nested_cad(evidence)
     return envelope
 
 
