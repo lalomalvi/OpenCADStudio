@@ -18,7 +18,7 @@ import uuid
 
 from PIL import Image
 
-from measurement_grid import compile_five_bay, compile_two_bay
+from measurement_grid import compile_five_bay, compile_three_region, compile_two_bay
 from measurement_axis_chain import compile_bottom_chain
 from measurement_stacked_span import compile_lower_span_rectangle
 from owned_cad_executor import OwnedCadExecutor, verify_owned_cad_evidence
@@ -249,6 +249,22 @@ def main() -> None:
                     len(plan["lines"]) != 16 or len(compiled["commands"]) != 16:
                 raise CliTrialError("Five-bay grid does not compile")
             output_kind = "typed_five_bay_measurements_compiled_deterministically"
+        elif frozen.get("shape") == "measurement_grid_three_region_v1":
+            plan = compile_three_region(plan, frozen=frozen,
+                                        image_width=width_px,
+                                        image_height=height_px)
+            left, right = (float(value) for value in
+                           frozen["expected_lower_widths_m"])
+            lower = float(frozen["expected_lower_height_m"])
+            upper = float(frozen["expected_upper_height_m"])
+            compiled = check_explicit_line_graph(
+                plan, width_px, height_px,
+                [[0, 0], [left, 0], [left + right, 0],
+                 [left + right, lower], [left, lower], [0, lower],
+                 [left + right, lower + upper], [0, lower + upper]],
+                [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0],
+                 [1, 4], [5, 7], [7, 6], [6, 3]], 3)
+            output_kind = "typed_three_region_measurements_compiled_deterministically"
         elif frozen.get("shape") == "bottom_axis_chain_six_v1":
             plan = compile_bottom_chain(plan, frozen=frozen,
                                         image_width=width_px,

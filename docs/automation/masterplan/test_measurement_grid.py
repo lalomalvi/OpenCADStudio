@@ -4,7 +4,8 @@ import copy
 import unittest
 
 from cli_development_trial import check_explicit_line_graph
-from measurement_grid import MeasurementGridError, compile_five_bay, compile_two_bay
+from measurement_grid import (MeasurementGridError, compile_five_bay,
+                              compile_three_region, compile_two_bay)
 
 
 FROZEN = {"expected_left_width_m": 2.0,
@@ -25,6 +26,40 @@ def measurement():
 
 
 class MeasurementGridTests(unittest.TestCase):
+    def test_three_region_compiles_closed_reference_topology(self):
+        value = {"schema_version": "ocs-bedroom-three-region-measurements-1",
+                 "status": "measured", "units": "m",
+                 "lower_widths_m": [4.0, 4.0],
+                 "lower_height_m": 3.24, "upper_height_m": 3.87,
+                 "confidence": 0.9,
+                 "source_regions": {
+                     "left_width_px": [250, 660, 310, 690],
+                     "right_width_px": [600, 660, 660, 690],
+                     "lower_height_px": [0, 470, 50, 515],
+                     "upper_height_px": [35, 165, 90, 200]}}
+        frozen = {"expected_lower_widths_m": [4.0, 4.0],
+                  "expected_lower_height_m": 3.24,
+                  "expected_upper_height_m": 3.87}
+        plan = compile_three_region(value, frozen=frozen,
+                                    image_width=1068, image_height=771)
+        vertices = [[0, 0], [4, 0], [8, 0], [8, 3.24],
+                    [4, 3.24], [0, 3.24], [8, 7.11], [0, 7.11]]
+        edges = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0],
+                 [1, 4], [5, 7], [7, 6], [6, 3]]
+        self.assertEqual((len(plan["nodes"]), len(plan["lines"])), (8, 10))
+        self.assertEqual(len(check_explicit_line_graph(
+            plan, 1068, 771, vertices, edges, 3)["commands"]), 10)
+        wrong = copy.deepcopy(value)
+        wrong["upper_height_m"] = 2.36
+        with self.assertRaisesRegex(MeasurementGridError, "frozen criterion"):
+            compile_three_region(wrong, frozen=frozen,
+                                 image_width=1068, image_height=771)
+        outside = copy.deepcopy(value)
+        outside["source_regions"]["upper_height_px"][2] = 1069
+        with self.assertRaisesRegex(MeasurementGridError, "escapes"):
+            compile_three_region(outside, frozen=frozen,
+                                 image_width=1068, image_height=771)
+
     def test_five_bay_compiles_connected_metric_grid(self):
         value = {"schema_version": "ocs-measurements-five-bay-1",
                  "status": "measured", "units": "m",

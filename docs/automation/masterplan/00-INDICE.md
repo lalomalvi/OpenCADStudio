@@ -18,6 +18,7 @@ El segundo pase Luna sobre las cinco imágenes disponibles, con retícula de cin
 La revisión de píxeles de las cajas de cota declaradas por Luna y sus fallas verificadas está en [M6-CAJAS-DE-TEXTO-FUENTE-V1.md](M6-CAJAS-DE-TEXTO-FUENTE-V1.md).
 La expansión derivada de 25 píxeles, con 6/6 textos completos por caso en dos hojas revisadas, está en [M6-CAJAS-DERIVADAS-PAD25-V1.md](M6-CAJAS-DERIVADAS-PAD25-V1.md).
 La variante de texto 0.25 m para la cadena de cotas nativas, reutilizando la misma salida Luna, está en [M5-LEGIBILIDAD-COTAS-REFERENCIA-V1.md](M5-LEGIBILIDAD-COTAS-REFERENCIA-V1.md).
+La retícula de tres regiones de recámaras, con fallo métrico v1, L2/L4 v2 y procedencia de caja 3/4 fallida, está en [M7-RECÁMARAS-TRES-REGIONES-V1.md](M7-RECÁMARAS-TRES-REGIONES-V1.md).
 El formato nativo de dos decimales con ceros finales, cotejado en AutoCAD por estilo y handle, está en [M5-COTAS-DECIMALES-FIJOS-V1.md](M5-COTAS-DECIMALES-FIJOS-V1.md).
 El rechazo adversarial de cajas derivadas que mezclan regiones vecinas está en [M6-CAJAS-DERIVADAS-SIN-SOLAPE-V1.md](M6-CAJAS-DERIVADAS-SIN-SOLAPE-V1.md).
 Convertir el ensayo Luna → MCP → OpenCADStudio en un flujo reproducible, medible y recuperable que genere CAD editable con precisión declarada. Este plan abarca arranque, transporte, ejecución, evidencia, consumo, semántica CAD, evaluación e integración. El programa probado fue OpenCADStudio; LibreCAD no participó.
