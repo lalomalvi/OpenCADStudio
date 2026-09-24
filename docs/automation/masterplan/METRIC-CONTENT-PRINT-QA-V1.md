@@ -13,3 +13,5 @@ Límite observado: el PDF dibuja los glifos vectorialmente, pero `pypdf.extract_
 La variante opcional `--pen-widths` prueba dos grosores explícitos bajo [METRIC-PEN-WIDTH-QA-V1.md](METRIC-PEN-WIDTH-QA-V1.md); la ejecución sin esa opción conserva este contrato y sus evidencias.
 
 La variante `--bylayer-weights` prueba los mismos grosores resueltos desde dos capas bajo [METRIC-BYLAYER-PRINT-QA-V1.md](METRIC-BYLAYER-PRINT-QA-V1.md).
+
+Adenda posterior: [METRIC-SEARCHABLE-TEXT-V1.md](METRIC-SEARCHABLE-TEXT-V1.md) añade una capa PDF buscable para el subconjunto `TEXT` sencillo. La observación histórica de extracción vacía se conserva como resultado del binario anterior.

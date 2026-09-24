@@ -153,7 +153,10 @@ def main():
             if abs(page_mm[0]-297)>0.2 or abs(page_mm[1]-210)>0.2:
                 raise ProtocolError('PDF page differs from A4 landscape')
             report['results'][str(denominator)]['page_mm']=page_mm
-            report['results'][str(denominator)]['extracted_text']=reader.pages[0].extract_text()
+            extracted=reader.pages[0].extract_text()
+            report['results'][str(denominator)]['extracted_text']=extracted
+            if extracted.count('TEST123') != 1:
+                raise ProtocolError('Expected one searchable TEST123 CAD TEXT in PDF')
             subprocess.run(['pdftoppm','-f','1','-singlefile','-png','-r','100',str(pdf),str(out/f'metric-content-{denominator}')],check=True)
             components=ink_components(out/f'metric-content-{denominator}.png')
             main=max((s for s in components if s[2]>100 and 30<s[3]<100),

@@ -386,10 +386,47 @@ fn plot_scene_content(
     model_wires.retain(|wire| wire.plot_visible);
     let with_depth = |wires: Vec<crate::scene::WireModel>| {
         let depths = scene.plot_wire_depths(&wires);
+        let mut seen_text = std::collections::HashSet::new();
         wires
             .into_iter()
             .zip(depths)
-            .map(|(wire, draw_depth)| crate::io::pdf_export::PlotWire { wire, draw_depth })
+            .map(|(wire, draw_depth)| {
+                let semantic_text = crate::scene::Scene::handle_from_wire_name(&wire.name)
+                    .filter(|handle| !wire.text_verts.is_empty() && seen_text.insert(*handle))
+                    .and_then(|handle| scene.document.get_entity(handle))
+                    .and_then(|entity| match entity {
+                        acadrust::EntityType::Text(text) => {
+                            use acadrust::entities::{TextHorizontalAlignment, TextVerticalAlignment};
+                            // Helvetica's builtin encoding is reliable for this
+                            // narrow ASCII subset. Complex layouts retain only
+                            // their original visible vector glyphs.
+                            (text.horizontal_alignment == TextHorizontalAlignment::Left
+                                && text.vertical_alignment == TextVerticalAlignment::Baseline
+                                && text.alignment_point.is_none()
+                                && text.rotation.abs() < 1e-9
+                                && text.oblique_angle.abs() < 1e-9
+                                && (text.width_factor - 1.0).abs() < 1e-9
+                                && text.generation_flags == 0
+                                && text.height.is_finite()
+                                && (0.0..1_000_000.0).contains(&text.height)
+                                && text.insertion_point.x.is_finite()
+                                && text.insertion_point.y.is_finite()
+                                && text.normal.x.abs() < 1e-9
+                                && text.normal.y.abs() < 1e-9
+                                && (text.normal.z - 1.0).abs() < 1e-9
+                                && !text.value.is_empty()
+                                && !text.value.contains("%%")
+                                && text.value.bytes().all(|b| (0x20..=0x7e).contains(&b)))
+                            .then(|| crate::io::pdf_export::PlotSemanticText {
+                                value: text.value.clone(),
+                                origin: [text.insertion_point.x, text.insertion_point.y],
+                                height: text.height,
+                            })
+                        }
+                        _ => None,
+                    });
+                crate::io::pdf_export::PlotWire { wire, draw_depth, semantic_text }
+            })
             .collect::<Vec<_>>()
     };
     let paper_wires = with_depth(paper_wires);
@@ -417,7 +454,7 @@ fn plot_scene_content(
     model_pattern_wires.retain(|(wire, _)| wire.plot_visible);
     let model_pattern_wires = model_pattern_wires
         .into_iter()
-        .map(|(wire, draw_depth)| crate::io::pdf_export::PlotWire { wire, draw_depth })
+        .map(|(wire, draw_depth)| crate::io::pdf_export::PlotWire { wire, draw_depth, semantic_text: None })
         .collect::<Vec<_>>();
 
     let (wires, hatches, wipeouts, images, splits) = if paper_space_last {
