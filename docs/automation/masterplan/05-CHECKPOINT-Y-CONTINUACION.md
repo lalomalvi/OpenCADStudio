@@ -1489,3 +1489,15 @@ La lámina sigue siendo un esqueleto parcial de desarrollo sobre imagen ya vista
 ### Prompt de continuidad desde el centésimo vigésimo primer corte
 
 Verifica AGENTS, Git/remotos, SHA local/remoto y árbol. Inspecciona v2 fallido y v3 32/32, capa ACI -7, captura sin rectángulo y negativo ACI +7; conserva ambos runs. Continúa el plano de departamentos con puertas, ventanas y particiones aún visibles, congelando recortes y oráculos antes de nuevas llamadas Luna sin timeout corto. Confronta geometría fuente/captura/AutoCAD y registra abstenciones. No presentes el esqueleto como planta terminada. M7/M8 exigen L5 humana, recibo directo de identidad/uso, comparación controlada y gates integrales. Usa las imágenes disponibles sin pedir sexta ni API; no abras/modifiques DWG privado y publica solo en `lalomalvi/OpenCADStudio`.
+
+## Centésimo vigésimo segundo corte: observación de puerta con gate de proporción — 2026-09-24
+
+El corte 121 `codex/mcp-m7-apartment-hidden-dimension-reference` quedó publicado solo en el fork con SHA local/remoto `c19a9e152347ec560abaf1dfa16cc84f1d9f6cdf` y árbol limpio al iniciar. Un recorte de la puerta entre el tramo horizontal corto y el muro derecho de la lámina de departamentos produjo dos abstenciones Luna conservadas (`unsupported`, `ambiguous`). Un tercer pase dio hoja 65 px frente a abertura 343 px y falló el gate geométrico antes de CAD. Se creó `door_crop_observation.py` para comprobar hashes, protocolo, coordenadas acotadas y longitud/orientación; los cuatro freezes prohíben CAD.
+
+Un cuarto prompt, revisado después del fallo y congelado antes de Luna, produjo A=(260,510), B=(610,510), C=(610,155) sobre recorte 840×680, proporción 355/350 y `passed_observation_only`; freeze SHA `217C80AF89A2A17ED76E970DCBE04A58969986355F97CD08D7CF2729E4F93231`, eventos SHA `91310C34F236859E8A80AE9398766C94264AA13D241E7EDADCE20C83F66542B1`, veredicto SHA `26ED001656D0011BB3F9D76F4837144720AB0975FCDA4582842E8A335EBD968B`. La estimación es supervisada y no certifica arco ni símbolo CAD. Véase [M7-APARTAMENTO-PUERTA-OBSERVACION-V1.md](M7-APARTAMENTO-PUERTA-OBSERVACION-V1.md). Verificar tests, SHA local/remoto y árbol tras publicar.
+
+M7/M8 siguen abiertos por plano incompleto, L5, identidad/uso directos y comparación controlada. Fuentes y evidencia bruta fuera de Git; DWG privado y `upstream` intactos.
+
+### Prompt de continuidad desde el centésimo vigésimo segundo corte
+
+Verifica AGENTS, Git/remotos, SHA local/remoto, árbol y cuatro runs de puerta. Reproduce el gate v3 fallido y v4 de observación; conserva la revisión del prompt como desarrollo informado por fallo. Congela un oráculo independiente de jambas, hoja y arco antes de permitir CAD; implementa un símbolo de puerta tipado ligado al hueco real sin taparlo y con QA de barrido/interferencia. Verifica captura y DWG con AutoCAD por handle; registra abstenciones. Continúa otras puertas, ventanas y particiones de las cinco imágenes disponibles sin pedir sexta ni API. M7/M8 requieren además L5 humana, recibo directo de identidad/uso y comparación baseline/candidato. No abras/modifiques el DWG privado; push solo al fork.
