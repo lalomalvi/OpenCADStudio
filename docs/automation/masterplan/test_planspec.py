@@ -456,6 +456,51 @@ class PlanSpecTests(unittest.TestCase):
         with self.assertRaises(module.PlanError):
             module.validate(changed)
 
+    def test_v7_single_face_thickness_compiles_with_explicit_metric_style(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension-v7.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["unsupported"], [])
+        self.assertEqual(result["dimension_compilation"],
+                         {"status": "compiled_single_horizontal_face_thickness",
+                          "generated_parts": 1})
+        self.assertEqual(len(result["commands"]), 5)
+        self.assertEqual(result["commands"][-1]["command"],
+                         "DIMLINEAR 2,0.1 2,-0.1 2.5,0")
+        self.assertEqual(result["commands"][-1]["planspec_id"], "wall-thickness")
+        self.assertIn("DIMSTYLE SET OCS_WALL_METRIC dimtxt 0.035",
+                      [step["command"] for step in result["execution_steps"]])
+        self.assertEqual(result["commands_sha256"], module.dry_run(value)["commands_sha256"])
+
+        changed = deepcopy(value)
+        changed["dimension_placements"][0]["offset_m"] = 0.6
+        self.assertNotEqual(result["commands_sha256"], module.dry_run(changed)["commands_sha256"])
+        changed = deepcopy(value)
+        changed["dimension_style"]["text_height_m"] = 0.04
+        self.assertNotEqual(result["commands_sha256"], module.dry_run(changed)["commands_sha256"])
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["start_ref"]["station_m"] = 1
+        changed["nodes"][2]["x"] = 1
+        changed["nodes"][3]["x"] = 1
+        changed["dimension_bindings"][0]["end_ref"]["station_m"] = 1
+        self.assertEqual(module.dry_run(changed)["unsupported"], ["native_dimension"])
+
+        for key, bad in (("scale", 2), ("measurement_factor", 1000),
+                         ("text_height_m", 0), ("arrow_size_m", 0.6)):
+            changed = deepcopy(value)
+            changed["dimension_style"][key] = bad
+            with self.assertRaises(module.PlanError):
+                module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_placements"] = []
+        with self.assertRaises(module.PlanError):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_placements"][0]["offset_m"] = 0
+        with self.assertRaises(module.PlanError):
+            module.validate(changed)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,7 @@ import uuid
 
 from mcp_client import Client, ProtocolError, UncertainMutation
 from mcp_isolated_smoke import read_state
+from masterplan.planspec import dry_run
 
 
 def request(client, session, op, **fields):
@@ -43,12 +44,15 @@ def main():
     server = Path(sys.argv[1] if len(sys.argv) > 1 else repo / "target/debug/OpenCADStudio.exe").resolve()
     if not server.is_file():
         raise FileNotFoundError(server)
-    fixture = repo / "docs/automation/masterplan/fixtures/synthetic-wall-face-dimension.planspec.json"
+    fixture = repo / "docs/automation/masterplan/fixtures/synthetic-wall-face-dimension-v7.planspec.json"
     plan = json.loads(fixture.read_text(encoding="utf-8"))
-    if (plan["schema_version"] != "planspec-6" or len(plan["walls"]) != 1 or
+    if (plan["schema_version"] != "planspec-7" or len(plan["walls"]) != 1 or
             len(plan["dimension_bindings"]) != 1 or len(plan["dimensions"]) != 1 or
             plan["openings"] or plan["joins"]):
         raise ProtocolError("Unexpected face dimension fixture")
+    compiled = dry_run(plan)
+    if not compiled["executable"] or len(compiled["commands"]) != 5:
+        raise ProtocolError("Face dimension PlanSpec did not compile to five entities")
     output = repo / "target/mcp-isolated" / (time.strftime("%Y%m%d-%H%M%S") +
                                                "-face-" + uuid.uuid4().hex[:8])
     output.mkdir(parents=True, exist_ok=False)
@@ -60,6 +64,12 @@ def main():
     report = {"schema_version": "mcp-face-dimension-l2-1", "status": "failed",
               "binary_sha256": hashlib.sha256(server.read_bytes()).hexdigest().upper(),
               "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest().upper(),
+              "planspec": {"fixture": fixture.name,
+                           "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest().upper(),
+                           "commands_sha256": compiled["commands_sha256"],
+                           "command_count": len(compiled["commands"]),
+                           "step_count": len(compiled["execution_steps"]),
+                           "dimension_style": plan["dimension_style"]},
               "output": str(output)}
     gui = subprocess.Popen([str(server), "--new-instance"], cwd=repo, env=environment,
                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -81,14 +91,17 @@ def main():
         if state.get("modal"):
             raise ProtocolError("Isolated GUI still has a startup modal")
         request(client, session, "new")
-        commands = ["SETVAR INSUNITS 6", "LINE 0,0.1 4,0.1",
-                    "LINE 0,-0.1 4,-0.1", "DIMLINEAR 2,0.1 2,-0.1 2.5,0"]
+        commands = [step["command"] for step in compiled["execution_steps"]]
         created = request(client, session, "run_script", strict=True, commands=commands)
         added = {change["step"]: change["handle"] for change in created.get("changes", [])
                  if change.get("kind") == "Added"}
-        if created.get("completed_commands") != 4 or len(added) != 3:
+        if created.get("completed_commands") != len(commands) or len(added) != 5:
             raise ProtocolError("Face source lines or native dimension were not created")
-        upper, lower, dim = added[1], added[2], added[3]
+        handles = {step["planspec_id"]: added[index]
+                   for index, step in enumerate(compiled["execution_steps"])
+                   if step["planspec_id"] is not None}
+        upper, lower, dim = (handles["wall-1__edge_0"],
+                             handles["wall-1__edge_2"], handles["wall-thickness"])
         initial = dimension(client, session, dim)
         if abs(initial - 0.2) > 1e-6:
             raise ProtocolError("Initial face thickness differs from fixture")
