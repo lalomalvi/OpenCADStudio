@@ -1365,6 +1365,38 @@ fn next_dimension_block_name(doc: &CadDocument, next: &mut u64) -> String {
 
 /// Build missing anonymous dimension geometry blocks before writing.
 pub fn bake_dimension_blocks(doc: &mut CadDocument) {
+    // An associative edit clears a dimension's baked block name in the live
+    // document so history can keep its previous picture. The save snapshot
+    // must not serialize that now-unreferenced *D block alongside the new one.
+    let referenced: std::collections::HashSet<String> = doc
+        .entities()
+        .filter_map(|entity| match entity {
+            EntityType::Dimension(dimension) => Some(dimension.base().block_name.to_ascii_uppercase()),
+            EntityType::Insert(insert) => Some(insert.block_name.to_ascii_uppercase()),
+            _ => None,
+        })
+        .collect();
+    let stale: Vec<_> = doc
+        .block_records
+        .iter()
+        .filter(|record| {
+            let upper = record.name.to_ascii_uppercase();
+            let generated_name = upper.strip_prefix("*D")
+                .is_some_and(|suffix| !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit()));
+            record.flags.anonymous && generated_name && !referenced.contains(&upper)
+        })
+        .map(|record| (record.name.clone(), record.handle))
+        .collect();
+    for (name, owner) in stale {
+        let owned: Vec<Handle> = doc.entities()
+            .filter(|entity| entity.common().owner_handle == owner)
+            .map(|entity| entity.common().handle)
+            .collect();
+        doc.block_records.remove(&name);
+        for handle in owned {
+            doc.remove_entity(handle);
+        }
+    }
     // Keep group-10 in step and find missing blocks in one entity pass. Existing
     // `*D` blocks are the save cache: only invalidated/new dimensions enter the
     // relatively expensive geometry generation below.
@@ -1556,6 +1588,39 @@ mod tests {
             before,
             "a dimension that already owns a block must not be re-baked"
         );
+    }
+
+    #[test]
+    fn rebake_prunes_orphaned_dimension_picture_from_save_snapshot() {
+        let mut doc = CadDocument::new();
+        let mut unrelated = BlockRecord::new("*DUSER");
+        unrelated.flags.anonymous = true;
+        doc.block_records.add(unrelated).unwrap();
+        let mut dimension = DimensionLinear::new(
+            Vector3::new(0.0, 0.0, 0.0), Vector3::new(2.5, 0.0, 0.0));
+        dimension.definition_point = Vector3::new(1.25, 1.0, 0.0);
+        let handle = doc.add_entity(EntityType::Dimension(Dimension::Linear(dimension))).unwrap();
+        bake_dimension_blocks(&mut doc);
+        let before_blocks = doc.block_records.len();
+        let before_entities = doc.entities().count();
+        let old_name = match doc.get_entity(handle).unwrap() {
+            EntityType::Dimension(dimension) => dimension.base().block_name.clone(),
+            _ => panic!("dimension missing"),
+        };
+        if let Some(EntityType::Dimension(Dimension::Linear(dimension))) = doc.get_entity_mut(handle) {
+            dimension.second_point.x = 3.5;
+            dimension.base.actual_measurement = 3.5;
+            dimension.base.block_name.clear();
+        }
+        bake_dimension_blocks(&mut doc);
+        assert_eq!(doc.block_records.len(), before_blocks);
+        assert_eq!(doc.entities().count(), before_entities);
+        let new_name = match doc.get_entity(handle).unwrap() {
+            EntityType::Dimension(dimension) => dimension.base().block_name.clone(),
+            _ => panic!("dimension missing"),
+        };
+        assert_eq!(new_name, old_name);
+        assert!(doc.block_records.get("*DUSER").is_some());
     }
 
     /// Baking a blockless dimension resets its group-12 insertion point to the
