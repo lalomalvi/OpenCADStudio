@@ -1004,6 +1004,10 @@ fn batch_result(batch: &BatchExecution, status: &str, ok: bool) -> Value {
             "next_command":(batch.next < batch.steps.len()).then_some(batch.next),
             "added_entities":added_entities,
             "failed_result":failed_result,
+            "command_timings_ms":batch.results.iter()
+                .map(|result| result["timings"]["total_ms"].clone())
+                .collect::<Vec<_>>(),
+            "command_timing_scope":"gui_operation_elapsed",
             "changes":batch.changes,
             "state":batch.state
         });

@@ -1091,7 +1091,15 @@ impl OpenCADStudio {
         };
         let changes = self.tabs[self.active_tab].scene.replay_since(p.geometry_revision)
             .map(|values| values.into_iter().take(1000).map(|(handle,kind)|json!({"handle":format!("{:X}",handle.value()),"kind":format!("{kind:?}")})).collect::<Vec<_>>());
-        let response = json!({"ok":!failed,"status":status,"request_id":p.id,"error":if failed{self.command_line.last_error.clone()}else{None},"result":p.result,"changes":changes,"state":self.control_state()});
+        let response = json!({
+            "ok": !failed, "status": status, "request_id": p.id,
+            "error": if failed { self.command_line.last_error.clone() } else { None },
+            "result": p.result, "changes": changes, "state": self.control_state(),
+            "timings": {
+                "scope": "gui_operation_elapsed",
+                "total_ms": p.started_at.elapsed().as_secs_f64() * 1000.0
+            }
+        });
         self.control.serial += 1;
         self.control.events.push_back(json!({"sequence":self.control.serial,"request_id":p.id,"status":status,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision}));
         while self.control.events.len() > 128 {

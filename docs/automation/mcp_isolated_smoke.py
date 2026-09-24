@@ -148,6 +148,16 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
         if script.get("completed_commands") != len(compiled["execution_steps"]) \
                 or script.get("added_entities") != len(compiled["commands"]):
             raise ProtocolError("Synthetic script did not create three entities")
+        command_timings = script.get("command_timings_ms")
+        if script.get("command_timing_scope") != "gui_operation_elapsed" or \
+                not isinstance(command_timings, list) or \
+                len(command_timings) != len(compiled["execution_steps"]) or \
+                any(not isinstance(value, (int, float)) or value < 0
+                    for value in command_timings):
+            raise ProtocolError("Synthetic script omitted GUI operation timings")
+        report["command_timings_ms"] = {"scope": "gui_operation_elapsed",
+                                         "by_step": command_timings,
+                                         "sum": round(sum(command_timings), 3)}
         handles = {}
         for step, item in enumerate(compiled["execution_steps"]):
             if item["planspec_id"] is None:
