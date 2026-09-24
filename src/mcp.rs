@@ -66,6 +66,7 @@ const EXECUTE_OPS: &[&str] = &[
     "batch",
     "run_script",
     "shutdown_owned_session",
+    "close_document",
 ];
 const BATCH_STEP_OPS: &[&str] = &[
     "new",
@@ -1042,6 +1043,44 @@ fn shutdown_owned_session(
     }
 }
 
+fn close_owned_document(
+    clients: &mut HashMap<String, GuiClient>, session_id: &str,
+    request: Value, wait_seconds: f64,
+) -> Result<Value, String> {
+    let root = Path::new(required_string(&request, "owned_root")?);
+    if !root.is_absolute() || !root.is_dir() {
+        return Err("owned_root must be an existing absolute directory".into());
+    }
+    let expected_pid = request["process_id"].as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| "process_id is required".to_string())?;
+    let expected_start = request["process_started_at_unix_ms"].as_u64()
+        .ok_or_else(|| "process_started_at_unix_ms is required".to_string())?;
+    let executable = Path::new(required_string(&request, "executable_path")?)
+        .canonicalize().map_err(|_| "Executable path is absent".to_string())?;
+    if executable != std::env::current_exe().map_err(|error| error.to_string())?
+        .canonicalize().map_err(|error| error.to_string())? {
+        return Err("Requested executable is not this MCP server build".into());
+    }
+    {
+        let launch = LAUNCH.get_or_init(|| Mutex::new(LaunchState::default()))
+            .lock().map_err(|_| "Launch state lock poisoned".to_string())?;
+        if launch.child.as_ref().map(Child::id) != Some(expected_pid) {
+            return Err("Session is not owned by this MCP process".into());
+        }
+    }
+    let gui = client(clients, session_id)?;
+    if gui.descriptor.pid != Some(expected_pid)
+        || gui.descriptor.started_at_unix_ms != Some(expected_start) {
+        return Err("Selected session process identity changed".into());
+    }
+    if gui.descriptor.executable.as_deref()
+        .and_then(|path| Path::new(path).canonicalize().ok()) != Some(executable) {
+        return Err("Selected session executable changed".into());
+    }
+    gui.request(request, wait_seconds)
+}
+
 fn required_string<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, String> {
     arguments[key]
         .as_str()
@@ -1168,6 +1207,16 @@ fn validate_execute_request(request: &Value, op: &str) -> Result<(), String> {
             || request["executable_path"].as_str().is_none() => {
             missing("owned_root/process_id/process_started_at_unix_ms/executable_path",
                 r#"{"op":"shutdown_owned_session","owned_root":"/run","process_id":123,"process_started_at_unix_ms":123,"executable_path":"/path/OpenCADStudio"}"#)
+        }
+        "close_document" if request["policy"] != "require_saved"
+            || request["owned_root"].as_str().is_none()
+            || request["process_id"].as_u64().is_none()
+            || request["process_started_at_unix_ms"].as_u64().is_none()
+            || request["executable_path"].as_str().is_none()
+            || request["document_id"].as_u64().is_none()
+            || request["revision"].as_u64().is_none() => {
+            missing("policy/ownership/document_id/revision",
+                r#"{"op":"close_document","policy":"require_saved","document_id":2,"revision":1,"owned_root":"/run","process_id":123,"process_started_at_unix_ms":123,"executable_path":"/path/OpenCADStudio"}"#)
         }
         "embed_image" if request["path"].as_str().is_none_or(str::is_empty) => {
             missing(
@@ -1348,6 +1397,10 @@ fn call_tool(
             if op == "shutdown_owned_session" {
                 return shutdown_owned_session(clients, session_id, &request);
             }
+            if op == "close_document" {
+                return close_owned_document(clients, session_id, request,
+                    arguments["wait_seconds"].as_f64().unwrap_or(30.0));
+            }
             if op == "run_script" {
                 request = expand_run_script(request);
             }
@@ -1460,7 +1513,8 @@ fn execute_request_schema() -> Value {
             "owned_root":{"type":"string","minLength":1,"description":"Canonical root allowed for every open document during owned shutdown."},
             "process_id":{"type":"integer","minimum":1},
             "process_started_at_unix_ms":{"type":"integer","minimum":1},
-            "executable_path":{"type":"string","minLength":1}
+            "executable_path":{"type":"string","minLength":1},
+            "policy":{"type":"string","enum":["require_saved"]}
         },
         "required":["op","request_id"],
         "additionalProperties":false,
@@ -1492,7 +1546,8 @@ fn execute_request_schema() -> Value {
             {"properties":{"op":{"const":"stop"}}},
             {"properties":{"op":{"const":"batch"}},"required":["steps","document_id","revision"]},
             {"properties":{"op":{"const":"run_script"}},"required":["commands","document_id","revision"]},
-            {"properties":{"op":{"const":"shutdown_owned_session"}},"required":["owned_root","process_id","process_started_at_unix_ms","executable_path"]}
+            {"properties":{"op":{"const":"shutdown_owned_session"}},"required":["owned_root","process_id","process_started_at_unix_ms","executable_path"]},
+            {"properties":{"op":{"const":"close_document"}},"required":["policy","owned_root","process_id","process_started_at_unix_ms","executable_path","document_id","revision"]}
         ]
     })
 }
@@ -1930,6 +1985,19 @@ mod tests {
         assert!(validate_execute_request(&request, "shutdown_owned_session").is_ok());
         let error = shutdown_owned_session(&mut HashMap::new(),
             "0123456789abcdef0123456789abcdef", &request).unwrap_err();
+        assert!(error.contains("not owned"));
+    }
+
+    #[test]
+    fn close_document_rejects_unowned_process_before_connecting() {
+        let request = json!({"op":"close_document","request_id":"close-doc-1",
+            "policy":"require_saved","document_id":2,"revision":1,
+            "owned_root":std::env::current_dir().unwrap().to_string_lossy(),
+            "process_id":u32::MAX,"process_started_at_unix_ms":1,
+            "executable_path":std::env::current_exe().unwrap().to_string_lossy()});
+        assert!(validate_execute_request(&request, "close_document").is_ok());
+        let error = close_owned_document(&mut HashMap::new(),
+            "0123456789abcdef0123456789abcdef", request, 0.0).unwrap_err();
         assert!(error.contains("not owned"));
     }
 

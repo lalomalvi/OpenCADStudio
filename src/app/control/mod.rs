@@ -927,6 +927,30 @@ impl OpenCADStudio {
                 self.control.enabled = false;
                 Task::none()
             }
+            "close_document" => {
+                if string(req, "policy")? != "require_saved" {
+                    return Err(failure("invalid_close_policy", "Use policy=require_saved"));
+                }
+                let root = std::path::Path::new(string(req, "owned_root")?)
+                    .canonicalize().map_err(|_| failure("invalid_owned_root", "Owned root is absent"))?;
+                let tab = &self.tabs[self.active_tab];
+                if tab.is_start {
+                    return Err(failure("no_document", "Start tab is not a drawing"));
+                }
+                if self.active_modal.is_some() || tab.active_cmd.is_some() {
+                    return Err(failure("editor_busy", "Close modal and active command first"));
+                }
+                if tab.dirty {
+                    return Err(failure("dirty_document", "Save this document before closing"));
+                }
+                let path = tab.current_path.as_ref()
+                    .ok_or_else(|| failure("unverified_document", "Document has no saved path"))?
+                    .canonicalize().map_err(|_| failure("unverified_document", "Document path is absent"))?;
+                if !path.starts_with(&root) {
+                    return Err(failure("foreign_document", "Document is outside owned root"));
+                }
+                self.update(Message::TabClose(self.active_tab))
+            }
             "shutdown" => {
                 let root = std::path::Path::new(string(req, "owned_root")?)
                     .canonicalize().map_err(|_| failure("invalid_owned_root", "Owned root is absent"))?;
@@ -1236,6 +1260,25 @@ mod tests {
         app.tabs[app.active_tab].current_path = Some(foreign.clone());
         let refused = request(&mut app, json!({"op":"shutdown","request_id":"foreign-shutdown",
             "owned_root":root}));
+        assert_eq!(refused["code"], "foreign_document");
+        let _ = std::fs::remove_file(foreign);
+    }
+
+    #[test]
+    fn close_document_requires_saved_path_inside_owned_root() {
+        let mut app = OpenCADStudio::new_for_test();
+        request(&mut app, json!({"op":"new"}));
+        request(&mut app, json!({"op":"run","cmd":"LINE 0,0 1,0"}));
+        let root = std::env::current_dir().unwrap();
+        let refused = request(&mut app, json!({"op":"close_document","request_id":"close-dirty",
+            "policy":"require_saved","owned_root":root}));
+        assert_eq!(refused["code"], "dirty_document");
+        let foreign = std::env::temp_dir().join(format!("ocs-close-foreign-{}.dwg", session_id()));
+        std::fs::write(&foreign, b"synthetic").unwrap();
+        app.tabs[app.active_tab].dirty = false;
+        app.tabs[app.active_tab].current_path = Some(foreign.clone());
+        let refused = request(&mut app, json!({"op":"close_document","request_id":"close-foreign",
+            "policy":"require_saved","owned_root":root}));
         assert_eq!(refused["code"], "foreign_document");
         let _ = std::fs::remove_file(foreign);
     }

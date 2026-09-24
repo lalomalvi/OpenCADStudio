@@ -54,6 +54,17 @@ def main() -> None:
                    "owned_root": str(run), "process_id": selected["process_id"],
                    "process_started_at_unix_ms": selected["process_started_at_unix_ms"],
                    "executable_path": selected["executable_path"]}
+        close_request = {**request, "op": "close_document", "policy": "require_saved",
+                         "request_id": "owned-close-document-" + uuid.uuid4().hex}
+        try:
+            client.tool("ocs_execute", {"ocs_session_id": session,
+                                        "request": {**close_request, "request_id": "owned-close-dirty-" + uuid.uuid4().hex}})
+        except ToolError as error:
+            if error.result.get("code") != "dirty_document":
+                raise
+            report["close_dirty_refused"] = True
+        else:
+            raise ProtocolError("Close did not refuse a dirty document")
         try:
             client.tool("ocs_execute", {"ocs_session_id": session,
                                         "request": {**request, "request_id": "owned-dirty-" + uuid.uuid4().hex}})
@@ -77,6 +88,24 @@ def main() -> None:
             report["foreign_refused"] = True
         else:
             raise ProtocolError("Shutdown did not refuse a foreign document")
+        try:
+            client.tool("ocs_execute", {"ocs_session_id": session,
+                                        "request": {**close_request, "request_id": "owned-close-foreign-" + uuid.uuid4().hex,
+                                                    "owned_root": str(profile)}})
+        except ToolError as error:
+            if error.result.get("code") != "foreign_document":
+                raise
+            report["close_foreign_refused"] = True
+        else:
+            raise ProtocolError("Close did not refuse a foreign document")
+        document_to_close = read_state(client, session)["document_id"]
+        closed_document = client.tool("ocs_execute", {"ocs_session_id": session,
+            "request": close_request})
+        after_close = read_state(client, session)
+        if (closed_document.get("status") != "completed" or
+                any(doc["id"] == document_to_close for doc in after_close["documents"])):
+            raise ProtocolError("Owned synthetic document did not close")
+        report["document_closed"] = document_to_close
         result = client.tool("ocs_execute", {"ocs_session_id": session, "request": request})
         if result.get("status") != "completed" or result.get("result", {}).get("closed") is not True:
             raise ProtocolError("Owned GUI did not close")

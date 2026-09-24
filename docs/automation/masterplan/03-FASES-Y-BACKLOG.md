@@ -13,7 +13,8 @@ Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejec
 | M1.6 | passed scoped L1/L2 | Journal atómico local por sesión/lote; reinicio de MCP a mitad de `run_script` recuperó 3 entidades sin duplicación por el mismo ID; journal corrupto/operación desconocida bloquean nuevas mutaciones. Reinicio de GUI no evaluado |
 | M2.1 | partial L1/L2 | Descubrimiento concurrente 0/1/20/100 y conexión directa; 10 muestras con 100 descriptores sintéticos muertos: p50 1869.7 ms, p95 conservador 1909.1 ms; ACL Windows pendiente |
 | M2.2 | pending | Heartbeat, descriptor obsoleto y cuarentena con ACL Windows pendientes |
-| M2.3–M2.4 | partial L1/L2 | `shutdown_owned_session` del backend pasó L2: PID/inicio/binario/raíz, rechazo de dirty/foreign, salida e idempotencia; `close_document` con política y modalidades adicionales pendientes |
+| M2.3 | passed scoped L1/L2 | `close_document` con política `require_saved` y `shutdown_owned_session` solo para GUI hija del MCP; PID/inicio/binario/raíz, rechazo dirty/foreign, cierre e idempotencia L2 |
+| M2.4 | partial L1/L2 | Modales iniciales diagnosticados y salida propia verificada; más modalidades/caídas y cuarentena pendientes |
 | M3–M8 | pending | No aceptar gates posteriores por el L2 sintético |
 
 El owner_role de M0–M2 es la sesión ejecutora. Reproducir L1 con `python -m unittest discover -s docs/automation -p test_mcp_client.py -v` y `cargo test --lib mcp::tests`. El L2 sintético se reproduce con `python docs/automation/mcp_isolated_smoke.py` después del build. Sus gates CAD no prueban imagen, motor externo ni revisión del usuario. El caso original continúa partial.
