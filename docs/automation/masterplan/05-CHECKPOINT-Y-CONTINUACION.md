@@ -197,3 +197,13 @@ M6.4 queda **partial**: solo cubre dos tipos nativos y reapertura en el mismo mo
 ### Prompt de continuidad desde el decimotercer corte
 
 Verifica SHA remoto y árbol Git; conserva el fixture y reportes. Completa QA para más tipos y motor externo identificado, sin llamar a una reapertura interna interoperabilidad. Cierra M3 y M4, y prueba M5 cotas/bloques/HATCH/capas con semántica verificable. Prepara protocolo M7 y entrega M8 solo cuando los gates faltantes tengan evidencia. No uses el DWG del usuario ni publiques artefactos privados/upstream.
+
+## Decimocuarto corte sello CAD M3 — 2026-09-23, en progreso
+
+El decimotercer corte se publicó en `origin/codex/mcp-geometry-roundtrip-qa` con commit `a4e7b406` (verificar SHA completo remoto). La rama `codex/mcp-cad-evidence-seal` registra en el reporte L2 un resumen de auditoría real (estado, errores, target, manifest, bounds, entidades desconocidas) y el manifest obtenido por `save_verified` tras reapertura interna. `seal_cad_run.py` usa ese reporte, el fixture y binario identificados, verifica hashes/tamaño y crea una sola vez cuatro archivos sanitizados. Rechaza auditoría fallida, manifest cambiado, DWG alterado, binario distinto, escape de ruta y GUI aún viva. El verificador coteja los archivos con las fuentes y sus hashes. Dos tests sintéticos prueban alteración y no exportación de campo privado.
+
+El L2 `target/mcp-isolated/20260923-213433-3a2932b3/report.json` pasó con cinco entidades sintéticas, auditoría sin errores/advertencias, manifest interno igual antes/después y salida de GUI. En ese run se generaron `AUDIT.json`, `SAVE.json`, `VERDICT.json` y `SEAL.json`; `--verify` pasó. SHA-256 del DWG `A72E74F624B83F22583A34116D00806EE1823F7A5B4D0BF0552FBBD01A582E64`, SHA-256 del binario `0F9F4E42870D4AC5EDBD497986AD56DC1A21E779ADE98E3373B4021AB6597410`. El veredicto es **partial**, con motor externo, interpretación de imagen y revisión humana pendientes. Los artefactos se conservan en `target`, sin Git. Pruebas de masterplan 14/14 y `--verify` pasaron. `M3-SELLO-SINTETICO.md` explica reproducción y límites.
+
+### Prompt de continuidad desde el decimocuarto corte
+
+Verifica SHA remoto y árbol limpio. Completa M3 con artefactos PNG reales/revisiones/render-fence y tiempos por fase más presupuesto; no mezcles uso del supervisor con el generador. Extiende PlanSpec y M5 sobre capacidades probadas, M6 con QA espacial/external, y M7/M8 con cohortes y gates pendientes. Mantén el DWG del usuario, los runs fallidos y el caso histórico intactos; nunca publiques contenido privado ni upstream.

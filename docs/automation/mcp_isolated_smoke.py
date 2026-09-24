@@ -164,6 +164,9 @@ def main(*, semantic: bool = False) -> None:
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
             raise ProtocolError("Synthetic DWG audit failed")
+        report["audit_summary"] = {key: audit.get(key) for key in
+                                   ("status", "summary", "target", "manifest", "bounds",
+                                    "unknown_entities")}
         destination = output / "synthetic-verified.dwg"
         saved = client.tool("ocs_execute", {"ocs_session_id": session,
             "request": {"op": "save_verified", "request_id": "l2-save-" + uuid.uuid4().hex,
@@ -183,7 +186,8 @@ def main(*, semantic: bool = False) -> None:
                                                       "added_entities": 3},
                        "audit_ok": True,
                        "verified_output": {"path": str(destination), "sha256": actual_hash,
-                                           "bytes": destination.stat().st_size}})
+                                           "bytes": destination.stat().st_size,
+                                           "reopened_manifest": verified.get("manifest")}})
 
         # Save the working tab separately so QUIT cannot discard unsaved work.
         client.tool("ocs_execute", {"ocs_session_id": session,
