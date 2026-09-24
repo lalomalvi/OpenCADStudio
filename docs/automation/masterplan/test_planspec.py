@@ -562,6 +562,34 @@ class PlanSpecTests(unittest.TestCase):
         with self.assertRaises(module.PlanError):
             module.validate(changed)
 
+    def test_v7_vertical_face_thickness_compiles_outside_wall(self):
+        fixture = Path(__file__).with_name("fixtures") / \
+            "synthetic-wall-face-dimension-vertical-v7.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["dimension_compilation"],
+                         {"status": "compiled_single_vertical_face_thickness",
+                          "generated_parts": 1})
+        self.assertEqual(result["commands"][-1]["command"],
+                         "DIMLINEAR -0.1,2 0.1,2 0,4.5")
+        self.assertEqual(result["dimension_placement_qa"],
+                         {"status": "outside_wall_bounds", "wall_id": "wall-1",
+                          "dimension_id": "wall-thickness", "wall_end_y_m": "4",
+                          "dimension_line_y_m": "4.5",
+                          "scope": "2d_dimension_line_position_only_no_text_extents"})
+        self.assertEqual(result["source_bounds"]["annotation_reference_bounds_m"],
+                         {"min_x": "-0.1", "min_y": "2", "max_x": "0.1", "max_y": "4.5"})
+        self.assertEqual(result["source_bounds"]["unresolved"], [])
+        inside = deepcopy(value)
+        inside["dimension_placements"][0]["offset_m"] = 0.5
+        self.assertEqual(module.dry_run(inside)["quality_blockers"],
+                         ["dimension_line_inside_wall_bounds"])
+        wrong_axis = deepcopy(value)
+        wrong_axis["dimensions"][0]["axis"] = "y"
+        with self.assertRaises(module.PlanError):
+            module.validate(wrong_axis)
+
     def test_source_bounds_do_not_merge_uncompiled_annotation_into_architecture(self):
         value = plan()
         value["dimensions"] = [{"id": "length", "start": "a", "end": "c",

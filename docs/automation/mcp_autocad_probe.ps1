@@ -253,6 +253,7 @@ try {
     $expected = @{}
     $faceReferenceComparison = @()
     $faceStyleComparison = @()
+    $facePlacementComparison = @()
     $faceFixtureValid = $null
     $richSourceReport = $null
     $sourceReportMatch = $null
@@ -272,8 +273,14 @@ try {
                 $expected[$sourceReport.handles.dimension] =
                     [double]$sourceReport.measurements_m.edited
             }
-            foreach ($item in @(@{ index = 0; source = $sourceReport.handles.upper },
-                                @{ index = 1; source = $sourceReport.handles.lower })) {
+            $firstFace = if ($sourceReport.handles.first_face) {
+                $sourceReport.handles.first_face
+            } else { $sourceReport.handles.upper }
+            $secondFace = if ($sourceReport.handles.second_face) {
+                $sourceReport.handles.second_face
+            } else { $sourceReport.handles.lower }
+            foreach ($item in @(@{ index = 0; source = $firstFace },
+                                @{ index = 1; source = $secondFace })) {
                 $observedRef = @($dimensionReferences | Where-Object {
                     $_.dimension -eq $sourceReport.handles.dimension -and
                     $_.index -eq $item.index })
@@ -293,11 +300,48 @@ try {
                 $faceFixtureValid = $faceFixtureName -in @(
                     'synthetic-wall-face-dimension-v7.planspec.json',
                     'synthetic-wall-face-dimension-exterior-v7.planspec.json',
-                    'synthetic-wall-face-dimension-readable-v7.planspec.json')
+                    'synthetic-wall-face-dimension-readable-v7.planspec.json',
+                    'synthetic-wall-face-dimension-vertical-v7.planspec.json')
                 if ($faceFixtureValid) {
                     $faceFixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $faceFixtureName)
                     $faceFixtureValid = (Get-FileHash -LiteralPath $faceFixturePath -Algorithm SHA256).Hash -eq
                         $sourceReport.planspec.fixture_sha256
+                }
+                if ($faceFixtureValid) {
+                    $faceFixture = Get-Content -LiteralPath $faceFixturePath -Raw | ConvertFrom-Json
+                    $dimensionSpec = $faceFixture.dimensions[0]
+                    $startNode = @($faceFixture.nodes | Where-Object { $_.id -eq $dimensionSpec.start })[0]
+                    $endNode = @($faceFixture.nodes | Where-Object { $_.id -eq $dimensionSpec.end })[0]
+                    $offset = [double]$faceFixture.dimension_placements[0].offset_m
+                    if ($dimensionSpec.axis -eq 'y') {
+                        $expectedDefinition = @(([double]$startNode.x + $offset + [double]$faceFixture.origin.x),
+                                                ([double]$endNode.y + [double]$faceFixture.origin.y), 0.0)
+                        $expectedRotation = [Math]::PI / 2.0
+                    } else {
+                        $expectedDefinition = @(([double]$endNode.x + [double]$faceFixture.origin.x),
+                                                ([double]$startNode.y + $offset + [double]$faceFixture.origin.y), 0.0)
+                        $expectedRotation = 0.0
+                    }
+                    $dimensionRow = $entityByHandle[$sourceReport.handles.dimension]
+                    $observedDefinition = if ($dimensionRow) { Read-DxfPoint $dimensionRow[9] } else { $null }
+                    $observedRotation = if ($dimensionRow) { Read-DxfNumber $dimensionRow[11] } else { $null }
+                    $positionIndex = if ($dimensionSpec.axis -eq 'y') { 0 } else { 1 }
+                    $facePlacementComparison += [ordered]@{
+                        dimension = $sourceReport.handles.dimension
+                        position_axis = if ($positionIndex -eq 0) { 'x' } else { 'y' }
+                        expected_line_position = $expectedDefinition[$positionIndex]
+                        observed_line_position = if ($observedDefinition) {
+                            $observedDefinition[$positionIndex]
+                        } else { $null }
+                        expected_rotation_rad = $expectedRotation
+                        observed_rotation_rad = $observedRotation
+                        matched = $dimensionRow -and $dimensionRow[1] -eq 'DIMENSION' -and
+                            $null -ne $observedDefinition -and
+                            [Math]::Abs($expectedDefinition[$positionIndex] -
+                                        $observedDefinition[$positionIndex]) -le 1e-6 -and
+                            $null -ne $observedRotation -and
+                            [Math]::Abs($expectedRotation - $observedRotation) -le 1e-6
+                    }
                 }
                 $expectedStyle = $sourceReport.planspec.dimension_style
                 $observedStyle = $dimensionStyles[$sourceReport.handles.dimension]
@@ -356,6 +400,7 @@ try {
     $dimensionMismatch = @($dimensionComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
     $faceReferenceMismatch = @($faceReferenceComparison | Where-Object { -not $_.matched }).Count -gt 0
     $faceStyleMismatch = @($faceStyleComparison | Where-Object { -not $_.matched }).Count -gt 0
+    $facePlacementMismatch = @($facePlacementComparison | Where-Object { -not $_.matched }).Count -gt 0
     $faceFixtureMismatch = $faceFixtureValid -eq $false
     $propertyComparison = @()
     if ($richSourceReport) {
@@ -783,6 +828,7 @@ try {
         dimension_comparison = $dimensionComparison
         face_reference_comparison = $faceReferenceComparison
         face_style_comparison = $faceStyleComparison
+        face_placement_comparison = $facePlacementComparison
         face_fixture_valid = $faceFixtureValid
         property_comparison = $propertyComparison
         geometry_source_valid = $geometrySourceValid
@@ -790,12 +836,13 @@ try {
         wall_model_count_match = $wallModelCountMatch
         geometry_comparison = $geometryComparison
         semantic_verdict = if ($sourceReportMatch -eq $false -or $dimensionMismatch -or
-                              $faceReferenceMismatch -or $faceStyleMismatch -or
+                              $faceReferenceMismatch -or $faceStyleMismatch -or $facePlacementMismatch -or
                               $faceFixtureMismatch -or
                               $propertyMismatch -or $geometryMismatch -or
                               $wallModelCountMatch -eq $false) {
             'mismatch'
         } elseif ($expected.Count -gt 0 -or $faceReferenceComparison.Count -gt 0 -or
+                  $facePlacementComparison.Count -gt 0 -or
                   $faceStyleComparison.Count -gt 0 -or
                   $propertyComparison.Count -gt 0 -or
                   $geometryComparison.Count -gt 0) {
@@ -812,7 +859,7 @@ try {
                       ($null -ne $ExpectedInsunits -and $insunits -ne $ExpectedInsunits)) {
             'failed'
         } elseif ($sourceReportMatch -eq $false -or $dimensionMismatch -or
-                  $faceReferenceMismatch -or $faceStyleMismatch -or
+                  $faceReferenceMismatch -or $faceStyleMismatch -or $facePlacementMismatch -or
                   $faceFixtureMismatch -or
                   $propertyMismatch -or $geometryMismatch -or
                   $wallModelCountMatch -eq $false) { 'semantic_mismatch'

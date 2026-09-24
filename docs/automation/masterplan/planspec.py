@@ -2,7 +2,7 @@
 
 Lines, circles, one straight wall with an opening, and a two-wall orthogonal
 union compile. V6 binds dimensions to wall faces or axes. V7 compiles one
-horizontal face thickness dimension with an explicit metric style. Other native
+axis-aligned face thickness dimension with an explicit metric style. Other native
 dimensions and multiple symbolic openings remain unsupported.
 """
 
@@ -879,12 +879,16 @@ def _source_bounds(plan: dict[str, Any], nodes: dict[str, tuple[Decimal, Decimal
     for dimension in plan["dimensions"]:
         add(annotation, nodes[dimension["start"]])
         add(annotation, nodes[dimension["end"]])
-    if dimension_status == "compiled_single_horizontal_face_thickness":
+    if dimension_status in {"compiled_single_horizontal_face_thickness",
+                            "compiled_single_vertical_face_thickness"}:
         dimension = plan["dimensions"][0]
         placement = plan["dimension_placements"][0]
         a, b = nodes[dimension["start"]], nodes[dimension["end"]]
-        add(annotation, (a[0] + _number(placement["offset_m"], "offset_m"),
-                         (a[1] + b[1]) / 2))
+        offset = _number(placement["offset_m"], "offset_m")
+        if dimension_status == "compiled_single_horizontal_face_thickness":
+            add(annotation, (a[0] + offset, (a[1] + b[1]) / 2))
+        else:
+            add(annotation, ((a[0] + b[0]) / 2, a[1] + offset))
     elif plan["dimensions"]:
         unresolved.append("dimension_placement_or_rendered_extents")
     def box(points):
@@ -965,7 +969,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             wall_status = "compiled_single_window_wall"
     dimension_status = "not_applicable" if not plan["dimensions"] else "unsupported"
     dimension_placement_qa = {"status": "unavailable",
-                              "scope": "only_single_horizontal_face_thickness"}
+                              "scope": "only_single_axis_aligned_face_thickness"}
     if (plan["schema_version"] == "planspec-7" and len(plan["walls"]) == 1 and
             not plan["lines"] and not plan["circles"] and not plan["openings"] and
             not plan["joins"] and len(plan["dimensions"]) == 1 and
@@ -975,30 +979,39 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         binding = plan["dimension_bindings"][0]
         placement = plan["dimension_placements"][0]
         a, b = nodes[wall["start"]], nodes[wall["end"]]
-        station = (b[0] - a[0]) / 2
+        horizontal = a[1] == b[1] and a[0] < b[0]
+        vertical = a[0] == b[0] and a[1] < b[1]
+        station = ((b[0] - a[0]) if horizontal else (b[1] - a[1])) / 2
         start_ref, end_ref = binding["start_ref"], binding["end_ref"]
-        if (a[1] == b[1] and a[0] < b[0] and
-                dimension["axis"] == "y" and dimension["reference_type"] == "face" and
+        if ((horizontal and dimension["axis"] == "y" or
+             vertical and dimension["axis"] == "x") and
+                dimension["reference_type"] == "face" and
                 start_ref["wall_id"] == wall["id"] and end_ref["wall_id"] == wall["id"] and
                 start_ref["side"] == "left" and end_ref["side"] == "right" and
                 _number(start_ref["station_m"], "station") == station and
                 _number(end_ref["station_m"], "station") == station and
                 binding["dimension_id"] == dimension["id"] == placement["dimension_id"]):
             start, end = nodes[dimension["start"]], nodes[dimension["end"]]
-            location = (start[0] + _number(placement["offset_m"], "offset_m"),
-                        (start[1] + end[1]) / 2)
+            offset = _number(placement["offset_m"], "offset_m")
+            location = ((start[0] + offset, (start[1] + end[1]) / 2) if horizontal else
+                        ((start[0] + end[0]) / 2, start[1] + offset))
             def point(value):
                 return ",".join(_coordinate(value[axis] + origin[axis]) for axis in (0, 1))
             commands.append({"planspec_id": dimension["id"], "source_id": dimension["id"],
                              "part": "face_thickness_dimension",
                              "command": f"DIMLINEAR {point(start)} {point(end)} {point(location)}",
                              "layer": placement["layer"]})
-            dimension_status = "compiled_single_horizontal_face_thickness"
+            dimension_status = ("compiled_single_horizontal_face_thickness" if horizontal else
+                                "compiled_single_vertical_face_thickness")
+            beyond = location[0] > b[0] if horizontal else location[1] > b[1]
             dimension_placement_qa = {
-                "status": "outside_wall_bounds" if location[0] > b[0] else "inside_wall_bounds",
+                "status": "outside_wall_bounds" if beyond else "inside_wall_bounds",
                 "wall_id": wall["id"], "dimension_id": dimension["id"],
-                "wall_end_x_m": format(b[0] + origin[0], "f"),
-                "dimension_line_x_m": format(location[0] + origin[0], "f"),
+                "wall_end_x_m" if horizontal else "wall_end_y_m":
+                    format((b[0] + origin[0]) if horizontal else (b[1] + origin[1]), "f"),
+                "dimension_line_x_m" if horizontal else "dimension_line_y_m":
+                    format((location[0] + origin[0]) if horizontal else
+                           (location[1] + origin[1]), "f"),
                 "scope": "2d_dimension_line_position_only_no_text_extents"}
     if len({item["planspec_id"] for item in commands}) != len(commands):
         raise PlanError("Generated wall part ID collides with PlanSpec geometry ID")
@@ -1006,7 +1019,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     # INSUNITS=6 is metres in DWG. A metric GUI template may otherwise default
     # to INSUNITS=4 (millimetres), silently changing insertion scale semantics.
     execution = [{"planspec_id": None, "command": "SETVAR INSUNITS 6", "layer": "0"}]
-    if dimension_status == "compiled_single_horizontal_face_thickness":
+    if dimension_status in {"compiled_single_horizontal_face_thickness",
+                            "compiled_single_vertical_face_thickness"}:
         style = plan["dimension_style"]
         name = style["name"]
         execution.extend({"planspec_id": None, "command": command, "layer": "0"} for command in (

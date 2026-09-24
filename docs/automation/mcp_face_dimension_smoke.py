@@ -48,7 +48,8 @@ def main():
                     "synthetic-wall-face-dimension-exterior-v7.planspec.json")
     if fixture_name not in {"synthetic-wall-face-dimension-v7.planspec.json",
                             "synthetic-wall-face-dimension-exterior-v7.planspec.json",
-                            "synthetic-wall-face-dimension-readable-v7.planspec.json"}:
+                            "synthetic-wall-face-dimension-readable-v7.planspec.json",
+                            "synthetic-wall-face-dimension-vertical-v7.planspec.json"}:
         raise ValueError("Only versioned synthetic face fixtures are allowed")
     fixture = repo / "docs/automation/masterplan/fixtures" / fixture_name
     plan = json.loads(fixture.read_text(encoding="utf-8"))
@@ -59,6 +60,11 @@ def main():
     compiled = dry_run(plan)
     if not compiled["executable"] or len(compiled["commands"]) != 5:
         raise ProtocolError("Face dimension PlanSpec did not compile to five entities")
+    vertical = compiled["dimension_compilation"]["status"] == \
+        "compiled_single_vertical_face_thickness"
+    if not vertical and compiled["dimension_compilation"]["status"] != \
+            "compiled_single_horizontal_face_thickness":
+        raise ProtocolError("Face dimension orientation differs from fixture contract")
     output = repo / "target/mcp-isolated" / (time.strftime("%Y%m%d-%H%M%S") +
                                                "-face-" + uuid.uuid4().hex[:8])
     output.mkdir(parents=True, exist_ok=False)
@@ -108,8 +114,8 @@ def main():
         handles = {step["planspec_id"]: added[index]
                    for index, step in enumerate(compiled["execution_steps"])
                    if step["planspec_id"] is not None}
-        upper, lower, dim = (handles["wall-1__edge_0"],
-                             handles["wall-1__edge_2"], handles["wall-thickness"])
+        first_face, second_face, dim = (handles["wall-1__edge_0"],
+                                        handles["wall-1__edge_2"], handles["wall-thickness"])
         initial = dimension(client, session, dim)
         if abs(initial - 0.2) > 1e-6:
             raise ProtocolError("Initial face thickness differs from fixture")
@@ -136,16 +142,22 @@ def main():
         reopened = dimension(client, session, dim)
         if abs(reopened - 0.2) > 1e-6:
             raise ProtocolError("Face dimension changed on DWG reopen")
-        request(client, session, "set_properties", collection="entities", handle=upper,
-                updates=[{"path": "/start/y", "expected": 0.1, "value": 0.15},
-                         {"path": "/end/y", "expected": 0.1, "value": 0.15}])
+        coordinate = "x" if vertical else "y"
+        previous, changed = (-0.1, -0.15) if vertical else (0.1, 0.15)
+        request(client, session, "set_properties", collection="entities", handle=first_face,
+                updates=[{"path": f"/start/{coordinate}", "expected": previous,
+                          "value": changed},
+                         {"path": f"/end/{coordinate}", "expected": previous,
+                          "value": changed}])
         edited = dimension(client, session, dim)
         if abs(edited - 0.25) > 1e-6:
             raise ProtocolError("Face dimension did not follow edited source line")
         second = save_verified(client, session, output / "after-edit.dwg")
         if first["manifest"] != second["manifest"]:
             raise ProtocolError("Face dimension DWG manifest changed after edit")
-        report.update({"status": "passed", "handles": {"upper": upper, "lower": lower,
+        report.update({"status": "passed", "handles": {
+                       **({"first_face": first_face, "second_face": second_face} if vertical else
+                          {"upper": first_face, "lower": second_face}),
                        "dimension": dim}, "measurements_m": {"initial": initial,
                        "reopened": reopened, "edited": edited},
                        "association": {"dimension_handle": dim,
