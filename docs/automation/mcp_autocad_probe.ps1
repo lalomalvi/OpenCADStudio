@@ -70,6 +70,7 @@ $lispText = @"
 (vl-load-com)
 (setq ocs_file (open "$censusLispPath" "w"))
 (defun ocs_value (data code) (if (assoc code data) (vl-princ-to-string (cdr (assoc code data))) "-"))
+(defun ocs_angle (data code) (if (assoc code data) (rtos (cdr (assoc code data)) 2 12) "-"))
 (defun ocs_measure (entity data / value)
   (if (= (cdr (assoc 0 data)) "DIMENSION")
     (progn
@@ -94,10 +95,10 @@ $lispText = @"
                 (ocs_value ocs_data 70) "|" (ocs_value ocs_data 71) "|"
                 (ocs_value ocs_data 91) "|" (ocs_value ocs_data 2) "|"
                 (ocs_value ocs_data 10) "|" (ocs_value ocs_data 41) "|"
-                (ocs_value ocs_data 50) "|" (ocs_measure ocs_entity ocs_data) "|"
+                (ocs_angle ocs_data 50) "|" (ocs_measure ocs_entity ocs_data) "|"
                 (ocs_value ocs_data 13) "|" (ocs_value ocs_data 14) "|"
                 (ocs_value ocs_data 52) "|" (ocs_value ocs_data 11) "|"
-                (ocs_value ocs_data 40)) ocs_file)
+                (ocs_value ocs_data 40) "|" (ocs_angle ocs_data 51)) ocs_file)
       (if (= (cdr (assoc 0 ocs_data)) "DIMENSION")
         (progn
           (write-line (strcat "DIMDATA|" (ocs_value ocs_data 5) "|"
@@ -318,7 +319,8 @@ try {
                                   'synthetic-layer.planspec.json',
                                   'synthetic-contour.planspec.json',
                                   'synthetic-wall.planspec.json',
-                                  'synthetic-wall-gap.planspec.json')) {
+                                  'synthetic-wall-gap.planspec.json',
+                                  'synthetic-door-swing.planspec.json')) {
             $geometrySourceValid = $false
         } else {
             $fixturePath = Join-Path $PSScriptRoot (Join-Path 'masterplan\fixtures' $fixtureName)
@@ -415,9 +417,12 @@ try {
                     }
                 }
             }
-            if ($fixture.schema_version -eq 'planspec-3' -and
-                $fixture.walls.Count -eq 1 -and $fixture.openings.Count -gt 0 -and
-                @($fixture.openings | Where-Object { $_.kind -ne 'clear' }).Count -eq 0) {
+            if (($fixture.schema_version -eq 'planspec-3' -and
+                 $fixture.walls.Count -eq 1 -and $fixture.openings.Count -gt 0 -and
+                 @($fixture.openings | Where-Object { $_.kind -ne 'clear' }).Count -eq 0) -or
+                ($fixture.schema_version -eq 'planspec-4' -and
+                 $fixture.walls.Count -eq 1 -and $fixture.openings.Count -eq 1 -and
+                 $fixture.openings[0].kind -eq 'door')) {
                 $wall = $fixture.walls[0]
                 $a = $nodes[$wall.start]
                 $b = $nodes[$wall.end]
@@ -490,6 +495,69 @@ try {
                         matched_1e_6 = [bool]$matched
                     }
                 }
+                if ($fixture.schema_version -eq 'planspec-4') {
+                    $door = $fixture.openings[0]
+                    $width = [double]$door.width_m
+                    $distance = [double]$door.offset_m
+                    $side = if ($door.swing.side -eq 'left') { 1.0 } else { -1.0 }
+                    $hingeAtStart = $door.swing.hinge -eq 'start'
+                    $hingeDistance = if ($hingeAtStart) { $distance } else { $distance + $width }
+                    $hinge = Wall-Point $a $ux $uy $nx $ny $hingeDistance $side
+                    $direction = if ($hingeAtStart) { 1.0 } else { -1.0 }
+                    $closed = @(($hinge[0] + $direction * $ux * $width),
+                                ($hinge[1] + $direction * $uy * $width), 0.0)
+                    $opened = @(($hinge[0] - $uy * $side * $width),
+                                ($hinge[1] + $ux * $side * $width), 0.0)
+                    $leafId = '{0}__leaf_open' -f $door.id
+                    $leafHandle = [string]$richSourceReport.planspec.handles_by_id.($leafId)
+                    $leafRow = if ($leafHandle) { $entityByHandle[$leafHandle] } else { $null }
+                    $leafStart = if ($leafRow) { Read-DxfPoint $leafRow[9] } else { $null }
+                    $leafEnd = if ($leafRow) { Read-DxfPoint $leafRow[16] } else { $null }
+                    $leafMatched = $leafRow -and $leafRow[1] -eq 'LINE' -and
+                        $leafRow[3] -eq $wall.layer -and
+                        (((Same-Point $hinge $leafStart) -and (Same-Point $opened $leafEnd)) -or
+                         ((Same-Point $hinge $leafEnd) -and (Same-Point $opened $leafStart)))
+                    $geometryComparison += [ordered]@{
+                        planspec_id = $leafId; source_id = $door.id; kind = 'DOOR_LEAF'
+                        handle = $leafHandle; expected_layer = $wall.layer
+                        expected_start = $hinge; expected_end = $opened
+                        autocad_start = $leafStart; autocad_end = $leafEnd
+                        matched_1e_6 = [bool]$leafMatched
+                    }
+                    $arcId = '{0}__swing_arc' -f $door.id
+                    $arcHandle = [string]$richSourceReport.planspec.handles_by_id.($arcId)
+                    $arcRow = if ($arcHandle) { $entityByHandle[$arcHandle] } else { $null }
+                    $arcCenter = if ($arcRow) { Read-DxfPoint $arcRow[9] } else { $null }
+                    $arcRadius = if ($arcRow) { Read-DxfNumber $arcRow[17] } else { $null }
+                    $arcStart = if ($arcRow) { Read-DxfNumber $arcRow[11] } else { $null }
+                    $arcEnd = if ($arcRow) { Read-DxfNumber $arcRow[18] } else { $null }
+                    # AutoLISP entget exposes DXF 50/51 angles in radians.
+                    $turn = 2 * [Math]::PI
+                    $expectedStartAngle = [Math]::Atan2(($closed[1] - $hinge[1]),
+                                                        ($closed[0] - $hinge[0]))
+                    $expectedEndAngle = [Math]::Atan2(($opened[1] - $hinge[1]),
+                                                      ($opened[0] - $hinge[0]))
+                    $expectedStartAngle = ($expectedStartAngle + $turn) % $turn
+                    $expectedEndAngle = ($expectedEndAngle + $turn) % $turn
+                    $arcMatched = $arcRow -and $arcRow[1] -eq 'ARC' -and
+                        $arcRow[3] -eq $wall.layer -and
+                        (Same-Point $hinge $arcCenter) -and $null -ne $arcRadius -and
+                        [Math]::Abs($arcRadius - $width) -le 1e-6 -and
+                        $null -ne $arcStart -and $null -ne $arcEnd -and
+                        [Math]::Abs((($arcStart + $turn) % $turn) - $expectedStartAngle) -le 1e-6 -and
+                        [Math]::Abs((($arcEnd + $turn) % $turn) - $expectedEndAngle) -le 1e-6
+                    $geometryComparison += [ordered]@{
+                        planspec_id = $arcId; source_id = $door.id; kind = 'DOOR_SWING_ARC'
+                        handle = $arcHandle; expected_layer = $wall.layer
+                        expected_center = $hinge; expected_radius = $width
+                        angle_unit = 'radians'
+                        expected_start_angle = $expectedStartAngle
+                        expected_end_angle = $expectedEndAngle
+                        autocad_center = $arcCenter; autocad_radius = $arcRadius
+                        autocad_start_angle = $arcStart; autocad_end_angle = $arcEnd
+                        matched_1e_6 = [bool]$arcMatched
+                    }
+                }
             }
         }
     }
@@ -497,11 +565,12 @@ try {
         @($geometryComparison | Where-Object { -not $_.matched_1e_6 }).Count -gt 0
     $wallModelCountMatch = $null
     if ($richSourceReport -and $richSourceReport.planspec.fixture -in
-            @('synthetic-wall.planspec.json', 'synthetic-wall-gap.planspec.json')) {
+            @('synthetic-wall.planspec.json', 'synthetic-wall-gap.planspec.json',
+              'synthetic-door-swing.planspec.json')) {
         $wallModelCountMatch = $declaredCount -eq $geometryComparison.Count
     }
     $report = [ordered]@{
-        schema_version = 'mcp-autocad-audit-l4-5'
+        schema_version = 'mcp-autocad-audit-l4-6'
         run_id = $runId
         product = 'AutoCAD Core Console'
         executable_version = [Diagnostics.FileVersionInfo]::GetVersionInfo($AutoCadCore).FileVersion

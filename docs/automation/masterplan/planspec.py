@@ -530,6 +530,44 @@ def _clear_opening_wall_commands(wall: dict, openings: list[dict], nodes: dict,
     return commands
 
 
+def _single_door_symbol_commands(wall: dict, door: dict, nodes: dict,
+                                 origin: tuple[Decimal, Decimal]) -> list[dict]:
+    """Emit one 90-degree plan-view leaf and its swing arc on the declared wall face."""
+    a, b = nodes[wall["start"]], nodes[wall["end"]]
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = (dx * dx + dy * dy).sqrt()
+    ux, uy = dx / length, dy / length
+    normal = (-uy, ux)
+    width = _number(door["width_m"], "door.width_m")
+    offset = _number(door["offset_m"], "door.offset_m")
+    hinge_at_start = door["swing"]["hinge"] == "start"
+    side = 1 if door["swing"]["side"] == "left" else -1
+    hinge_distance = offset if hinge_at_start else offset + width
+    half = _number(wall["thickness_m"], "wall.thickness_m") / 2
+    hinge = (a[0] + ux * hinge_distance + normal[0] * half * side,
+             a[1] + uy * hinge_distance + normal[1] * half * side)
+    along = (ux if hinge_at_start else -ux, uy if hinge_at_start else -uy)
+    outward = (normal[0] * side, normal[1] * side)
+    closed = (hinge[0] + along[0] * width, hinge[1] + along[1] * width)
+    opened = (hinge[0] + outward[0] * width, hinge[1] + outward[1] * width)
+    diagonal = width / Decimal(2).sqrt()
+    midpoint = (hinge[0] + (along[0] + outward[0]) * diagonal,
+                hinge[1] + (along[1] + outward[1]) * diagonal)
+
+    def xy(point: tuple[Decimal, Decimal]) -> str:
+        return ",".join(_coordinate(point[index] + origin[index]) for index in (0, 1))
+
+    points = [xy(point) for point in (hinge, closed, midpoint, opened)]
+    if len(set(points)) != 4:
+        raise PlanError(f"Door {door['id']} symbol collapses at compiler precision")
+    return [{"planspec_id": f"{door['id']}__leaf_open", "source_id": door["id"],
+             "part": "leaf_open", "command": f"LINE {points[0]} {points[3]}",
+             "layer": wall["layer"]},
+            {"planspec_id": f"{door['id']}__swing_arc", "source_id": door["id"],
+             "part": "swing_arc", "command": f"ARC {points[1]} {points[2]} {points[3]}",
+             "layer": wall["layer"]}]
+
+
 def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
     dimension_graph = analyze_dimension_graph(plan)
@@ -569,6 +607,13 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                 plan["walls"][0], plan["openings"], nodes, origin))
             wall_parts = 4 * (len(plan["openings"]) + 1)
             wall_status = "compiled_single_clear_opening_wall"
+        elif plan["schema_version"] == "planspec-4" and len(plan["walls"]) == 1 and \
+                len(plan["openings"]) == 1 and plan["openings"][0]["kind"] == "door":
+            wall, door = plan["walls"][0], plan["openings"][0]
+            commands.extend(_clear_opening_wall_commands(wall, [door], nodes, origin))
+            commands.extend(_single_door_symbol_commands(wall, door, nodes, origin))
+            wall_parts = 10
+            wall_status = "compiled_single_door_wall"
     if len({item["planspec_id"] for item in commands}) != len(commands):
         raise PlanError("Generated wall part ID collides with PlanSpec geometry ID")
     layers = sorted({item["layer"] for item in commands} - {"0"})
@@ -591,7 +636,8 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     if wall_status == "unsupported":
         missing.add("wall_compilation")
     if plan["schema_version"] in {"planspec-3", "planspec-4"} and any(
-            opening["kind"] != "clear" for opening in plan["openings"]):
+            opening["kind"] != "clear" for opening in plan["openings"]) and \
+            wall_status != "compiled_single_door_wall":
         missing.add("opening_compilation")
     if layers and "layer_assignment" not in (capabilities or set()):
         missing.add("layer_assignment")

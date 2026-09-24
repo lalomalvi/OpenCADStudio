@@ -273,15 +273,22 @@ class PlanSpecTests(unittest.TestCase):
         self.assertEqual(module.dry_run(value)["unsupported"],
                          ["opening_compilation", "wall_compilation"])
 
-    def test_v4_door_swing_is_explicit_and_not_silently_compiled(self):
+    def test_v4_door_swing_is_explicit_and_compiles_one_symbol(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))
         result = module.dry_run(value)
         self.assertEqual(result["architecture"]["openings"][0]["swing"],
                          {"hinge": "start", "side": "left", "angle_deg": 90})
-        self.assertEqual(result["unsupported"], ["opening_compilation", "wall_compilation"])
-        self.assertFalse(result["executable"])
-        self.assertFalse(any(item.get("source_id") == "door-south" for item in result["commands"]))
+        self.assertEqual(result["unsupported"], [])
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_door_wall", "generated_parts": 10})
+        self.assertEqual([item["command"] for item in result["commands"][-2:]],
+                         ["LINE 1,0.1 1,1", "ARC 1.9,0.1 1.636396,0.736396 1,1"])
+        self.assertEqual([item["source_id"] for item in result["commands"][-2:]],
+                         ["door-south", "door-south"])
+        self.assertEqual(len({item["planspec_id"] for item in result["commands"]}),
+                         len(result["commands"]))
         for bad in ({"hinge": "middle", "side": "left", "angle_deg": 90},
                     {"hinge": "start", "side": "inside", "angle_deg": 90},
                     {"hinge": "start", "side": "left", "angle_deg": 120},
@@ -314,6 +321,28 @@ class PlanSpecTests(unittest.TestCase):
         opening["kind"] = "clear"
         with self.assertRaises(module.PlanError):
             module.validate(value)
+
+    def test_v4_door_hinge_and_side_select_open_leaf_endpoint(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        base = json.loads(fixture.read_text(encoding="utf-8"))
+        expected = {("start", "left"): "LINE 1,0.1 1,1",
+                    ("start", "right"): "LINE 1,-0.1 1,-1",
+                    ("end", "left"): "LINE 1.9,0.1 1.9,1",
+                    ("end", "right"): "LINE 1.9,-0.1 1.9,-1"}
+        for (hinge, side), leaf in expected.items():
+            value = deepcopy(base)
+            value["openings"][0]["swing"].update(hinge=hinge, side=side)
+            result = module.dry_run(value)
+            self.assertTrue(result["executable"])
+            self.assertEqual(result["commands"][-2]["command"], leaf)
+            self.assertTrue(result["commands"][-1]["command"].startswith("ARC "))
+        multi = deepcopy(base)
+        second = deepcopy(multi["openings"][0])
+        second.update(id="door-second", offset_m=2.2, width_m=0.8)
+        multi["openings"].append(second)
+        self.assertFalse(module.dry_run(multi)["executable"])
+        self.assertEqual(module.dry_run(multi)["unsupported"],
+                         ["opening_compilation", "wall_compilation"])
 
 
 if __name__ == "__main__":
