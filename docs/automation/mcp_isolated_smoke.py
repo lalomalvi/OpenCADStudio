@@ -327,6 +327,42 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                                        "pattern_scale": hatch_before["pattern_scale"],
                                        "pattern_angle": hatch_before["pattern_angle"],
                                        "path_count": len(hatch_before["paths"])}
+            assoc_setup = client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "run_script", "request_id": "l2-assoc-setup-" + uuid.uuid4().hex,
+                            "strict": True, "commands": ["CLAYER 0", "LINE 70,0 72.5,0",
+                                                          "CLAYER A-DIMS",
+                                                          "DIMLINEAR 70,0 72.5,0 71.25,1"]}})
+            assoc_line = [change["handle"] for change in assoc_setup.get("changes", [])
+                          if change.get("kind") == "Added" and change.get("step") == 1]
+            assoc_dim = [change["handle"] for change in assoc_setup.get("changes", [])
+                         if change.get("kind") == "Added" and change.get("step") == 3]
+            if len(assoc_line) != 1 or len(assoc_dim) != 1:
+                raise ProtocolError("Associative dimension fixture handles are absent")
+            assoc_before_query = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                           "parameters": {"handle": assoc_dim[0],
+                                                                          "detail": "full"}})
+            initial_measure = (assoc_before_query.get("entities", [{}])[0]
+                               .get("properties", {}).get("Linear", {}).get("base", {})
+                               .get("actual_measurement"))
+            if not isinstance(initial_measure, (int, float)) or abs(initial_measure - 2.5) > 1e-6:
+                raise ProtocolError("Initial associative dimension measure differs from fixture")
+            client.tool("ocs_execute", {"ocs_session_id": session,
+                "request": {"op": "set_properties", "request_id": "l2-assoc-edit-" + uuid.uuid4().hex,
+                            "collection": "entities", "handle": assoc_line[0],
+                            "updates": [{"path": "/end/x", "expected": 72.5, "value": 73.5}]}})
+            assoc_query = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                     "parameters": {"handle": assoc_dim[0],
+                                                                    "detail": "full"}})
+            assoc_entity = assoc_query.get("entities", [{}])[0]
+            assoc_measure = (assoc_entity.get("properties", {}).get("Linear", {})
+                             .get("base", {}).get("actual_measurement"))
+            report["association_fixture"] = {"source_handle": assoc_line[0],
+                                             "dimension_handle": assoc_dim[0],
+                                             "initial_measurement": initial_measure,
+                                             "expected_measurement": 3.5,
+                                             "observed_measurement": assoc_measure}
+            if not isinstance(assoc_measure, (int, float)) or abs(assoc_measure - 3.5) > 1e-6:
+                raise ProtocolError("Dimension did not follow edited source endpoint")
         audit = client.tool("ocs_read", {"ocs_session_id": session, "op": "audit",
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
@@ -349,7 +385,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             if verified.get("manifest", {}).get("by_layer", {}).get("A-WALL") != 1:
                 raise ProtocolError("Synthetic layer assignment did not survive DWG reopen")
             report["layer_fixture"]["reopened_count"] = 1
-            if verified.get("manifest", {}).get("by_type", {}).get("Dimension") != 2:
+            if verified.get("manifest", {}).get("by_type", {}).get("Dimension") != 3:
                 raise ProtocolError("Native dimensions did not survive DWG reopen")
             report["dimension_fixture"]["reopened_count"] = 1
             report["aligned_dimension_fixture"]["reopened_count"] = 1
@@ -436,6 +472,17 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             if restored_hatch.get("type") != "Hatch" or not same_geometry(hatch_before, hatch_after):
                 raise ProtocolError("HATCH boundary or style changed after DWG reopen")
             report["hatch_fixture"]["roundtrip_properties"] = "matched_1e-6_internal"
+            assoc_after_query = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                          "parameters": {"handle": assoc_dim[0],
+                                                                         "detail": "full"}})
+            restored_assoc = assoc_after_query.get("entities", [{}])[0]
+            restored_assoc_measure = (restored_assoc.get("properties", {}).get("Linear", {})
+                                      .get("base", {}).get("actual_measurement"))
+            if (restored_assoc.get("type") != "Dimension" or
+                    not isinstance(restored_assoc_measure, (int, float)) or
+                    abs(restored_assoc_measure - 3.5) > 1e-6):
+                raise ProtocolError("Edited associative dimension changed after DWG reopen")
+            report["association_fixture"]["roundtrip_measurement"] = restored_assoc_measure
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         capture_path = (output / "capture.png").resolve()
         capture = client.capture_artifact(session, capture_path,

@@ -279,3 +279,15 @@ M5.5 queda **partial L2**: el flag asociativo no demuestra actualización al edi
 ### Prompt de continuidad desde el vigesimoprimer corte
 
 Verifica SHA remoto de `codex/mcp-hatch-l2`, Git, AGENTS y estado del worktree. Prueba edición de contorno para HATCH y referencias para cotas antes de aceptar asociatividad; completa unidades de BLOCK, perfil métrico y estilos. Aborda M3 render-fence, telemetría por fase y presupuesto; M4 topología; M6 QA espacial/motor externo; M7/M8 cohortes y entrega con revisión humana. Conserva evidencia pasada y publica únicamente al fork; no abras ni modifiques el DWG del usuario.
+
+## Vigesimosegundo corte actualización de cota asociada — 2026-09-23, en progreso
+
+`codex/mcp-hatch-l2` quedó publicado en el fork con SHA local/remoto `44c99dbe1b285caaf422c60f879c34ed0a8aedd4` y árbol limpio. En `codex/mcp-dimension-association-l2`, un fixture sintético creó la línea de 70 a 72.5 y una `DIMLINEAR` coincidente de 2.50. La primera ejecución `target/mcp-isolated/20260923-222220-c05bb897/report.json` comprobó que `set_properties` con compare-and-set `/end/x:72.5→73.5` actualizó la cota a 3.50, pero el harness falló después porque esperaba el manifiesto anterior de dos cotas. Ese `failed` quedó intacto. La GUI aislada PID 15544 se recuperó con guardado separado y QUIT; el PID dejó de existir. La expectativa del fixture se corrigió a tres cotas.
+
+El L2 final `target/mcp-isolated/20260923-222339-b12b6cdc/report.json` pasó con medida inicial 2.50, medida observada 3.50 tras editar la línea, y 3.50 tras guardar y reabrir internamente el DWG. Auditoría sin errores, quince entidades de origen y 37 materializadas/reabiertas, GUI salida, captura local inspeccionada y `SEAL.json` v2 verificado. DWG sintético SHA-256 `8E001D4F1411223DE175B9C11F87D2D2990F011ACC657966428B1517C39CA6FC`; binario SHA-256 `93CB34814B68236C1E3E7BC4A7B6EF67158D34E390B4F4A952B21411CEE1B9B8`. El L2 intermedio `20260923-222301-01bdc4ac` también pasó antes de registrar explícitamente la medida inicial.
+
+M5.3 es **partial L2**: actualización asociativa demostrada en esa sesión sintética y medida persistida, pero no se ha editado la referencia después de reabrir para probar persistencia del vínculo; tampoco se ha probado motor externo o un caso topológico más complejo. HATCH asociativo y M3/M4/M6 restantes, M7–M8 siguen pendientes. El DWG del usuario y ensayos históricos permanecen intactos.
+
+### Prompt de continuidad desde el vigesimosegundo corte
+
+Verifica Git, AGENTS, remoto y SHA de `codex/mcp-dimension-association-l2`. En un nuevo fixture sintético reabre el DWG, edita otra vez la línea y verifica actualización de cota, guardado y cierre, sin tocar el sello anterior. Prueba también edición de contorno para HATCH y unidades de BLOCK. Continúa M3 render-fence/tiempos/presupuesto, M4 topología, M6 QA/external, M7 cohortes y M8 entrega con gates; publica solo en el fork y preserva todo fallo original.
