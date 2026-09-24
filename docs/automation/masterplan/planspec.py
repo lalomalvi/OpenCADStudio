@@ -842,6 +842,44 @@ def _door_swing_extrema(wall: dict, door: dict,
     return points
 
 
+def analyze_door_clearance(plan: dict[str, Any]) -> dict[str, Any]:
+    """Report strict crossings of an open door leaf with declared source lines.
+
+    A line is not assumed to be an obstruction; contour membership only names
+    its source category. Contacts at endpoints and the rest of the swing sweep
+    remain outside this narrow review signal.
+    """
+    _validate_basic(plan)
+    if plan["schema_version"] not in {"planspec-4", "planspec-5", "planspec-6", "planspec-7"}:
+        return {"schema_version": "planspec-door-clearance-qa-1", "status": "unavailable",
+                "strict_crossings": [], "scope": "v4_or_later_open_leaf_against_source_lines"}
+    nodes = {node["id"]: (_number(node["x"], "node.x"), _number(node["y"], "node.y"))
+             for node in plan["nodes"]}
+    walls = {wall["id"]: wall for wall in plan["walls"]}
+    contour_lines = {line_id for contour in plan["topology"]["contours"]
+                     for line_id in contour["line_ids"]}
+
+    def orient(a: tuple[Decimal, Decimal], b: tuple[Decimal, Decimal],
+               c: tuple[Decimal, Decimal]) -> Decimal:
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    crossings = []
+    for door in sorted((item for item in plan["openings"] if item["kind"] == "door"),
+                       key=lambda item: item["id"]):
+        hinge, _, opened = _door_swing_extrema(walls[door["wall_id"]], door, nodes)[:3]
+        for line in sorted(plan["lines"], key=lambda item: item["id"]):
+            a, b = nodes[line["start"]], nodes[line["end"]]
+            if orient(hinge, opened, a) * orient(hinge, opened, b) < 0 and \
+                    orient(a, b, hinge) * orient(a, b, opened) < 0:
+                crossings.append({"door_id": door["id"], "line_id": line["id"],
+                                  "line_category": "contour" if line["id"] in contour_lines
+                                                   else "unclassified"})
+    return {"schema_version": "planspec-door-clearance-qa-1",
+            "status": "review_required" if crossings else "clear",
+            "strict_crossings": crossings,
+            "scope": "v4_or_later_open_leaf_against_source_lines_no_sweep_or_endpoint_contacts"}
+
+
 def _source_bounds(plan: dict[str, Any], nodes: dict[str, tuple[Decimal, Decimal]],
                    origin: tuple[Decimal, Decimal], dimension_status: str) -> dict[str, Any]:
     """Separate 2D source footprints from dimension references, excluding glyph extents."""
@@ -911,6 +949,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     topology = analyze_topology(plan)
     architecture = analyze_architecture(plan)
     geometry_qa = analyze_geometry(plan)
+    door_clearance_qa = analyze_door_clearance(plan)
     nodes = {node["id"]: (_number(node["x"], "x"), _number(node["y"], "y"))
              for node in plan["nodes"]}
     origin = (_number(plan["origin"]["x"], "origin.x"),
@@ -1060,6 +1099,9 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     source_bounds = _source_bounds(plan, nodes, origin, dimension_status)
     quality_blockers = (["dimension_line_inside_wall_bounds"]
                         if dimension_placement_qa["status"] == "inside_wall_bounds" else [])
+    if any(item["line_category"] == "contour"
+           for item in door_clearance_qa["strict_crossings"]):
+        quality_blockers.append("door_open_leaf_crosses_contour")
     wire = json.dumps(execution, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return {"schema_version": "planspec-dry-run-1", "commands": commands,
             "execution_steps": execution,
@@ -1073,6 +1115,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
             "dimension_placement_qa": dimension_placement_qa,
             "source_bounds": source_bounds,
             "geometry_qa": geometry_qa,
+            "door_clearance_qa": door_clearance_qa,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
             "unsupported": unsupported, "quality_blockers": quality_blockers,
             "executable": not unsupported and not quality_blockers,

@@ -337,6 +337,30 @@ class PlanSpecTests(unittest.TestCase):
         with self.assertRaises(module.PlanError):
             module.validate(changed)
 
+    def test_door_open_leaf_crossing_is_reviewed_by_source_category(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        clear = module.dry_run(value)["door_clearance_qa"]
+        self.assertEqual(clear["status"], "clear")
+        value["nodes"] += [
+            {"id": "obstacle-a", "x": 0.5, "y": 0.5, "source": SOURCE},
+            {"id": "obstacle-b", "x": 1.5, "y": 0.5, "source": SOURCE}]
+        value["lines"].append({"id": "candidate-obstacle", "start": "obstacle-a",
+                               "end": "obstacle-b", "layer": "0", "source": SOURCE})
+        report = module.dry_run(value)["door_clearance_qa"]
+        self.assertEqual(report["status"], "review_required")
+        self.assertEqual(report["strict_crossings"], [{"door_id": "door-south",
+            "line_id": "candidate-obstacle", "line_category": "unclassified"}])
+        value["lines"].pop()
+        value["nodes"][2]["y"] = 0.5
+        value["nodes"][3]["y"] = 0.5
+        result = module.dry_run(value)
+        contour = result["door_clearance_qa"]
+        self.assertEqual(contour["strict_crossings"], [{"door_id": "door-south",
+            "line_id": "outline-c", "line_category": "contour"}])
+        self.assertEqual(result["quality_blockers"], ["door_open_leaf_crosses_contour"])
+        self.assertFalse(result["executable"])
+
     def test_v4_window_elevation_and_kind_specific_fields(self):
         fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
         value = json.loads(fixture.read_text(encoding="utf-8"))
