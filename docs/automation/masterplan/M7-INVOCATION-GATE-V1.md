@@ -6,4 +6,6 @@ La observación del adaptador declara identidad de respuesta/modelo, uso generad
 
 La procedencia del uso es `adapter_reported_unverified`. No existe todavía un adaptador conectado a Luna ni una prueba de identidad/uso contra una respuesta directa del proveedor. El callback es una frontera de confianza que debe prohibir reintentos internos ante estado incierto; el wrapper no puede inspeccionar sus efectos internos. Ningún criterio del oráculo se entrega al callback. Las pruebas actuales usan proveedores sintéticos y prueban orden, una sola llamada, incertidumbre, validación, privacidad del sobre y adulteración de evidencia anidada. El run M7 real sigue pendiente de seis imágenes inéditas, oráculos revisados, telemetría directa y G0–G10 independientes.
 
+Adenda M3: [M3-DIRECT-RESPONSE-RECEIPT-V1.md](M3-DIRECT-RESPONSE-RECEIPT-V1.md) permite que un adaptador entregue objetos de respuesta directos en memoria. El wrapper coteja sus IDs/modelos/usos con `Observation` y guarda solo recibos con hashes; marca `adapter_supplied_direct_response_objects`, no identidad proveedor verificada. Los sobres históricos sin recibos siguen válidos y `completed` sigue sin conceder G0–G10.
+
 Reproducción L0: `python -m unittest discover -s docs/automation/masterplan -p 'test_*.py' -q`.

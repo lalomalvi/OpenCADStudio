@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from reserved_trial import TrialJournal, _ID, _file_sha
+from provider_response_receipt import from_response, verify_receipt
 from usage_evidence import _usage
 
 
@@ -43,6 +44,8 @@ class Observation:
     generator_usage: dict
     supervisor_usage: dict | None
     cad_evidence_path: Path | None
+    generator_response: dict | None = None
+    supervisor_response: dict | None = None
 
 
 def _sha(data: bytes) -> str:
@@ -69,6 +72,24 @@ def verify_envelope(path: Path) -> dict:
     if not isinstance(envelope, dict) or envelope.get("schema_version") != "m7-invocation-envelope-1" \
             or envelope.get("gates") != "unevaluated":
         raise ValueError("Invocation envelope schema is invalid")
+    receipts = envelope.get("direct_response_receipts")
+    if receipts is not None:
+        if envelope.get("usage_provenance") != "adapter_supplied_direct_response_objects" \
+                or not isinstance(receipts, dict) or set(receipts) != {
+                    "generator", "supervisor"}:
+            raise ValueError("Direct response receipt mapping is invalid")
+        generator = verify_receipt(receipts["generator"])
+        supervisor = (verify_receipt(receipts["supervisor"])
+                      if receipts["supervisor"] is not None else None)
+        if generator["response_id_sha256"] != envelope.get("response_sha256") or \
+                generator["model"] != envelope.get("effective_model") or \
+                generator["usage"] != envelope.get("generator_usage") or \
+                ((supervisor is None) != (envelope.get("supervisor_usage") is None)) or \
+                (supervisor is not None and supervisor["usage"] !=
+                 envelope["supervisor_usage"]):
+            raise ValueError("Direct response receipt differs from envelope")
+    elif envelope.get("usage_provenance") == "adapter_supplied_direct_response_objects":
+        raise ValueError("Direct response receipts are missing")
     ref = envelope.get("cad_evidence")
     if ref is not None:
         if not isinstance(ref, dict) or set(ref) != {"file", "sha256"} \
@@ -106,6 +127,25 @@ def run_once(journal: TrialJournal, arm: str, case_id: str, repetition: int,
         generator = _usage(observed.generator_usage)
         supervisor = (_usage(observed.supervisor_usage)
                       if observed.supervisor_usage is not None else None)
+        direct_receipts = None
+        if observed.generator_response is not None or observed.supervisor_response is not None:
+            if observed.generator_response is None:
+                raise ValueError("Direct supervisor response needs generator response")
+            generator_receipt = from_response(observed.generator_response)
+            if generator_receipt["response_id_sha256"] != _sha(
+                    observed.response_id.encode("utf-8")) or \
+                    generator_receipt["model"] != observed.effective_model or \
+                    generator_receipt["usage"] != generator:
+                raise ValueError("Generator metadata differs from direct response")
+            supervisor_receipt = (from_response(observed.supervisor_response)
+                                  if observed.supervisor_response is not None else None)
+            if supervisor_receipt is not None and \
+                    (supervisor is None or supervisor_receipt["usage"] != supervisor or
+                     supervisor_receipt["response_id_sha256"] ==
+                     generator_receipt["response_id_sha256"]):
+                raise ValueError("Supervisor metadata differs from direct response")
+            direct_receipts = {"generator": generator_receipt,
+                               "supervisor": supervisor_receipt}
         cad_evidence = _evidence_ref(observed.cad_evidence_path, root)
     except Exception as error:
         # A callback may have reached the provider or mutated CAD before error.
@@ -123,7 +163,9 @@ def run_once(journal: TrialJournal, arm: str, case_id: str, repetition: int,
         "request_sha256": _sha(request_id.encode("utf-8")),
         "response_sha256": _sha(observed.response_id.encode("utf-8")),
         "effective_model": observed.effective_model,
-        "usage_provenance": "adapter_reported_unverified",
+        "usage_provenance": ("adapter_supplied_direct_response_objects" if direct_receipts
+                             else "adapter_reported_unverified"),
+        "direct_response_receipts": direct_receipts,
         "generator_usage": generator, "supervisor_usage": supervisor,
         "cad_evidence": cad_evidence, "disposition": disposition,
         "gates": "unevaluated",
