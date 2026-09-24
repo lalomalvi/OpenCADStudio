@@ -69,8 +69,10 @@ class Client:
         self._mutations: dict[str, tuple[str, dict | None]] = {}
         self._sessions: dict[str, dict] = {}
         self._blocked_sessions: dict[str, str] = {}
-        threading.Thread(target=self._read_stdout, daemon=True).start()
-        threading.Thread(target=self._drain_stderr, daemon=True).start()
+        self._stdout_thread = threading.Thread(target=self._read_stdout, daemon=True)
+        self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stdout_thread.start()
+        self._stderr_thread.start()
 
     def _fail_all(self, message: str) -> None:
         with self._lock:
@@ -339,9 +341,13 @@ class Client:
             code = self.process.wait(timeout=5)
         except subprocess.TimeoutExpired as exc:
             raise ProtocolError("MCP process did not exit after stdin closed") from exc
-        if self.process.stdout:
+        # A reader can hold the buffered stream lock until EOF. Join with a
+        # bound before closing it, so an inherited GUI handle cannot hang close.
+        self._stdout_thread.join(timeout=0.5)
+        self._stderr_thread.join(timeout=0.5)
+        if self.process.stdout and not self._stdout_thread.is_alive():
             self.process.stdout.close()
-        if self.process.stderr:
+        if self.process.stderr and not self._stderr_thread.is_alive():
             self.process.stderr.close()
         if code != 0:
             raise ProtocolError(f"MCP exited {code}; stderr was drained without logging")

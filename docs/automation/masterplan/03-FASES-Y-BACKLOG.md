@@ -12,7 +12,8 @@ Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejec
 | M1.5 | passed L1/L2 | Sesión seleccionada por ID y handshake; document_id/revision exigidos antes de editar |
 | M1.6 | partial L1/L2 | Lote en curso recuperable dentro del mismo proceso MCP; tras reinicio del MCP falta journal durable; unknown_operation bloquea nuevas mutaciones |
 | M2.1 | partial L1/L2 | Descubrimiento concurrente 0/1/20/100 y conexión directa; 10 muestras con 100 descriptores sintéticos muertos: p50 1869.7 ms, p95 conservador 1909.1 ms; ACL Windows pendiente |
-| M2.2–M2.4 | partial/pending | Salida limpia del L2 y cierre manual de ensayos fallidos con identidad comprobada; heartbeat, cuarentena y shutdown_owned_session formal pendientes |
+| M2.2 | pending | Heartbeat, descriptor obsoleto y cuarentena con ACL Windows pendientes |
+| M2.3–M2.4 | partial L1/L2 | `shutdown_owned_session` del backend pasó L2: PID/inicio/binario/raíz, rechazo de dirty/foreign, salida e idempotencia; `close_document` con política y modalidades adicionales pendientes |
 | M3–M8 | pending | No aceptar gates posteriores por el L2 sintético |
 
 El owner_role de M0–M2 es la sesión ejecutora. Reproducir L1 con `python -m unittest discover -s docs/automation -p test_mcp_client.py -v` y `cargo test --lib mcp::tests`. El L2 sintético se reproduce con `python docs/automation/mcp_isolated_smoke.py` después del build. Sus gates CAD no prueban imagen, motor externo ni revisión del usuario. El caso original continúa partial.

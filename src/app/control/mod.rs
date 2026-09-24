@@ -606,7 +606,7 @@ impl OpenCADStudio {
                     Task::none(),
                 );
             }
-        } else if !query && !matches!(op, "new" | "open" | "stop") {
+        } else if !query && !matches!(op, "new" | "open" | "stop" | "shutdown") {
             return (
                 failure("document_required", "Read state and supply document_id"),
                 Task::none(),
@@ -927,6 +927,28 @@ impl OpenCADStudio {
                 self.control.enabled = false;
                 Task::none()
             }
+            "shutdown" => {
+                let root = std::path::Path::new(string(req, "owned_root")?)
+                    .canonicalize().map_err(|_| failure("invalid_owned_root", "Owned root is absent"))?;
+                if self.active_modal.is_some() || self.tabs.iter().any(|tab| tab.active_cmd.is_some()) {
+                    return Err(failure("editor_busy", "Close modal and active commands before shutdown"));
+                }
+                if self.tabs.iter().any(|tab| tab.dirty) {
+                    return Err(failure("dirty_document", "Save every dirty document before shutdown"));
+                }
+                for tab in &self.tabs {
+                    if let Some(path) = &tab.current_path {
+                        let canonical = path.canonicalize().map_err(|_|
+                            failure("unverified_document", "Open document path cannot be verified"))?;
+                        if !canonical.starts_with(&root) {
+                            return Err(failure("foreign_document", "Open document is outside owned root"));
+                        }
+                    }
+                }
+                let window = self.main_window.ok_or_else(||
+                    failure("gui_required", "Shutdown requires a GUI window"))?;
+                self.update(Message::WindowCloseRequested(window))
+            }
             _ => return Err(failure("unknown_operation", "Unknown operation")),
         })
     }
@@ -1198,6 +1220,26 @@ pub(super) fn action_names() -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shutdown_rechecks_dirty_and_foreign_documents_in_gui() {
+        let mut app = OpenCADStudio::new_for_test();
+        request(&mut app, json!({"op":"new"}));
+        request(&mut app, json!({"op":"run","cmd":"LINE 0,0 1,0"}));
+        let root = std::env::current_dir().unwrap();
+        let refused = request(&mut app, json!({"op":"shutdown","request_id":"dirty-shutdown",
+            "owned_root":root}));
+        assert_eq!(refused["code"], "dirty_document");
+        let foreign = std::env::temp_dir().join(format!("ocs-foreign-{}.dwg", session_id()));
+        std::fs::write(&foreign, b"synthetic").unwrap();
+        app.tabs[app.active_tab].dirty = false;
+        app.tabs[app.active_tab].current_path = Some(foreign.clone());
+        let refused = request(&mut app, json!({"op":"shutdown","request_id":"foreign-shutdown",
+            "owned_root":root}));
+        assert_eq!(refused["code"], "foreign_document");
+        let _ = std::fs::remove_file(foreign);
+    }
+
     fn request(app: &mut OpenCADStudio, mut req: Value) -> Value {
         let state = app.control_state();
         req["protocol"] = json!(1);
