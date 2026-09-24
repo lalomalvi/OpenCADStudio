@@ -35,6 +35,14 @@ def main() -> None:
                              "started_at_unix_ms": selected.get("process_started_at_unix_ms")}
         if selected.get("executable_path") != str(server):
             raise ProtocolError("Owned GUI executable differs from tested build")
+        time.sleep(2.2)
+        live = client.ready_session(session_id=session, wait_for_existing=True, timeout=10)
+        if live.get("heartbeat_age_ms") is None or live["heartbeat_age_ms"] > 5000:
+            raise ProtocolError("Owned GUI heartbeat is absent or stale")
+        if os.name == "nt" and live.get("process_identity") != "matched":
+            raise ProtocolError("Windows process creation time did not match descriptor")
+        report["heartbeat_age_ms"] = live["heartbeat_age_ms"]
+        report["process_identity"] = live.get("process_identity")
         state = read_state(client, session)
         for _ in range(6):
             if not state.get("modal"):
@@ -119,6 +127,8 @@ def main() -> None:
         report["closed_pid"] = selected["process_id"]
         report["repeat_same_result"] = True
         report["discovery_after"] = "absent"
+        quarantine = profile / "OpenCADStudio" / "automation" / "quarantine"
+        report["quarantined_descriptor_count"] = len(list(quarantine.glob("*.json"))) if quarantine.is_dir() else 0
     except Exception as error:
         report["error_type"] = type(error).__name__
         raise

@@ -3,14 +3,37 @@ use super::{session_id, Envelope, Reply};
 use iced::futures::{channel::mpsc, Stream};
 use serde_json::{json, Value};
 use std::{
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::TcpListener,
+    path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+fn heartbeat_writer(dir: PathBuf, id: String, pid: u32, started_at_unix_ms: Option<u64>) {
+    let path = dir.join(format!("{id}.heartbeat"));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let Ok(mut file) = options.open(path) else { return; };
+    loop {
+        let updated_at_unix_ms = u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)
+            .unwrap_or_default().as_millis()).unwrap_or(u64::MAX);
+        let wire = json!({"session_id":id,"pid":pid,"started_at_unix_ms":started_at_unix_ms,
+            "updated_at_unix_ms":updated_at_unix_ms}).to_string();
+        if file.set_len(0).is_err() || file.seek(SeekFrom::Start(0)).is_err()
+            || file.write_all(wire.as_bytes()).is_err() || file.flush().is_err() {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
 
 #[cfg(windows)]
 fn process_started_at_unix_ms() -> Option<u64> {
@@ -73,6 +96,10 @@ fn listen(sender: mpsc::Sender<Envelope>) -> std::io::Result<()> {
     let mut file = options.open(&path)?;
     write!(file, "{descriptor}")?;
     drop(file);
+    let heartbeat_dir = dir.clone();
+    let heartbeat_id = session_id().to_owned();
+    std::thread::spawn(move || heartbeat_writer(heartbeat_dir, heartbeat_id,
+        std::process::id(), started_at_unix_ms));
     let clients = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming().flatten() {
         if clients.fetch_add(1, Ordering::SeqCst) >= 8 {

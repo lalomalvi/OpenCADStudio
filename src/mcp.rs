@@ -347,6 +347,85 @@ fn private_descriptor(_: &Path) -> bool {
     true
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProcessIdentity {
+    Matches,
+    DeadOrReused,
+    Unknown,
+}
+
+#[cfg(windows)]
+fn process_identity(descriptor: &Descriptor) -> ProcessIdentity {
+    use windows_sys::Win32::{Foundation::{CloseHandle, GetLastError, FILETIME, ERROR_INVALID_PARAMETER,
+        WAIT_OBJECT_0, WAIT_TIMEOUT},
+        Storage::FileSystem::SYNCHRONIZE,
+        System::Threading::{GetProcessTimes, OpenProcess, WaitForSingleObject,
+            PROCESS_QUERY_LIMITED_INFORMATION}};
+    let (Some(pid), Some(expected)) = (descriptor.pid, descriptor.started_at_unix_ms) else {
+        return ProcessIdentity::Unknown;
+    };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid) };
+    if handle.is_null() {
+        let error = unsafe { GetLastError() };
+        return if error == ERROR_INVALID_PARAMETER {
+            ProcessIdentity::DeadOrReused
+        } else {
+            ProcessIdentity::Unknown
+        };
+    }
+    let wait = unsafe { WaitForSingleObject(handle, 0) };
+    if wait == WAIT_OBJECT_0 {
+        unsafe { CloseHandle(handle) };
+        return ProcessIdentity::DeadOrReused;
+    }
+    if wait != WAIT_TIMEOUT {
+        unsafe { CloseHandle(handle) };
+        return ProcessIdentity::Unknown;
+    }
+    let mut created: FILETIME = unsafe { std::mem::zeroed() };
+    let mut exited: FILETIME = unsafe { std::mem::zeroed() };
+    let mut kernel: FILETIME = unsafe { std::mem::zeroed() };
+    let mut user: FILETIME = unsafe { std::mem::zeroed() };
+    let success = unsafe { GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) } != 0;
+    unsafe { CloseHandle(handle) };
+    if !success { return ProcessIdentity::Unknown; }
+    let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+    let actual = ticks.checked_sub(116_444_736_000_000_000).map(|value| value / 10_000);
+    if actual == Some(expected) { ProcessIdentity::Matches }
+    else { ProcessIdentity::DeadOrReused }
+}
+
+#[cfg(not(windows))]
+fn process_identity(_: &Descriptor) -> ProcessIdentity { ProcessIdentity::Unknown }
+
+fn heartbeat_age_ms(directory: &Path, session_id: &str) -> Option<u128> {
+    let path = directory.join(format!("{session_id}.heartbeat"));
+    if !path.symlink_metadata().ok()?.file_type().is_file() { return None; }
+    std::time::SystemTime::now().duration_since(path.metadata().ok()?.modified().ok()?)
+        .ok().map(|age| age.as_millis())
+}
+
+fn quarantine_dead_descriptor(directory: &Path, path: &Path, descriptor: &Descriptor) -> Result<(), String> {
+    let directory = directory.canonicalize().map_err(|error| error.to_string())?;
+    let expected_name = format!("{}.json", descriptor.session_id);
+    if path.parent().and_then(|parent| parent.canonicalize().ok()).as_deref() != Some(directory.as_path())
+        || !path.symlink_metadata().is_ok_and(|meta| meta.file_type().is_file())
+        || path.file_name().and_then(|name| name.to_str()) != Some(expected_name.as_str()) {
+        return Err("Descriptor quarantine path failed containment check".into());
+    }
+    let quarantine = directory.join("quarantine");
+    if quarantine.symlink_metadata().is_ok_and(|meta| meta.file_type().is_symlink()) {
+        return Err("Descriptor quarantine directory is a symlink".into());
+    }
+    std::fs::create_dir_all(&quarantine).map_err(|error| error.to_string())?;
+    let quarantine = quarantine.canonicalize().map_err(|error| error.to_string())?;
+    if !quarantine.starts_with(&directory) {
+        return Err("Descriptor quarantine target escaped automation directory".into());
+    }
+    let destination = quarantine.join(format!("{}-{}.json", descriptor.session_id, random_id()?));
+    atomic_replace(path, &destination)
+}
+
 fn exchange(descriptor: &Descriptor, request: Value, timeout: Duration) -> Result<Value, String> {
     let mut object = request
         .as_object()
@@ -412,10 +491,21 @@ fn descriptors_in(directory: &Path) -> Result<Vec<(Descriptor, Value)>, String> 
                         || !path.metadata().is_ok_and(|meta| meta.len() <= MAX_DESCRIPTOR) { continue; }
                     let Ok(text) = std::fs::read_to_string(path) else { continue };
                     let Ok(descriptor) = serde_json::from_str::<Descriptor>(&text) else { continue };
-                    let Ok(state) = exchange(&descriptor, json!({"op":"hello"}), Duration::from_millis(250)) else { continue };
+                    if descriptor.session_id.len() != 32
+                        || !descriptor.session_id.bytes().all(|byte| byte.is_ascii_hexdigit()) { continue; }
+                    let identity = process_identity(&descriptor);
+                    if identity == ProcessIdentity::DeadOrReused {
+                        let _ = quarantine_dead_descriptor(directory, path, &descriptor);
+                        continue;
+                    }
+                    let Ok(mut state) = exchange(&descriptor, json!({"op":"hello"}), Duration::from_millis(250)) else { continue };
                     if state["ok"].as_bool() == Some(true)
                         && state["session_id"].as_str() == Some(descriptor.session_id.as_str())
                     {
+                        if let Some(object) = state.as_object_mut() {
+                            object.insert("heartbeat_age_ms".into(), json!(heartbeat_age_ms(directory, &descriptor.session_id)));
+                            object.insert("process_identity".into(), json!(if identity == ProcessIdentity::Matches { "matched" } else { "unknown" }));
+                        }
                         if let Ok(mut matches) = found.lock() {
                             matches.push((descriptor, state));
                         }
@@ -453,6 +543,9 @@ fn descriptor_for_session(session_id: &str) -> Result<(Descriptor, Value), Strin
     let descriptor: Descriptor = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     if descriptor.session_id != session_id {
         return Err("Selected session descriptor identity differs".into());
+    }
+    if process_identity(&descriptor) == ProcessIdentity::DeadOrReused {
+        return Err("Selected session process is absent or has a different creation time".into());
     }
     // A cold GUI can briefly exceed the discovery probe's 250 ms budget.
     // Probe only this selected descriptor with a bounded, longer handshake.
@@ -1958,7 +2051,7 @@ mod tests {
             let existing = directory.read_dir().unwrap().count();
             for index in existing..count {
                 std::fs::write(directory.join(format!("{index:03}.json")),
-                    json!({"session_id":format!("dead-{index}"),"port":port,"token":"fixture"}).to_string()).unwrap();
+                    json!({"session_id":format!("{index:032x}"),"port":port,"token":"fixture"}).to_string()).unwrap();
             }
             let began = Instant::now();
             assert!(descriptors_in(&directory).unwrap().is_empty());
@@ -1974,6 +2067,43 @@ mod tests {
             std::fs::remove_file(entry.unwrap().path()).unwrap();
         }
         std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn quarantines_only_a_named_regular_descriptor_under_its_directory() {
+        let base = std::env::current_dir().unwrap().join("target/mcp-quarantine-tests");
+        std::fs::create_dir_all(&base).unwrap();
+        let run_root = base.join(random_id().unwrap());
+        let dir = run_root
+            .join("long-component-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .join("long-component-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = "0123456789abcdef0123456789abcdef";
+        let descriptor = Descriptor { session_id:id.into(), port:0, token:"fixture".into(),
+            pid:Some(0), executable:None, started_at_unix_ms:Some(1) };
+        let path = dir.join(format!("{id}.json"));
+        std::fs::write(&path, b"synthetic").unwrap();
+        assert!(quarantine_dead_descriptor(&dir, &path, &descriptor).is_ok());
+        assert!(!path.exists());
+        assert_eq!(dir.join("quarantine").read_dir().unwrap().count(), 1);
+        let wrong = dir.join("wrong.json");
+        std::fs::write(&wrong, b"synthetic").unwrap();
+        assert!(quarantine_dead_descriptor(&dir, &wrong, &descriptor).is_err());
+        assert!(wrong.exists());
+        assert!(run_root.canonicalize().unwrap().starts_with(base.canonicalize().unwrap()));
+        std::fs::remove_dir_all(run_root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn exited_process_with_retained_handle_is_not_live() {
+        let mut child = Command::new("cmd").args(["/C", "exit /B 0"])
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        child.wait().unwrap();
+        let descriptor = Descriptor { session_id:"fixture".into(), port:0, token:String::new(),
+            pid:Some(child.id()), executable:None, started_at_unix_ms:Some(1) };
+        assert!(process_identity(&descriptor) == ProcessIdentity::DeadOrReused,
+            "pid={} status={:?}", child.id(), process_identity(&descriptor));
     }
 
     #[test]
