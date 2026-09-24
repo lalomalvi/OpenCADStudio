@@ -4,7 +4,7 @@ import copy
 import unittest
 
 from cli_development_trial import check_explicit_line_graph
-from measurement_grid import MeasurementGridError, compile_two_bay
+from measurement_grid import MeasurementGridError, compile_five_bay, compile_two_bay
 
 
 FROZEN = {"expected_left_width_m": 2.0,
@@ -25,6 +25,33 @@ def measurement():
 
 
 class MeasurementGridTests(unittest.TestCase):
+    def test_five_bay_compiles_connected_metric_grid(self):
+        value = {"schema_version": "ocs-measurements-five-bay-1",
+                 "status": "measured", "units": "m",
+                 "bay_widths_m": [3.5, 4.0, 4.0, 3.5, 2.85],
+                 "depth_m": 3.7, "confidence": 0.9,
+                 "source_regions": {**{f"width_{i}_px": [i * 100, 20, i * 100 + 40, 45]
+                                       for i in range(1, 6)},
+                                    "depth_px": [700, 200, 730, 250]}}
+        frozen = {"expected_widths_m": [3.5, 4.0, 4.0, 3.5, 2.85],
+                  "expected_depth_m": 3.7}
+        plan = compile_five_bay(value, frozen=frozen,
+                                image_width=1000, image_height=500)
+        self.assertEqual((len(plan["nodes"]), len(plan["lines"])), (12, 16))
+        self.assertEqual(plan["nodes"][-1]["x"], 17.85)
+        self.assertEqual(plan["nodes"][-1]["y"], 3.7)
+        self.assertEqual(plan["lines"][-1]["end"], "n1_5")
+        bad = copy.deepcopy(value)
+        bad["bay_widths_m"][2] = 4.1
+        with self.assertRaisesRegex(MeasurementGridError, "frozen criterion"):
+            compile_five_bay(bad, frozen=frozen,
+                             image_width=1000, image_height=500)
+        bad = copy.deepcopy(value)
+        bad["source_regions"]["depth_px"][2] = 1001
+        with self.assertRaisesRegex(MeasurementGridError, "escapes"):
+            compile_five_bay(bad, frozen=frozen,
+                             image_width=1000, image_height=500)
+
     def test_compiles_two_closed_reference_regions(self):
         plan = compile_two_bay(measurement(), frozen=FROZEN,
                                image_width=1200, image_height=800)

@@ -18,7 +18,8 @@ import uuid
 
 from PIL import Image
 
-from measurement_grid import compile_two_bay
+from measurement_grid import compile_five_bay, compile_two_bay
+from measurement_axis_chain import compile_bottom_chain
 from measurement_stacked_span import compile_lower_span_rectangle
 from owned_cad_executor import OwnedCadExecutor, verify_owned_cad_evidence
 from planspec import dry_run
@@ -236,6 +237,27 @@ def main() -> None:
             compiled = check_explicit_line_graph(
                 plan, width_px, height_px, frozen["expected_vertices"],
                 frozen["expected_edges"], frozen["expected_regions"])
+        elif frozen.get("shape") == "measurement_grid_five_bay_v1":
+            plan = compile_five_bay(plan, frozen=frozen,
+                                    image_width=width_px,
+                                    image_height=height_px)
+            compiled = dry_run(plan)
+            if not compiled["executable"] or len(plan["nodes"]) != 12 or \
+                    len(plan["lines"]) != 16 or len(compiled["commands"]) != 16:
+                raise CliTrialError("Five-bay grid does not compile")
+            output_kind = "typed_five_bay_measurements_compiled_deterministically"
+        elif frozen.get("shape") == "bottom_axis_chain_six_v1":
+            plan = compile_bottom_chain(plan, frozen=frozen,
+                                        image_width=width_px,
+                                        image_height=height_px)
+            compiled = dry_run(plan)
+            if not compiled["executable"] or \
+                    compiled["dimension_graph"]["status"] != "satisfied" or \
+                    compiled["dimension_compilation"] != {
+                        "status": "compiled_multi_axis_spans", "generated_parts": 7} or \
+                    len(compiled["commands"]) != 11:
+                raise CliTrialError("Bottom chain does not compile to native dimensions")
+            output_kind = "typed_bottom_chain_native_dimensions"
         elif frozen.get("shape") == "measurement_grid_two_bay_v1":
             plan = compile_two_bay(plan, frozen=frozen,
                                    image_width=width_px,
