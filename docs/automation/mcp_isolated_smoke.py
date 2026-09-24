@@ -81,7 +81,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
     report = {"schema_version": "mcp-isolated-l2-1", "status": "failed",
               "binary_sha256": hashlib.sha256(server.read_bytes()).hexdigest().upper(),
               "output": str(output)}
-    if plan_fixture not in {"synthetic-room", "synthetic-layer"}:
+    if plan_fixture not in {"synthetic-room", "synthetic-layer", "synthetic-contour"}:
         raise ValueError("Only versioned synthetic PlanSpec fixtures are allowed")
     fixtures = Path(__file__).resolve().parent / "masterplan/fixtures"
     fixture = fixtures / f"{plan_fixture}.planspec.json"
@@ -92,11 +92,13 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             raise ProtocolError("Layer capability manifest belongs to another build")
     compiled = dry_run(json.loads(fixture.read_text(encoding="utf-8")),
                        capabilities=set(manifest["verified_capabilities"]) if manifest else None)
-    if not compiled["executable"] or len(compiled["commands"]) != 3:
+    expected_count = 4 if plan_fixture == "synthetic-contour" else 3
+    if not compiled["executable"] or len(compiled["commands"]) != expected_count:
         raise ProtocolError("Synthetic PlanSpec has unsupported or missing commands")
     report["planspec"] = {"fixture": fixture.name,
                           "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
                           "commands_sha256": compiled["commands_sha256"],
+                          "topology": compiled["topology"],
                           "command_count": len(compiled["commands"]),
                           "step_count": len(compiled["execution_steps"])}
     gui = subprocess.Popen([str(server), "--new-instance"], cwd=repo, env=environment,
@@ -147,7 +149,7 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             (time.monotonic_ns() - script_started_ns) / 1_000_000, 3)
         if script.get("completed_commands") != len(compiled["execution_steps"]) \
                 or script.get("added_entities") != len(compiled["commands"]):
-            raise ProtocolError("Synthetic script did not create three entities")
+            raise ProtocolError("Synthetic script entity count differs from PlanSpec")
         command_timings = script.get("command_timings_ms")
         if script.get("command_timing_scope") != "gui_operation_elapsed" or \
                 not isinstance(command_timings, list) or \

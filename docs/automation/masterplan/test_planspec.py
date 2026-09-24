@@ -144,6 +144,49 @@ class PlanSpecTests(unittest.TestCase):
         self.assertGreater(len(report["open_line_endpoints"]), 0)
         self.assertEqual(report["scope"], "2d_lines_and_duplicate_circles_no_contour_semantics")
 
+    def test_v2_explicit_contour_preserves_compiled_geometry(self):
+        value = plan()
+        value["nodes"].append({"id": "d", "x": 0, "y": 2, "source": SOURCE})
+        value["nodes"][2]["x"] = 2.5
+        value["nodes"][2]["y"] = 2
+        value["lines"].extend([
+            {"id": "wall-c", "start": "c", "end": "d", "layer": "0", "source": SOURCE},
+            {"id": "wall-d", "start": "d", "end": "a", "layer": "0", "source": SOURCE}])
+        value["schema_version"] = "planspec-2"
+        value["topology"] = {"contours": [{"id": "room-1", "role": "room",
+            "line_ids": ["wall-a", "wall-b", "wall-c", "wall-d"], "source": SOURCE}]}
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["topology"]["contours"][0]["signed_area_m2"], "5.0")
+        self.assertEqual(len(result["commands"]), 4)
+        reversed_nodes = dict(value)
+        reversed_nodes["nodes"] = list(reversed(value["nodes"]))
+        self.assertEqual(result["commands_sha256"], module.dry_run(reversed_nodes)["commands_sha256"])
+
+        broken = dict(value)
+        broken["topology"] = {"contours": [{**value["topology"]["contours"][0],
+            "line_ids": ["wall-a", "wall-c", "wall-b", "wall-d"]}]}
+        with self.assertRaisesRegex(module.PlanError, "not a closed ordered chain"):
+            module.dry_run(broken)
+
+    def test_v2_contour_rejects_crossing_and_missing_reference(self):
+        value = plan()
+        value["nodes"][1]["x"] = 3
+        value["nodes"][2]["x"] = 0
+        value["nodes"][2]["y"] = 2
+        value["nodes"].append({"id": "d", "x": 2, "y": 2, "source": SOURCE})
+        value["lines"].extend([
+            {"id": "wall-c", "start": "c", "end": "d", "layer": "0", "source": SOURCE},
+            {"id": "wall-d", "start": "d", "end": "a", "layer": "0", "source": SOURCE}])
+        value["schema_version"] = "planspec-2"
+        value["topology"] = {"contours": [{"id": "room-1", "role": "room",
+            "line_ids": ["wall-a", "wall-b", "wall-c", "wall-d"], "source": SOURCE}]}
+        with self.assertRaisesRegex(module.PlanError, "crosses itself"):
+            module.validate(value)
+        value["topology"]["contours"][0]["line_ids"][2] = "unknown"
+        with self.assertRaisesRegex(module.PlanError, "dangling line"):
+            module.validate(value)
+
 
 if __name__ == "__main__":
     unittest.main()

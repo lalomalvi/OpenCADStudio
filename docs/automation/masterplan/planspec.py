@@ -1,4 +1,4 @@
-"""PlanSpec v1: strict, pure validation and deterministic CAD command dry-run.
+"""PlanSpec v1/v2: strict validation and deterministic CAD command dry-run.
 
 Only line and circle commands are compiled in this first scope. Dimensions are
 validated but reported as unsupported until native dimension semantics are proven.
@@ -65,8 +65,13 @@ def _text_dimension(value: Any) -> Decimal:
 
 
 def _validate_basic(plan: dict[str, Any]) -> None:
-    _keys(plan, {"schema_version", "units", "origin", "nodes", "lines", "circles", "dimensions"}, "plan")
-    if plan["schema_version"] != "planspec-1" or plan["units"] != "m":
+    if not isinstance(plan, dict) or plan.get("schema_version") not in {"planspec-1", "planspec-2"}:
+        raise PlanError("PlanSpec version unsupported")
+    fields = {"schema_version", "units", "origin", "nodes", "lines", "circles", "dimensions"}
+    if plan["schema_version"] == "planspec-2":
+        fields.add("topology")
+    _keys(plan, fields, "plan")
+    if plan["units"] != "m":
         raise PlanError("PlanSpec version or units unsupported; explicit conversion required")
     _keys(plan["origin"], {"x", "y"}, "origin")
     _number(plan["origin"]["x"], "origin.x")
@@ -118,6 +123,88 @@ def _validate_basic(plan: dict[str, Any]) -> None:
                             Decimal(str(math.hypot(float(b[0] - a[0]), float(b[1] - a[1])))))
                 if abs(distance - value) > Decimal("0.001"):
                     raise PlanError(f"Dimension {name} differs from referenced geometry")
+    if plan["schema_version"] == "planspec-2":
+        _keys(plan["topology"], {"contours"}, "topology")
+        if not isinstance(plan["topology"]["contours"], list):
+            raise PlanError("Contour collection must be an array")
+        for contour in plan["topology"]["contours"]:
+            _keys(contour, {"id", "line_ids", "role", "source"}, "contour")
+            name = _id(contour["id"], "contour")
+            if name in ids:
+                raise PlanError("Duplicate PlanSpec ID")
+            ids.add(name)
+            _source(contour["source"], "contour.source")
+            if not isinstance(contour["role"], str) or \
+                    contour["role"] not in {"exterior", "room"} or \
+                    not isinstance(contour["line_ids"], list) or \
+                    len(contour["line_ids"]) < 3 or \
+                    any(not isinstance(line_id, str) for line_id in contour["line_ids"]) or \
+                    len(set(contour["line_ids"])) != len(contour["line_ids"]):
+                raise PlanError("Contour role or line sequence is invalid")
+            line_ids = {line["id"] for line in plan["lines"]}
+            if any(line_id not in line_ids
+                   for line_id in contour["line_ids"]):
+                raise PlanError("Contour has a dangling line reference")
+
+
+def analyze_topology(plan: dict[str, Any]) -> dict[str, Any]:
+    """Validate explicit v2 contour edges without inferring walls or openings."""
+    _validate_basic(plan)
+    if plan["schema_version"] == "planspec-1":
+        return {"schema_version": "planspec-topology-1", "status": "unavailable",
+                "contours": [], "scope": "no_explicit_contours_in_v1"}
+    lines = {line["id"]: (line["start"], line["end"]) for line in plan["lines"]}
+    nodes = {node["id"]: (_number(node["x"], "node.x"),
+                          _number(node["y"], "node.y")) for node in plan["nodes"]}
+    results = []
+    for contour in sorted(plan["topology"]["contours"], key=lambda item: item["id"]):
+        edges = [lines[line_id] for line_id in contour["line_ids"]]
+        ordered = None
+        for first in (edges[0], edges[0][::-1]):
+            sequence = [first[0], first[1]]
+            for a, b in edges[1:]:
+                if a == sequence[-1]:
+                    sequence.append(b)
+                elif b == sequence[-1]:
+                    sequence.append(a)
+                else:
+                    break
+            if len(sequence) == len(edges) + 1 and sequence[-1] == sequence[0]:
+                ordered = sequence[:-1]
+                break
+        if ordered is None:
+            raise PlanError(f"Contour {contour['id']} is not a closed ordered chain")
+        if len(set(ordered)) != len(ordered) or len({nodes[node] for node in ordered}) != len(ordered):
+            raise PlanError(f"Contour {contour['id']} repeats a vertex")
+        points = [nodes[node] for node in ordered]
+        twice_area = sum(points[i][0] * points[(i + 1) % len(points)][1] -
+                         points[(i + 1) % len(points)][0] * points[i][1]
+                         for i in range(len(points)))
+        if twice_area == 0:
+            raise PlanError(f"Contour {contour['id']} has zero area")
+        def orientation(a, b, c):
+            return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        def on_segment(a, b, p):
+            return min(a[0], b[0]) <= p[0] <= max(a[0], b[0]) and \
+                min(a[1], b[1]) <= p[1] <= max(a[1], b[1])
+        for i, j in combinations(range(len(points)), 2):
+            if j == i + 1 or (i == 0 and j == len(points) - 1):
+                continue
+            a, b = points[i], points[(i + 1) % len(points)]
+            c, d = points[j], points[(j + 1) % len(points)]
+            ab_c, ab_d = orientation(a, b, c), orientation(a, b, d)
+            cd_a, cd_b = orientation(c, d, a), orientation(c, d, b)
+            if (ab_c * ab_d < 0 and cd_a * cd_b < 0) or \
+                    any(cross == 0 and on_segment(start, end, point)
+                        for cross, start, end, point in
+                        ((ab_c, a, b, c), (ab_d, a, b, d),
+                         (cd_a, c, d, a), (cd_b, c, d, b))):
+                raise PlanError(f"Contour {contour['id']} crosses itself")
+        results.append({"id": contour["id"], "role": contour["role"],
+                        "line_ids": contour["line_ids"],
+                        "signed_area_m2": format(twice_area / 2, "f")})
+    return {"schema_version": "planspec-topology-1", "status": "validated",
+            "contours": results, "scope": "ordered_closed_contours_no_wall_or_opening_semantics"}
 
 
 def analyze_dimension_graph(plan: dict[str, Any]) -> dict[str, Any]:
@@ -183,6 +270,7 @@ def validate(plan: dict[str, Any]) -> None:
     if report["conflicts"]:
         ids = ", ".join(conflict["dimension_id"] for conflict in report["conflicts"])
         raise PlanError(f"Dimension chain conflict: {ids}")
+    analyze_topology(plan)
 
 
 def analyze_geometry(plan: dict[str, Any]) -> dict[str, Any]:
@@ -264,6 +352,7 @@ def _coordinate(value: Decimal) -> str:
 def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> dict[str, Any]:
     validate(plan)
     dimension_graph = analyze_dimension_graph(plan)
+    topology = analyze_topology(plan)
     geometry_qa = analyze_geometry(plan)
     nodes = {node["id"]: (_number(node["x"], "x"), _number(node["y"], "y"))
              for node in plan["nodes"]}
@@ -305,6 +394,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
     return {"schema_version": "planspec-dry-run-1", "commands": commands,
             "execution_steps": execution,
             "dimension_graph": dimension_graph,
+            "topology": topology,
             "geometry_qa": geometry_qa,
             "commands_sha256": hashlib.sha256(wire).hexdigest(),
             "unsupported": unsupported, "executable": not unsupported,
