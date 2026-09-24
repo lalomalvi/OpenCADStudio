@@ -249,3 +249,13 @@ M4.3 queda **partial L1**: el contrato actual identifica nodos y `reference_type
 ### Prompt de continuidad desde el decimoctavo corte
 
 Verifica Git, AGENTS y SHA remoto de `codex/mcp-dimension-constraint-graph` antes de afirmar publicación. Preserva reportes sintéticos, sellos y el fallo de cota. Amplía el modelo PlanSpec con identidad topológica real para caras/ejes y relaciones de muros/aperturas, sin mezclar referencias. Ejecuta M5 asociatividad, DIMALIGNED, bloques/HATCH y propiedades; completa M3 render-fence, tiempos y presupuesto, M6 QA espacial e interoperabilidad externa, y M7/M8 solo con cohortes, motor y revisión adecuados. No abras el DWG del usuario ni publiques a upstream o archivos privados.
+
+## Decimonoveno corte DIMALIGNED nativa — 2026-09-23, en progreso
+
+El corte de grafo `codex/mcp-dimension-constraint-graph` quedó publicado en `origin` con SHA local/remoto `b38613d44092ecea6a322509584474ea0338a85a` y árbol limpio. La rama `codex/mcp-aligned-dimension-l2` amplió el fixture semántico aislado con `DIMALIGNED 46,0 49,4 48.5,3`, junto a la cota lineal anterior. El L2 `target/mcp-isolated/20260923-221050-30bf736d/report.json` pasó: dos handles `Dimension` distintos en `A-DIMS`, medidas 2.50/5.00 antes y después de reapertura interna, auditoría sin errores, salida de GUI y manifiestos de origen (8 entidades), materializado y reabierto (22 cada uno) iguales. La captura se inspeccionó localmente y el `SEAL.json` v2 se creó y verificó. SHA-256 del DWG sintético `F13CF7FB08491536ECD7BA732B659622B58A1C66260676073459707DABACBE8B`; binario `93CB34814B68236C1E3E7BC4A7B6EF67158D34E390B4F4A952B21411CEE1B9B8` (el mismo del corte 17, porque solo cambió el harness).
+
+M5.3 continúa **partial**: ambas cotas nativas se crearon y persistieron internamente, pero no se ha movido una referencia asociada ni comparado toda su geometría/estilo en otro motor. No se tocó el DWG del usuario; PNG/DWG/reportes de prueba siguen ignorados en `target`.
+
+### Prompt de continuidad desde el decimonoveno corte
+
+Verifica Git, AGENTS, remoto y SHA de `codex/mcp-aligned-dimension-l2`. Sigue con la asociación real de cotas al editar referencias sintéticas; no infieras asociatividad de una medida estable. Prueba BLOCK/INSERT, HATCH y perfiles métricos con persistencia/propiedades, y amplía M4 con identidad topológica. Cierra M3 render-fence, fases y presupuesto, M6 QA y motor externo; prepara M7/M8 con cohortes reservadas, revisión humana y publicación solo al fork. Preserva todos los fallos y originales; no abras ni alteres el DWG del usuario.

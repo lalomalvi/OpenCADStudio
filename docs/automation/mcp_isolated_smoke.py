@@ -211,9 +211,10 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             dimension = client.tool("ocs_execute", {"ocs_session_id": session,
                 "request": {"op": "run_script", "request_id": "l2-dimension-" + uuid.uuid4().hex,
                             "strict": True, "commands": ["LAYER NEW A-DIMS", "CLAYER A-DIMS",
-                                                          "DIMLINEAR 40,0 42.5,0 41.25,1"]}})
-            if dimension.get("completed_commands") != 3 or dimension.get("added_entities") != 1:
-                raise ProtocolError("Native linear dimension was not created")
+                                                          "DIMLINEAR 40,0 42.5,0 41.25,1",
+                                                          "DIMALIGNED 46,0 49,4 48.5,3"]}})
+            if dimension.get("completed_commands") != 4 or dimension.get("added_entities") != 2:
+                raise ProtocolError("Native linear/aligned dimensions were not created")
             dimension_handles = [change["handle"] for change in dimension.get("changes", [])
                                  if change.get("kind") == "Added" and change.get("step") == 2]
             if len(dimension_handles) != 1:
@@ -232,6 +233,25 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                                            "type": "Dimension", "layer": "A-DIMS",
                                            "actual_measurement": measured,
                                            "associativity": "unverified"}
+            aligned_handles = [change["handle"] for change in dimension.get("changes", [])
+                               if change.get("kind") == "Added" and change.get("step") == 3]
+            if len(aligned_handles) != 1 or aligned_handles[0] == dimension_handles[0]:
+                raise ProtocolError("Native aligned dimension handle is absent or duplicated")
+            aligned_query = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                      "parameters": {"handle": aligned_handles[0],
+                                                                     "detail": "full"}})
+            aligned_entity = aligned_query.get("entities", [{}])[0]
+            aligned = aligned_entity.get("properties", {}).get("Aligned", {})
+            aligned_measure = aligned.get("base", {}).get("actual_measurement")
+            if (aligned_entity.get("type") != "Dimension" or
+                    aligned_entity.get("layer") != "A-DIMS" or
+                    not isinstance(aligned_measure, (int, float)) or
+                    abs(aligned_measure - 5.0) > 1e-6):
+                raise ProtocolError("Aligned dimension geometry, measure or layer differs from fixture")
+            report["aligned_dimension_fixture"] = {"handle": aligned_handles[0],
+                                                    "type": "Dimension", "layer": "A-DIMS",
+                                                    "actual_measurement": aligned_measure,
+                                                    "associativity": "unverified"}
         audit = client.tool("ocs_read", {"ocs_session_id": session, "op": "audit",
                                          "parameters": {"target_format": "dwg", "target_version": "2018"}})
         if audit.get("ok") is not True:
@@ -254,9 +274,10 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
             if verified.get("manifest", {}).get("by_layer", {}).get("A-WALL") != 1:
                 raise ProtocolError("Synthetic layer assignment did not survive DWG reopen")
             report["layer_fixture"]["reopened_count"] = 1
-            if verified.get("manifest", {}).get("by_type", {}).get("Dimension") != 1:
-                raise ProtocolError("Native dimension did not survive DWG reopen")
+            if verified.get("manifest", {}).get("by_type", {}).get("Dimension") != 2:
+                raise ProtocolError("Native dimensions did not survive DWG reopen")
             report["dimension_fixture"]["reopened_count"] = 1
+            report["aligned_dimension_fixture"]["reopened_count"] = 1
         actual_hash = hashlib.sha256(destination.read_bytes()).hexdigest().upper()
         if verified["sha256"].upper() != actual_hash:
             raise ProtocolError("Synthetic output hash differs from backend report")
@@ -296,6 +317,19 @@ def main(*, semantic: bool = False, plan_fixture: str = "synthetic-room") -> Non
                     abs(restored_measure - measured) > 1e-6):
                 raise ProtocolError("Native dimension measure/layer changed after DWG reopen")
             report["dimension_fixture"]["roundtrip_measurement"] = restored_measure
+            aligned_after = client.tool("ocs_read", {"ocs_session_id": session, "op": "query",
+                                                     "parameters": {"handle": aligned_handles[0],
+                                                                    "detail": "full"}})
+            restored_aligned = aligned_after.get("entities", [{}])[0]
+            restored_aligned_measure = (restored_aligned.get("properties", {})
+                                        .get("Aligned", {}).get("base", {})
+                                        .get("actual_measurement"))
+            if (restored_aligned.get("type") != "Dimension" or
+                    restored_aligned.get("layer") != "A-DIMS" or
+                    not isinstance(restored_aligned_measure, (int, float)) or
+                    abs(restored_aligned_measure - aligned_measure) > 1e-6):
+                raise ProtocolError("Aligned dimension measure/layer changed after DWG reopen")
+            report["aligned_dimension_fixture"]["roundtrip_measurement"] = restored_aligned_measure
         state = client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
         capture_path = (output / "capture.png").resolve()
         capture = client.capture_artifact(session, capture_path,
