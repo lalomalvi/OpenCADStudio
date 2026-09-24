@@ -28,6 +28,7 @@ La integración de siete cotas nativas en el DWG parcial de la misma planta, con
 La corrección posterior de la visibilidad del soporte técnico, con el fallo v2 conservado y el run v3 cotejado en AutoCAD, está en [M7-APARTAMENTO-SOPORTE-COTAS-OCULTO-V1.md](M7-APARTAMENTO-SOPORTE-COTAS-OCULTO-V1.md).
 Los cuatro intentos Luna sobre una puerta de la planta, con dos abstenciones, un fallo geométrico y una observación válida sin CAD, están en [M7-APARTAMENTO-PUERTA-OBSERVACION-V1.md](M7-APARTAMENTO-PUERTA-OBSERVACION-V1.md).
 La integración posterior de una puerta y su tramo vertical faltante en el DWG parcial, con AutoCAD 35/35 y negativo de arco 34/35, está en [M7-APARTAMENTO-UNA-PUERTA-CAD-V1.md](M7-APARTAMENTO-UNA-PUERTA-CAD-V1.md).
+El contrato PlanSpec v10 para arco de puerta ligado al hueco, con QA de barrido y run nuevo 35/35 en AutoCAD, está en [M4-PLANSPEC-V10-SIMBOLO-PUERTA.md](M4-PLANSPEC-V10-SIMBOLO-PUERTA.md).
 El formato nativo de dos decimales con ceros finales, cotejado en AutoCAD por estilo y handle, está en [M5-COTAS-DECIMALES-FIJOS-V1.md](M5-COTAS-DECIMALES-FIJOS-V1.md).
 El rechazo adversarial de cajas derivadas que mezclan regiones vecinas está en [M6-CAJAS-DERIVADAS-SIN-SOLAPE-V1.md](M6-CAJAS-DERIVADAS-SIN-SOLAPE-V1.md).
 Convertir el ensayo Luna → MCP → OpenCADStudio en un flujo reproducible, medible y recuperable que genere CAD editable con precisión declarada. Este plan abarca arranque, transporte, ejecución, evidencia, consumo, semántica CAD, evaluación e integración. El programa probado fue OpenCADStudio; LibreCAD no participó.
