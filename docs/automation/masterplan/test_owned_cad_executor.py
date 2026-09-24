@@ -41,6 +41,7 @@ class FakeClient:
                     "executable_path": str(self.binary)}]}
         if op == "state":
             return {"document_id": 3, "revision": 0,
+                    "geometry_revision": 4, "camera_revision": 2,
                     "modal": False, "active_command": False,
                     "documents": [{"dirty": self.dirty}]}
         if op == "new":
@@ -52,12 +53,21 @@ class FakeClient:
                     "added_entities": self.entity_count}
         if op == "audit":
             return {"ok": True}
+        if op == "run" and arguments["request"].get("cmd") == "ZOOM EXTENTS":
+            return {"status": "completed"}
         if op == "save_verified":
             dwg = Path(arguments["request"]["path"])
             dwg.write_bytes(b"synthetic-dwg-bytes")
             return {"result": {"verified": True,
                     "sha256": hashlib.sha256(dwg.read_bytes()).hexdigest()}}
         raise AssertionError((name, arguments))
+
+    def capture_artifact(self, session, path, *, document_id,
+                         geometry_revision, camera_revision, max_dimension):
+        self.calls.append("capture")
+        path.write_bytes(b"\x89PNG\r\n\x1a\nsynthetic-capture")
+        return {"render_fence": "shader_encoded_frame",
+                "overlay_policy": "drawing_only"}
 
 
 class OwnedCadExecutorTests(unittest.TestCase):
@@ -100,6 +110,19 @@ class OwnedCadExecutorTests(unittest.TestCase):
             evidence = executor(invocation, compiled)
             report = json.loads(evidence.read_text(encoding="utf-8"))
             (evidence.parent / report["dwg"]["file"]).write_bytes(b"tampered")
+            with self.assertRaisesRegex(CadExecutionError, "changed"):
+                verify_owned_cad_evidence(evidence)
+
+    def test_fenced_capture_is_bound_and_tamper_detected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executor, invocation, compiled, client = self.setup_case(directory)
+            executor = OwnedCadExecutor(client, executor.gui, executor.binary,
+                                        executor.run_root, capture_viewport=True)
+            evidence = executor(invocation, compiled)
+            report = verify_owned_cad_evidence(evidence)
+            self.assertEqual(report["capture"]["render_fence"], "shader_encoded_frame")
+            self.assertEqual(client.calls[-3:], ["run", "state", "capture"])
+            (evidence.parent / report["capture"]["file"]).write_bytes(b"tampered")
             with self.assertRaisesRegex(CadExecutionError, "changed"):
                 verify_owned_cad_evidence(evidence)
 

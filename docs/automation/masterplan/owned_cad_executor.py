@@ -43,6 +43,29 @@ def verify_owned_cad_evidence(path: Path) -> dict:
             not dwg.is_file() or dwg.stat().st_size != ref["bytes"] or \
             _file_sha(dwg) != ref["sha256"]:
         raise CadExecutionError("Nested DWG changed after verified save")
+    capture = report.get("capture")
+    if capture is not None:
+        if not isinstance(capture, dict) or set(capture) != {
+                "file", "sha256", "bytes", "document_id", "geometry_revision",
+                "camera_revision", "render_fence", "overlay_policy"} or \
+                not isinstance(capture["file"], str) or \
+                Path(capture["file"]).name != capture["file"] or \
+                not capture["file"].lower().endswith(".png") or \
+                not isinstance(capture["sha256"], str) or \
+                not re.fullmatch(r"[0-9A-F]{64}", capture["sha256"]) or \
+                type(capture["bytes"]) is not int or capture["bytes"] <= 0 or \
+                any(type(capture[key]) is not int or capture[key] < 0 for key in
+                    ("document_id", "geometry_revision", "camera_revision")) or \
+                capture["document_id"] != report.get("session", {}).get("document_id") or \
+                capture["render_fence"] != "shader_encoded_frame" or \
+                capture["overlay_policy"] != "drawing_only":
+            raise CadExecutionError("Fenced CAD capture reference is invalid")
+        png = (path.parent / capture["file"]).resolve(strict=True)
+        if not png.is_relative_to(path.parent.resolve(strict=True)) or \
+                not png.is_file() or png.stat().st_size != capture["bytes"] or \
+                not png.read_bytes().startswith(b"\x89PNG\r\n\x1a\n") or \
+                _file_sha(png) != capture["sha256"]:
+            raise CadExecutionError("Fenced CAD capture changed after render")
     return report
 
 
@@ -55,19 +78,25 @@ def _request_id(invocation: Invocation, phase: str) -> str:
 class OwnedCadExecutor:
     """L2-ready executor; GUI and MCP client must be prebuilt by the caller."""
 
-    def __init__(self, client, gui, binary: Path, run_root: Path):
+    def __init__(self, client, gui, binary: Path, run_root: Path, *,
+                 capture_viewport: bool = False, max_dimension: int = 1024):
         if not isinstance(binary, Path) or not binary.is_absolute() or not binary.is_file() or \
                 not isinstance(run_root, Path) or not run_root.is_absolute() or \
                 not run_root.is_dir() or not isinstance(getattr(gui, "pid", None), int) or \
                 gui.pid <= 0 or not isinstance(getattr(gui, "args", None), (list, tuple)) or \
                 "--new-instance" not in gui.args or gui.poll() is not None or \
                 not callable(getattr(client, "tool", None)) or \
-                not callable(getattr(client, "handshake", None)):
+                not callable(getattr(client, "handshake", None)) or \
+                type(capture_viewport) is not bool or \
+                type(max_dimension) is not int or not 256 <= max_dimension <= 4096 or \
+                (capture_viewport and not callable(getattr(client, "capture_artifact", None))):
             raise CadExecutionError("Owned GUI, persistent client or run root is invalid")
         self.client = client
         self.gui = gui
         self.binary = binary.resolve(strict=True)
         self.run_root = run_root.resolve(strict=True)
+        self.capture_viewport = capture_viewport
+        self.max_dimension = max_dimension
 
     def __call__(self, invocation: Invocation, compiled: dict) -> Path:
         if not isinstance(invocation, Invocation) or \
@@ -94,7 +123,8 @@ class OwnedCadExecutor:
             invocation.request_id.encode("utf-8")).hexdigest()[:32])
         dwg = output.with_suffix(".dwg")
         evidence = output.with_suffix(".json")
-        if dwg.exists() or evidence.exists():
+        capture_path = output.with_suffix(".png")
+        if dwg.exists() or evidence.exists() or capture_path.exists():
             raise CadExecutionError("CAD output already exists; reconcile previous attempt")
 
         self.client.handshake()
@@ -153,6 +183,30 @@ class OwnedCadExecutor:
                   "audit_ok": True,
                   "dwg": {"file": dwg.name, "sha256": actual_sha,
                           "bytes": dwg.stat().st_size}}
+        if self.capture_viewport:
+            zoom = self.client.tool("ocs_execute", {"ocs_session_id": session, "request": {
+                "op": "run", "request_id": _request_id(invocation, "zoom"),
+                "cmd": "ZOOM EXTENTS"}})
+            if zoom.get("status") != "completed":
+                raise CadExecutionError("Owned viewport framing failed")
+            state = self.client.tool("ocs_read", {"ocs_session_id": session, "op": "state"})
+            if state.get("document_id") != document_id or \
+                    any(type(state.get(key)) is not int or state[key] < 0 for key in
+                        ("geometry_revision", "camera_revision")):
+                raise CadExecutionError("Viewport revision identity is missing")
+            captured = self.client.capture_artifact(
+                session, capture_path, document_id=document_id,
+                geometry_revision=state["geometry_revision"],
+                camera_revision=state["camera_revision"],
+                max_dimension=self.max_dimension)
+            report["capture"] = {"file": capture_path.name,
+                                 "sha256": _file_sha(capture_path),
+                                 "bytes": capture_path.stat().st_size,
+                                 "document_id": document_id,
+                                 "geometry_revision": state["geometry_revision"],
+                                 "camera_revision": state["camera_revision"],
+                                 "render_fence": captured.get("render_fence"),
+                                 "overlay_policy": captured.get("overlay_policy")}
         with evidence.open("x", encoding="utf-8") as target:
             json.dump(report, target, sort_keys=True, separators=(",", ":"))
             target.write("\n")

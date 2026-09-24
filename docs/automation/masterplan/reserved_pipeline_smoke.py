@@ -74,10 +74,14 @@ def main():
                             "name": "close_modal"}})
             state = client.tool("ocs_read", {"ocs_session_id": selected["session_id"],
                                               "op": "state"})
-        executor = OwnedCadExecutor(client, gui, binary, run)
+        executor = OwnedCadExecutor(client, gui, binary, run,
+                                    capture_viewport=True)
         supervisor_calls = []
 
         def synthetic_supervisor(_invocation, evidence):
+            cad = json.loads(evidence.read_text(encoding="utf-8"))
+            if "capture" not in cad:
+                raise ProtocolError("Fenced CAD capture is missing")
             supervisor_calls.append(evidence.name)
             return response("resp-synthetic-supervisor", "gpt-6-sol")
 
@@ -99,6 +103,7 @@ def main():
                        "envelope_sha256": sha(result["evidence_path"]),
                        "cad_evidence_sha256": sha(run / envelope["cad_evidence"]["file"]),
                        "dwg_sha256": cad["dwg"]["sha256"],
+                       "capture_sha256": cad["capture"]["sha256"],
                        "gates": envelope["gates"], "session_pid": gui.pid})
         state = client.tool("ocs_read", {"ocs_session_id": selected["session_id"],
                                           "op": "state"})

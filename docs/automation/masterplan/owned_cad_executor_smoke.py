@@ -67,12 +67,14 @@ def main():
                                "active_command": bool(state.get("active_command")),
                                "dirty_document_count": sum(bool(doc.get("dirty"))
                                                            for doc in state.get("documents", []))}
-        evidence = OwnedCadExecutor(client, gui, binary, root)(invocation, compiled)
+        evidence = OwnedCadExecutor(client, gui, binary, root,
+                                    capture_viewport=True)(invocation, compiled)
         cad = json.loads(evidence.read_text(encoding="utf-8"))
         report.update({"status": "passed", "session_pid": gui.pid,
                        "evidence_file": evidence.name,
                        "evidence_sha256": sha(evidence),
                        "dwg_sha256": cad["dwg"]["sha256"],
+                       "capture_sha256": cad["capture"]["sha256"],
                        "completed_commands": cad["completed_commands"],
                        "added_entities": cad["added_entities"]})
         state = client.tool("ocs_read", {"ocs_session_id": selected["session_id"],
