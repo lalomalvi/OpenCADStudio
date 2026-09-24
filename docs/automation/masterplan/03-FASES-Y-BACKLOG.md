@@ -12,10 +12,12 @@ Estado inicial de todas las tareas: pendiente. La planificación es amplia; ejec
 | M1.5 | passed L1/L2 | Sesión seleccionada por ID y handshake; document_id/revision exigidos antes de editar |
 | M1.6 | passed scoped L1/L2 | Journal atómico local por sesión/lote; reinicio de MCP a mitad de `run_script` recuperó 3 entidades sin duplicación por el mismo ID; journal corrupto/operación desconocida bloquean nuevas mutaciones. Reinicio de GUI no evaluado |
 | M2.1 | partial L1/L2 | Descubrimiento concurrente 0/1/20/100 y conexión directa; 10 muestras con 100 descriptores sintéticos muertos: p50 1869.7 ms, p95 conservador 1909.1 ms; ACL Windows pendiente |
-| M2.2 | pending | Heartbeat, descriptor obsoleto y cuarentena con ACL Windows pendientes |
+| M2.2 | partial L1/L2 | Heartbeat y proceso Win32 verificados; descriptor de proceso terminado en cuarentena en L2. ACL Windows y nueva medición p50/p95 pendientes |
 | M2.3 | passed scoped L1/L2 | `close_document` con política `require_saved` y `shutdown_owned_session` solo para GUI hija del MCP; PID/inicio/binario/raíz, rechazo dirty/foreign, cierre e idempotencia L2 |
-| M2.4 | partial L1/L2 | Modales iniciales diagnosticados y salida propia verificada; más modalidades/caídas y cuarentena pendientes |
-| M3–M8 | pending | No aceptar gates posteriores por el L2 sintético |
+| M2.4 | partial L1/L2 | Modales iniciales diagnosticados y salida propia verificada; más modalidades/caídas pendientes |
+| M3.1, M3.3, M3.5 | partial L1 | 84 respuestas únicas reproducen 9,797,952 tokens históricos sin exportar rollout; referencias de PNG y sello determinista con tests de hash/revisión |
+| M4.1, M4.2, M4.4, M4.5 | partial L1 | PlanSpec v1 estricto y dry-run determinista de líneas/círculos; dimensiones validadas pero compilación nativa y capas distintas de 0 declaradas unsupported |
+| M3 restante, M4.3/M4.6, M5–M8 | pending | No aceptar gates posteriores por los L1/L2 sintéticos |
 
 El owner_role de M0–M2 es la sesión ejecutora. Reproducir L1 con `python -m unittest discover -s docs/automation -p test_mcp_client.py -v` y `cargo test --lib mcp::tests`. El L2 sintético se reproduce con `python docs/automation/mcp_isolated_smoke.py` después del build. Sus gates CAD no prueban imagen, motor externo ni revisión del usuario. El caso original continúa partial.
 

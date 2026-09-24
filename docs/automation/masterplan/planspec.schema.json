@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencadstudio.local/schemas/planspec-1.json",
+  "title": "OpenCADStudio PlanSpec v1 dry-run subset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "units", "origin", "nodes", "lines", "circles", "dimensions"],
+  "properties": {
+    "schema_version": {"const": "planspec-1"},
+    "units": {"const": "m"},
+    "origin": {"$ref": "#/$defs/point"},
+    "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
+    "lines": {"type": "array", "items": {"$ref": "#/$defs/line"}},
+    "circles": {"type": "array", "items": {"$ref": "#/$defs/circle"}},
+    "dimensions": {"type": "array", "items": {"$ref": "#/$defs/dimension"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,80}$"},
+    "number": {"oneOf": [{"type": "number"}, {"type": "string", "pattern": "^-?[0-9]+(\\.[0-9]+)?$"}]},
+    "point": {
+      "type": "object", "additionalProperties": false, "required": ["x", "y"],
+      "properties": {"x": {"$ref": "#/$defs/number"}, "y": {"$ref": "#/$defs/number"}}
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["region_px", "confidence", "classification"],
+      "properties": {
+        "region_px": {"type": "array", "prefixItems": [
+          {"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0},
+          {"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}], "minItems": 4, "maxItems": 4},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "classification": {"enum": ["measured", "inferred", "unknown"]}
+      }
+    },
+    "node": {
+      "type": "object", "additionalProperties": false, "required": ["id", "x", "y", "source"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "x": {"$ref": "#/$defs/number"},
+        "y": {"$ref": "#/$defs/number"}, "source": {"$ref": "#/$defs/source"}}
+    },
+    "line": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "start", "end", "layer", "source"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "start": {"$ref": "#/$defs/id"},
+        "end": {"$ref": "#/$defs/id"}, "layer": {"$ref": "#/$defs/id"},
+        "source": {"$ref": "#/$defs/source"}}
+    },
+    "circle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "center", "radius", "layer", "source"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "center": {"$ref": "#/$defs/id"},
+        "radius": {"$ref": "#/$defs/number"}, "layer": {"$ref": "#/$defs/id"},
+        "source": {"$ref": "#/$defs/source"}}
+    },
+    "dimension": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "start", "end", "axis", "reference_type", "value", "text", "source"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "start": {"$ref": "#/$defs/id"},
+        "end": {"$ref": "#/$defs/id"}, "axis": {"enum": ["x", "y", "aligned"]},
+        "reference_type": {"enum": ["face", "axis", "exterior", "interior"]},
+        "value": {"$ref": "#/$defs/number"}, "text": {"type": "string", "minLength": 1},
+        "source": {"$ref": "#/$defs/source"}}
+    }
+  }
+}
