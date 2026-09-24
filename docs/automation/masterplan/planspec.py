@@ -1487,7 +1487,7 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
                 "dimension_normal_offset_m": format(offset, "f"),
                 "scope": "2d_aligned_axis_line_position_only_no_text_extents"}
     if (plan["schema_version"] in {"planspec-8", "planspec-9"} and
-            len(plan["walls"]) == 1 and not plan["lines"] and not plan["circles"] and
+            len(plan["walls"]) == 1 and not plan["circles"] and
             not plan["openings"] and not plan["joins"] and
             2 <= len(plan["dimensions"]) <= 8 and
             wall_status == "compiled_single_unopened_wall"):
@@ -1495,7 +1495,22 @@ def dry_run(plan: dict[str, Any], *, capabilities: set[str] | None = None) -> di
         a, b = nodes[wall["start"]], nodes[wall["end"]]
         horizontal = a[1] == b[1] and a[0] < b[0]
         vertical = a[0] == b[0] and a[1] < b[1]
-        if horizontal or vertical:
+        # A horizontal dimension reference may coexist with architecture lines
+        # only when every dimension line has a conservative clearance below
+        # their lowest endpoint. This does not claim rendered text extents.
+        lines_separated = not plan["lines"]
+        if plan["lines"] and horizontal:
+            maximum_offset = max(_number(item["offset_m"], "offset_m")
+                                 for item in plan["dimension_placements"])
+            nearest_architecture_y = min(nodes[line[end]][1]
+                                         for line in plan["lines"]
+                                         for end in ("start", "end"))
+            style = plan["dimension_style"]
+            clearance = (_number(style["text_height_m"], "text_height_m") +
+                         _number(style["gap_m"], "gap_m") +
+                         _number(style["arrow_size_m"], "arrow_size_m"))
+            lines_separated = a[1] + maximum_offset + clearance < nearest_architecture_y
+        if (horizontal or vertical) and lines_separated:
             bindings = {item["dimension_id"]: item for item in plan["dimension_bindings"]}
             placements = {item["dimension_id"]: item for item in plan["dimension_placements"]}
             spans = []
