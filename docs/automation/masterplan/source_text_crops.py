@@ -13,7 +13,14 @@ from cli_development_trial import parse_cli_events
 from reserved_trial import _file_sha
 
 
-def create(run: Path, image_path: Path, output: Path) -> dict:
+def _expanded(box: list[int], width: int, height: int, padding: int) -> list[int]:
+    if type(padding) is not int or not 0 <= padding <= 100:
+        raise ValueError("Source crop padding differs")
+    return [max(0, box[0] - padding), max(0, box[1] - padding),
+            min(width, box[2] + padding), min(height, box[3] + padding)]
+
+
+def create(run: Path, image_path: Path, output: Path, *, padding_px: int = 0) -> dict:
     if output.exists():
         raise ValueError("Source crop output already exists")
     freeze_path, events_path = run / "freeze.json", run / "events.jsonl"
@@ -34,7 +41,8 @@ def create(run: Path, image_path: Path, output: Path) -> dict:
     entries = []
     with Image.open(image_path) as bitmap:
         source = bitmap.convert("RGB")
-        sheet = Image.new("RGB", (560, len(indexed) * 120), "white")
+        row_height = 300 if padding_px else 120
+        sheet = Image.new("RGB", (560, len(indexed) * row_height), "white")
         draw = ImageDraw.Draw(sheet)
         for index, (name, box) in enumerate(indexed):
             if not isinstance(box, list) or len(box) != 4 or \
@@ -42,25 +50,34 @@ def create(run: Path, image_path: Path, output: Path) -> dict:
                     not (0 <= box[0] < box[2] <= source.width) or \
                     not (0 <= box[1] < box[3] <= source.height):
                 raise ValueError("Source region escapes image")
-            crop = source.crop(tuple(box))
+            expanded = _expanded(box, source.width, source.height, padding_px)
+            crop = source.crop(tuple(expanded))
             raw_sha = hashlib.sha256(crop.tobytes()).hexdigest().upper()
-            scale = max(1, min(10, 520 // crop.width, 75 // crop.height))
+            scale = max(1, min(10, 520 // crop.width,
+                               (row_height - 45) // crop.height))
             rendered = crop.resize((crop.width * scale, crop.height * scale),
                                    Image.Resampling.NEAREST)
-            draw.text((10, index * 120 + 5), f"{index + 1}: {name} px={box}",
+            draw.text((10, index * row_height + 5), f"{index + 1}: {name} px={expanded}",
                       fill="black")
-            sheet.paste(rendered, (10, index * 120 + 30))
-            entries.append({"name": name, "region_px": box,
-                            "rgb_pixels_sha256": raw_sha})
+            sheet.paste(rendered, (10, index * row_height + 30))
+            entry = {"name": name, "region_px": expanded,
+                     "rgb_pixels_sha256": raw_sha}
+            if padding_px:
+                entry["model_region_px"] = box
+            entries.append(entry)
     sheet_path = output / "contact-sheet.png"
     sheet.save(sheet_path)
-    manifest = {"schema_version": "m7-source-text-crops-1",
+    manifest = {"schema_version": ("m7-source-text-crops-derived-2" if padding_px
+                                    else "m7-source-text-crops-1"),
                 "source_sha256": _file_sha(image_path),
                 "freeze_sha256": _file_sha(freeze_path),
                 "events_sha256": _file_sha(events_path),
                 "contact_sheet_sha256": _file_sha(sheet_path),
                 "regions": entries,
-                "scope": "exact_model_boxes_no_ocr_or_text_verdict"}
+                "scope": ("fixed_padding_derived_boxes_no_ocr_or_text_verdict" if padding_px
+                          else "exact_model_boxes_no_ocr_or_text_verdict")}
+    if padding_px:
+        manifest["padding_px"] = padding_px
     with (output / "manifest.json").open("x", encoding="utf-8") as target:
         json.dump(manifest, target, sort_keys=True, indent=2)
         target.write("\n")
@@ -79,7 +96,8 @@ def verify_review(run: Path, image_path: Path, review_path: Path) -> dict:
     regions = measured["source_regions"]
     indexed = list(regions.items()) if isinstance(regions, dict) else [
         (str(index + 1), box) for index, box in enumerate(regions)]
-    if manifest.get("schema_version") != "m7-source-text-crops-1" or \
+    schema = manifest.get("schema_version")
+    if schema not in {"m7-source-text-crops-1", "m7-source-text-crops-derived-2"} or \
             frozen.get("source_sha256") != _file_sha(image_path) or \
             manifest.get("source_sha256") != _file_sha(image_path) or \
             manifest.get("freeze_sha256") != _file_sha(run / "freeze.json") or \
@@ -91,9 +109,14 @@ def verify_review(run: Path, image_path: Path, review_path: Path) -> dict:
     with Image.open(image_path) as bitmap:
         source = bitmap.convert("RGB")
         for (name, box), entry in zip(indexed, manifest["regions"]):
-            if entry.get("name") != name or entry.get("region_px") != box or \
+            expected = (_expanded(box, source.width, source.height,
+                                  manifest.get("padding_px", 0))
+                        if schema == "m7-source-text-crops-derived-2" else box)
+            if entry.get("name") != name or entry.get("region_px") != expected or \
+                    (schema == "m7-source-text-crops-derived-2" and
+                     entry.get("model_region_px") != box) or \
                     entry.get("rgb_pixels_sha256") != hashlib.sha256(
-                        source.crop(tuple(box)).tobytes()).hexdigest().upper():
+                        source.crop(tuple(expected)).tobytes()).hexdigest().upper():
                 raise ValueError("Source crop pixels differ")
     judgments = review.get("regions")
     if review.get("schema_version") != "m7-source-text-visual-review-1" or \
@@ -124,17 +147,20 @@ def main() -> None:
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--verify-review", type=Path)
+    parser.add_argument("--padding", type=int, default=0)
     args = parser.parse_args()
     if (args.output is None) == (args.verify_review is None):
         parser.error("Specify exactly one of --output or --verify-review")
     if args.verify_review is not None:
+        if args.padding != 0:
+            parser.error("--padding is only valid when creating crops")
         print(json.dumps(verify_review(args.run_root.resolve(strict=True),
                                        args.image.resolve(strict=True),
                                        args.verify_review.resolve(strict=True))))
     else:
         result = create(args.run_root.resolve(strict=True),
                         args.image.resolve(strict=True),
-                        args.output.resolve(strict=False))
+                        args.output.resolve(strict=False), padding_px=args.padding)
         print(json.dumps({"contact_sheet_sha256": result["contact_sheet_sha256"],
                           "regions": len(result["regions"])}))
 

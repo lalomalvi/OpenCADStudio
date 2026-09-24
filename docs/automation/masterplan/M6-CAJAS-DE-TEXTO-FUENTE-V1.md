@@ -19,3 +19,5 @@ python docs/automation/masterplan/source_text_crops.py --run-root target/mcp-cli
 ```
 
 Las hojas, juicios y nombres de fuente permanecen bajo `target/` ignorado. El código de verificación y este resumen no incluyen archivos privados.
+
+Un corte posterior exploró cajas derivadas con margen fijo, conservando estos fallos originales: [M6-CAJAS-DERIVADAS-PAD25-V1.md](M6-CAJAS-DERIVADAS-PAD25-V1.md).
