@@ -23,6 +23,32 @@ def plan():
             "circles": [], "dimensions": []}
 
 
+def bound_face_chain():
+    fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
+    value = json.loads(fixture.read_text(encoding="utf-8"))
+    value["dimensions"] = []
+    value["dimension_bindings"] = []
+    for name, x in (("a", 1), ("b", 2.0009),
+                    ("b-again", 2.0009), ("c", 3.0018)):
+        value["nodes"].append({"id": name, "x": x, "y": 0.1, "source": SOURCE})
+    stations = {item["id"]: item["x"] for item in value["nodes"]}
+    for name, start, end, metric in (("d-ab", "a", "b", 1),
+                                     ("d-ac", "a", "c", 2.0027),
+                                     ("d-bc", "b-again", "c", 1)):
+        value["dimensions"].append({
+            "id": name, "start": start, "end": end, "axis": "x",
+            "reference_type": "face", "value": metric, "text": str(metric),
+            "source": SOURCE})
+        value["dimension_bindings"].append({
+            "dimension_id": name,
+            "start_ref": {"wall_id": "wall-1", "side": "left",
+                          "station_m": stations[start]},
+            "end_ref": {"wall_id": "wall-1", "side": "left",
+                        "station_m": stations[end]},
+            "source": SOURCE})
+    return value
+
+
 class PlanSpecTests(unittest.TestCase):
     def test_same_plan_has_same_commands_hash_regardless_of_collection_order(self):
         first = module.dry_run(plan())
@@ -73,7 +99,7 @@ class PlanSpecTests(unittest.TestCase):
                                 "reference_type": "face", "value": 2.5, "text": "2.50",
                                 "source": SOURCE}]
         report = module.dry_run(value)["dimension_graph"]
-        self.assertEqual(report["schema_version"], "planspec-dimension-graph-2")
+        self.assertEqual(report["schema_version"], "planspec-dimension-graph-3")
         self.assertEqual(report["status"], "satisfied")
         self.assertEqual(report["unresolved_aligned"], [])
 
@@ -111,6 +137,30 @@ class PlanSpecTests(unittest.TestCase):
             module.dry_run(value)
         value["dimensions"][1]["reference_type"] = "axis"
         self.assertEqual(module.analyze_dimension_graph(value)["status"], "satisfied")
+
+    def test_bound_face_identity_joins_distinct_node_ids(self):
+        value = bound_face_chain()
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["vertex_identity"], "wall_side_station")
+        self.assertEqual(report["status"], "conflict")
+        self.assertEqual(report["conflicts"][0]["dimension_id"], "d-bc")
+        with self.assertRaisesRegex(module.PlanError, "Dimension chain conflict"):
+            module.dry_run(value)
+
+    def test_coincident_nodes_on_distinct_wall_faces_do_not_join(self):
+        value = bound_face_chain()
+        value["nodes"].extend([
+            {"id": "wall2-start", "x": 0, "y": 0.2, "source": SOURCE},
+            {"id": "wall2-end", "x": 4, "y": 0.2, "source": SOURCE}])
+        second = deepcopy(value["walls"][0])
+        second.update(id="wall-2", start="wall2-start", end="wall2-end")
+        value["walls"].append(second)
+        binding = value["dimension_bindings"][2]
+        binding["start_ref"].update(wall_id="wall-2", side="right")
+        binding["end_ref"].update(wall_id="wall-2", side="right")
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["status"], "satisfied")
+        self.assertEqual(report["components"], 2)
 
     def test_label_over_wrong_geometry_is_rejected(self):
         value = plan()

@@ -12,6 +12,7 @@ El ensayo de mediciones tipadas y compilación determinista de una retícula de 
 Las abstenciones al distinguir cotas horizontales apiladas y el contrato tipado correspondiente están en [M7-COTAS-APILADAS-DESARROLLO-V1.md](M7-COTAS-APILADAS-DESARROLLO-V1.md).
 La selección trazable de recortes visuales por grupos de anclas CAD ya proyectadas está en [M6-RECORTES-POR-ANCLAS-V1.md](M6-RECORTES-POR-ANCLAS-V1.md).
 La conciliación versionada de cadenas de cotas alineadas en 2D está en [M4-GRAFO-COTAS-ALINEADAS-V2.md](M4-GRAFO-COTAS-ALINEADAS-V2.md).
+La identidad de vértices mediante referencias de muro/cara/estación vinculadas para PlanSpec v6–v9 está en [M4-GRAFO-REFERENCIAS-VINCULADAS-V3.md](M4-GRAFO-REFERENCIAS-VINCULADAS-V3.md).
 Convertir el ensayo Luna → MCP → OpenCADStudio en un flujo reproducible, medible y recuperable que genere CAD editable con precisión declarada. Este plan abarca arranque, transporte, ejecución, evidencia, consumo, semántica CAD, evaluación e integración. El programa probado fue OpenCADStudio; LibreCAD no participó.
 
 ## Lectura y autoridad

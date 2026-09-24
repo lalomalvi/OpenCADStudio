@@ -493,6 +493,19 @@ def analyze_dimension_graph(plan: dict[str, Any]) -> dict[str, Any]:
     _validate_basic(plan)
     nodes = {node["id"]: (_number(node["x"], "node.x"),
                           _number(node["y"], "node.y")) for node in plan["nodes"]}
+    bound_versions = {"planspec-6", "planspec-7", "planspec-8", "planspec-9"}
+    bindings = ({item["dimension_id"]: item for item in plan["dimension_bindings"]}
+                if plan["schema_version"] in bound_versions else {})
+
+    def vertex(dimension: dict[str, Any], end: str) -> str:
+        if not bindings:
+            return dimension[end]
+        ref = bindings[dimension["id"]][f"{end}_ref"]
+        station = _number(ref["station_m"], "dimension wall station")
+        if station == 0:
+            station = Decimal(0)
+        return f"wall:{ref['wall_id']}:{ref['side']}:{format(station.normalize(), 'f')}"
+
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     direct_bound_aligned: list[str] = []
     for dimension in plan["dimensions"]:
@@ -511,6 +524,7 @@ def analyze_dimension_graph(plan: dict[str, Any]) -> dict[str, Any]:
         adjacent: dict[str, list[tuple[str, Any, str]]] = {}
         for dimension in sorted(dimensions, key=lambda item: item["id"]):
             start, end = dimension["start"], dimension["end"]
+            start_vertex, end_vertex = vertex(dimension, "start"), vertex(dimension, "end")
             value = _number(dimension["value"], "dimension.value")
             if axis == "aligned":
                 dx = nodes[end][0] - nodes[start][0]
@@ -522,8 +536,8 @@ def analyze_dimension_graph(plan: dict[str, Any]) -> dict[str, Any]:
                 direction = 1 if nodes[end][coordinate] > nodes[start][coordinate] else -1
                 delta = value * direction
                 reverse = -delta
-            adjacent.setdefault(start, []).append((end, delta, dimension["id"]))
-            adjacent.setdefault(end, []).append((start, reverse, dimension["id"]))
+            adjacent.setdefault(start_vertex, []).append((end_vertex, delta, dimension["id"]))
+            adjacent.setdefault(end_vertex, []).append((start_vertex, reverse, dimension["id"]))
         potentials: dict[str, Any] = {}
         visited_edges: set[str] = set()
         for root in sorted(adjacent):
@@ -554,9 +568,10 @@ def analyze_dimension_graph(plan: dict[str, Any]) -> dict[str, Any]:
                                               "reference_type": reference_type,
                                               "component_root": root,
                                               "residual_m": format(residual, "f")})
-    result = {"schema_version": "planspec-dimension-graph-2",
+    result = {"schema_version": "planspec-dimension-graph-3",
             "status": "conflict" if conflicts else "satisfied",
             "components": components, "conflicts": conflicts,
+            "vertex_identity": "wall_side_station" if bindings else "node_id",
             "unresolved_aligned": []}
     if plan["schema_version"] == "planspec-9":
         result["direct_bound_aligned"] = sorted(direct_bound_aligned)

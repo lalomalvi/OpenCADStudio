@@ -1,0 +1,7 @@
+# M4.3: identidad topológica de referencias vinculadas
+
+`planspec-dimension-graph-3` usa la referencia validada `(wall_id, side, station_m)` como vértice del grafo para PlanSpec v6–v9. `station_m` se normaliza en decimal, incluido cero. Dos cotas sobre la misma cara/estación se conectan aun si usan IDs de nodo distintos. Dos referencias de muros/caras diferentes permanecen separadas aunque sus coordenadas coincidan. PlanSpec v1–v5 conserva los IDs de nodo como identidad porque carece de `dimension_bindings`. La validación previa comprueba muro, lado, estación, nodo y tipo de referencia; el grafo conserva el solver escalar x/y y vectorial `aligned` de v2.
+
+Pruebas L0 sintéticas sobre un muro v6: tres cotas de la misma cara, con dos nodos distintos en la misma estación, detectan un cierre acumulado inconsistente antes de CAD. Una segunda cara de otro muro, coincidente en coordenadas y con el mismo tipo `face`, no se fusiona y no provoca falso conflicto. El reporte declara `vertex_identity` como `wall_side_station` o `node_id`. El esquema v2 histórico se conserva como evidencia de su corte, sin cambiar sus resultados.
+
+La identidad procede de bindings **declarados y validados geométricamente**; no se infiere de la imagen. Referencias de muros distintos no se equivalen por contacto o join sin una relación explícita. Compilar y verificar varias cotas nativas en L2/L4, vincularlas a una fuente visual y obtener L5 siguen pendientes.
