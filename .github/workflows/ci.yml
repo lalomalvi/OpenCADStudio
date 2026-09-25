@@ -45,3 +45,17 @@ jobs:
         env:
           LC_ALL: C
         run: cargo test --workspace --locked
+
+  masterplan-python:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install image test dependency
+        run: python -m pip install Pillow==12.1.0
+      - name: Masterplan contract tests
+        run: python -m unittest discover -s docs/automation/masterplan -p 'test_*.py' -q
+      - name: Automation tests
+        run: python -m unittest discover -s docs/automation -p 'test_*.py' -q

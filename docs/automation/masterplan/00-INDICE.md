@@ -75,4 +75,5 @@ Una versión candidata requiere todos los gates técnicos y de fidelidad de su a
 [M8-RELEASE-CANDIDATO-LOCAL-V1.md](M8-RELEASE-CANDIDATO-LOCAL-V1.md): build Windows x64 `--locked`, paquete sanitizado de 20 miembros, verificación tras extracción y smoke sintético L2/L4 4/4. M8 sigue parcial.
 [M7-APARTAMENTO-PUERTA-NORESTE-V1.md](M7-APARTAMENTO-PUERTA-NORESTE-V1.md): primer intento Luna de punta de puerta fallido preservado, segundo dentro de oráculo previo, símbolo tipado en PlanSpec y L2/L4 60/60 con negativo de arco 59/60.
 [M7-REVISION-VISUAL-PLANTA-PARCIAL-V2.md](M7-REVISION-VISUAL-PLANTA-PARCIAL-V2.md): comparación actualizada de 60 entidades contra la imagen de desarrollo, con divisor y dos puertas visibles; L5 humana pendiente.
-[M8-CI-FORK-V1.md](M8-CI-FORK-V1.md): workflows manuales del fork, Rust workspace CI aprobado sobre `d84fb8d8`, Python host Linux/Windows pendiente al corte y checks automáticos del PR aún no acreditados.
+[M8-CI-FORK-V1.md](M8-CI-FORK-V1.md): workflows manuales del fork, Rust workspace CI y Python host Linux/Windows aprobados en sus SHAs; checks automáticos del PR aún no acreditados.
+[M7-PUERTA-NORESTE-REPETIBILIDAD-V1.md](M7-PUERTA-NORESTE-REPETIBILIDAD-V1.md): seis llamadas Luna intercaladas sobre puerta ya vista; prompt inicial 0/3 y corregido 1/3, sin CAD nuevo ni aceptación M7.
