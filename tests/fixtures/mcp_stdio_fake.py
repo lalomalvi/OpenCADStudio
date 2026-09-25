@@ -63,6 +63,8 @@ for line in sys.stdin:
             else:
                 sessions = [{"session_id": "s1", "document_id": 1, "revision": 0,
                              "documents": [{"id": 1, "start": False}]}]
+                if mode == "selected_transient" and session_calls == 1:
+                    sessions = [{"session_id": "s2", "document_id": 1, "revision": 0}]
                 if mode == "ambiguous":
                     sessions.append({"session_id": "s2"})
                 send(request, {"structuredContent": {"ok": True, "status": "ready", "result": sessions,

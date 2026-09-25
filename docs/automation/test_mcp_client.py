@@ -42,6 +42,12 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(selected["session_id"], "s1")
         self.assertEqual(client.tool("ocs_sessions", {"launch_if_none": False})["launches"], 0)
 
+    def test_selected_session_missing_from_one_probe_is_retried_without_launch(self):
+        client = self.client("selected_transient")
+        selected = client.ready_session(session_id="s1", wait_for_existing=True, timeout=2)
+        self.assertEqual(selected["session_id"], "s1")
+        self.assertEqual(client.tool("ocs_sessions", {"launch_if_none": False})["launches"], 0)
+
     def test_selected_session_supplies_document_preconditions(self):
         client = self.client()
         client.ready_session()

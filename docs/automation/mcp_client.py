@@ -390,6 +390,11 @@ class Client:
                     raise ProtocolError(f"Expected one session, found {len(sessions)}; specify session_id")
                 matching = [s for s in sessions if s["session_id"] == session_id] if session_id else sessions
                 if len(matching) != 1:
+                    if session_id is not None and not matching and wait_for_existing:
+                        # A bounded descriptor probe can miss an otherwise live
+                        # selected GUI. Retry discovery only; never launch.
+                        time.sleep(min(0.2, self._remaining(deadline)))
+                        continue
                     raise ProtocolError("Selected session is absent or ambiguous")
                 self._remember_state(matching[0]["session_id"], matching[0])
                 return matching[0]
