@@ -1,13 +1,16 @@
 import json
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 from m8_release_package import (BINARY_MEMBER, SOURCE_FILES, ZIP_NAME,
                                 ReleasePackageError, _check_import_closure,
-                                _zip_info, sha256, sha256_bytes, verify)
+                                _zip_info, binary_source_revision, sha256,
+                                sha256_bytes, verify)
 
 
 class ReleasePackageTests(unittest.TestCase):
@@ -64,6 +67,25 @@ class ReleasePackageTests(unittest.TestCase):
     def test_bundle_source_import_closure_is_explicit(self):
         repo = Path(__file__).resolve().parents[3]
         _check_import_closure(repo)
+
+    def test_stage_revision_must_match_source_commit(self):
+        binary = Path("synthetic-release.exe")
+        source_sha = "a" * 40
+        response = subprocess.CompletedProcess([], 0,
+            stdout="OpenCADStudio 2026.38\nrevision: aaaaaaaaaaaa\nprofile: release\n")
+        with patch("m8_release_package.subprocess.run", return_value=response):
+            self.assertEqual(binary_source_revision(binary, source_sha), "a" * 12)
+        response.stdout = "OpenCADStudio 2026.38\nrevision: bbbbbbbbbbbb\n"
+        with patch("m8_release_package.subprocess.run", return_value=response):
+            with self.assertRaisesRegex(ReleasePackageError, "differs from source"):
+                binary_source_revision(binary, source_sha)
+
+    def test_bundle_rejects_claimed_binary_revision_mismatch(self):
+        manifest = json.loads(self.manifest_bytes)
+        manifest["binary_source_revision"] = "b" * 12
+        (self.bundle / "manifest.json").write_text(json.dumps(manifest) + "\n")
+        with self.assertRaisesRegex(ReleasePackageError, "binary revision differs"):
+            verify(self.root)
 
 
 if __name__ == "__main__":

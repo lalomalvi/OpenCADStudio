@@ -5,6 +5,7 @@ import ast
 import hashlib
 import json
 from pathlib import Path
+import re
 import struct
 import subprocess
 import tomllib
@@ -123,6 +124,23 @@ def pe_machine(path: Path) -> int:
         return struct.unpack("<H", stream.read(2))[0]
 
 
+def binary_source_revision(binary: Path, source_sha: str) -> str:
+    """Reject a release executable built from a different source commit."""
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", source_sha):
+        raise ReleasePackageError("Source Git SHA is invalid")
+    try:
+        version = subprocess.run([str(binary), "--version"], capture_output=True,
+                                 text=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ReleasePackageError("Cannot inspect release binary revision") from exc
+    revisions = re.findall(r"^revision: ([0-9a-fA-F]{12})$", version.stdout,
+                           flags=re.MULTILINE)
+    if (version.returncode != 0 or len(revisions) != 1 or
+            not source_sha.lower().startswith(revisions[0].lower())):
+        raise ReleasePackageError("Release binary revision differs from source Git SHA")
+    return revisions[0].lower()
+
+
 def stage(root: Path, binary: Path) -> dict:
     repo = Path(__file__).resolve().parents[3]
     allowed = (repo / "target/mcp-release-bundles").resolve()
@@ -136,6 +154,7 @@ def stage(root: Path, binary: Path) -> dict:
     _check_import_closure(repo)
     if binary.stat().st_size < 1_000_000 or pe_machine(binary) != 0x8664:
         raise ReleasePackageError("Windows x64 release executable is absent or invalid")
+    binary_revision = binary_source_revision(binary, commit)
     version = tomllib.loads((repo / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
     payload = {}
     for member, source in SOURCE_FILES.items():
@@ -153,6 +172,7 @@ def stage(root: Path, binary: Path) -> dict:
         "pe_machine": "AMD64-0x8664",
         "application_version": version,
         "source_git_sha": commit,
+        "binary_source_revision": binary_revision,
         "cargo_lock_sha256": sha256(repo / "Cargo.lock"),
         "build_command": "cargo build --release --locked --bin OpenCADStudio --target-dir target/mcp-release-build",
         "binary_signed": False,
@@ -195,10 +215,18 @@ def verify(root: Path) -> dict:
             or manifest.get("status") != "candidate_partial_m7_gates_open"
             or manifest.get("platform") != "windows-x86_64"
             or manifest.get("pe_machine") != "AMD64-0x8664"
+            or not isinstance(manifest.get("source_git_sha"), str)
+            or not re.fullmatch(r"[0-9a-fA-F]{40}", manifest["source_git_sha"])
             or set(manifest.get("files", {})) != expected_members()
             or manifest.get("cargo_lock_sha256") !=
             manifest["files"]["Cargo.lock"]["sha256"]):
         raise ReleasePackageError("Bundle manifest or member allowlist differs")
+    binary_revision = manifest.get("binary_source_revision")
+    if binary_revision is not None and (
+            not isinstance(binary_revision, str) or
+            not re.fullmatch(r"[0-9a-f]{12}", binary_revision) or
+            not manifest["source_git_sha"].lower().startswith(binary_revision)):
+        raise ReleasePackageError("Bundle binary revision differs from source Git SHA")
     actual_files = {path.relative_to(bundle).as_posix() for path in bundle.rglob("*")
                     if path.is_file()}
     if actual_files != expected_members() | {"manifest.json"}:
