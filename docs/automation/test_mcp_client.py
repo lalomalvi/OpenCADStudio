@@ -109,6 +109,24 @@ class ClientTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reused"):
             client.mutate("s1", {**request, "cmd": "CIRCLE 0,0 1"})
 
+    def test_concurrent_same_request_id_executes_only_once(self):
+        client = self.client("delayed_mutation", timeout=2)
+        request = {"op": "run", "request_id": "concurrent-edit", "cmd": "LINE 0,0 1,0",
+                   "document_id": 1, "revision": 0}
+        barrier = threading.Barrier(3)
+
+        def invoke():
+            barrier.wait()
+            return client.mutate("s1", request)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(invoke)
+            second = pool.submit(invoke)
+            barrier.wait()
+            self.assertEqual(first.result(timeout=3)["effects"], 1)
+            self.assertEqual(second.result(timeout=3)["effects"], 1)
+        self.assertEqual(client.tool_calls, 1)
+
     def test_running_batch_progresses_by_operation_query_without_replay(self):
         client = self.client("running_batch")
         request = {"op": "run_script", "request_id": "batch-progress", "document_id": 1,

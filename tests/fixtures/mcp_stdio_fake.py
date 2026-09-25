@@ -78,6 +78,8 @@ for line in sys.stdin:
                     "code": "invalid_arguments"}, "isError": True})
                 continue
             effects += 1
+            if mode == "delayed_mutation":
+                time.sleep(0.3)
             if mode not in {"lost_mutation", "lost_partial"}:
                 send(request, {"structuredContent": {"ok": True,
                                   "status": ("running" if mode == "running_batch" else

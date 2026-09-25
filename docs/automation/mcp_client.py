@@ -116,6 +116,7 @@ class Client:
         self._pending: dict[int, queue.Queue] = {}
         self._lock = threading.Lock()
         self._write_lock = threading.Lock()
+        self._mutation_lock = threading.RLock()
         self._fatal: str | None = None
         self._mutations: dict[str, tuple[str, dict | None]] = {}
         self._sessions: dict[str, dict] = {}
@@ -402,6 +403,13 @@ class Client:
 
     def mutate(self, session_id: str, request: dict, *, deadline: float | None = None,
                **options: Any) -> dict:
+        # Request-id reservation and reconciliation must be atomic across
+        # callers. The transport still accepts concurrent read-only RPCs.
+        with self._mutation_lock:
+            return self._mutate_locked(session_id, request, deadline=deadline, **options)
+
+    def _mutate_locked(self, session_id: str, request: dict, *, deadline: float | None = None,
+                       **options: Any) -> dict:
         if deadline is None:
             deadline = time.monotonic() + max(self.timeout, 90.0)
         request_id = request.get("request_id")
@@ -457,6 +465,10 @@ class Client:
         return result
 
     def recover(self, session_id: str, request_id: str, *, deadline: float | None = None) -> dict:
+        with self._mutation_lock:
+            return self._recover_locked(session_id, request_id, deadline=deadline)
+
+    def _recover_locked(self, session_id: str, request_id: str, *, deadline: float | None = None) -> dict:
         if deadline is None:
             deadline = time.monotonic() + max(self.timeout, 90.0)
         while True:
