@@ -3,13 +3,16 @@ name: Tests
 # Until now nothing ran the test suite on a change: the release workflows
 # build the app, web-check.yml type-checks the wasm target, and pull requests
 # reported their own local runs. Run the workspace tests on every push to
-# main and on every pull request. There is deliberately no formatter check:
+# main, MCP work branches, and on every pull request. A manual trigger makes
+# the gate reproducible when a fork does not enqueue draft PR checks.
+# There is deliberately no formatter check:
 # the tree is not rustfmt-clean and is not going to be reformatted.
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/mcp-*']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
