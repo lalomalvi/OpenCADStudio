@@ -27,6 +27,11 @@ for line in sys.stdin:
         continue
     if mode == "eof":
         sys.exit(0)
+    if mode in {"bool_id", "float_id", "string_id"} and method == "ping":
+        bad_id = {"bool_id": True, "float_id": 1.0, "string_id": "1"}[mode]
+        print(json.dumps({"jsonrpc": "2.0", "id": bad_id, "result": {"wrong": True}}),
+              flush=True)
+        continue
     if mode == "out_of_order" and method == "ping":
         if held is None:
             held = request

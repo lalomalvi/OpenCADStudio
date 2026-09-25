@@ -197,6 +197,13 @@ class ClientTests(unittest.TestCase):
                 with self.assertRaises(ProtocolError):
                     client.rpc("ping", {})
 
+    def test_non_integer_rpc_ids_cannot_alias_a_pending_request(self):
+        for mode in ("bool_id", "float_id", "string_id"):
+            with self.subTest(mode=mode):
+                client = self.client(mode)
+                with self.assertRaisesRegex(ProtocolError, "Invalid MCP reply ID type"):
+                    client.rpc("ping", {"seq": 1})
+
     def test_stderr_is_drained(self):
         client = self.client("stderr_flood")
         for _ in range(100):

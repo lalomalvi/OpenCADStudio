@@ -145,6 +145,8 @@ class Client:
                     raise ProtocolError("Invalid JSON-RPC response on MCP stdout")
                 if "id" not in reply:
                     continue  # Server notification.
+                if type(reply["id"]) is not int or reply["id"] <= 0:
+                    raise ProtocolError("Invalid MCP reply ID type")
                 with self._lock:
                     slot = self._pending.pop(reply["id"], None)
                 if slot is None:
