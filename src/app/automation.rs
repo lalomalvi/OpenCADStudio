@@ -1189,7 +1189,9 @@ impl OpenCADStudio {
             Some(&path),
         )
         .map_err(|error| json!({"ok":false,"status":"failed","code":"invalid_target","error":error}))?;
+        let began = std::time::Instant::now();
         let audit = self.document_audit(req);
+        let audited_at = std::time::Instant::now();
         if audit["summary"]["errors"].as_u64().unwrap_or(0) > 0 {
             return Err(json!({
                 "ok":false,"status":"failed","code":"audit_failed",
@@ -1206,11 +1208,19 @@ impl OpenCADStudio {
         }
 
         self.prepare_native_save(i);
-        let before = document_manifest(&self.tabs[i].scene.document);
+        let source_manifest = document_manifest(&self.tabs[i].scene.document);
+        // The writer bakes anonymous *D blocks on its owned snapshot. Compare
+        // the reopened file with that materialized snapshot: a dimension's
+        // generated geometry is real DWG content, absent from the live editor.
+        let mut expected = self.tabs[i].scene.document.clone();
+        crate::modules::draw::modify::explode::bake_dimension_blocks(&mut expected);
+        let before = document_manifest(&expected);
+        let materialized_at = std::time::Instant::now();
         crate::io::save_as_version(&self.tabs[i].scene.document, &path, version)
             .map_err(|error| json!({
                 "ok":false,"status":"failed","code":"save_failed","error":error,
             }))?;
+        let written_at = std::time::Instant::now();
         let sha256 = sha256_file(&path).map_err(|error| json!({
             "ok":false,"status":"failed","code":"hash_failed","error":error,
             "saved":path,
@@ -1223,6 +1233,7 @@ impl OpenCADStudio {
         } else {
             None
         };
+        let hashed_at = std::time::Instant::now();
         if dxf_structure
             .as_ref()
             .is_some_and(|audit| audit["ok"] != true)
@@ -1238,6 +1249,7 @@ impl OpenCADStudio {
             "ok":false,"status":"failed","code":"reopen_failed","error":error,
             "saved":path,"sha256":sha256,
         }))?;
+        let reopened_at = std::time::Instant::now();
         if reopened.version != version {
             return Err(json!({
                 "ok":false,"status":"failed","code":"version_mismatch",
@@ -1252,16 +1264,32 @@ impl OpenCADStudio {
                 "ok":false,"status":"failed","code":"semantic_mismatch",
                 "error":"saved drawing reopened but its entity manifest changed; file was preserved for diagnosis",
                 "saved":path,"sha256":sha256,"before":before,"after":after,
+                "source_manifest":source_manifest,
                 "target_format":if is_dxf { "dxf" } else { "dwg" },
                 "target_version":format!("{version:?}"),"dropped_on_save":dropped,
             }));
         }
+        let compared_at = std::time::Instant::now();
+        let elapsed_ms = |start: std::time::Instant, end: std::time::Instant| {
+            end.duration_since(start).as_secs_f64() * 1000.0
+        };
         Ok(json!({
             "ok":true,"status":"completed","verified":true,
             "saved":path,"sha256":sha256,"bytes":std::fs::metadata(&path).map(|m|m.len()).unwrap_or(0),
             "target_format":if is_dxf { "dxf" } else { "dwg" },
             "target_version":format!("{version:?}"),"dropped_on_save":dropped,
+            "source_manifest":source_manifest,"materialized_manifest":before,
             "manifest":after,"audit":audit,"dxf_structure":dxf_structure,
+            "timings":{
+                "scope":"gui_process_monotonic",
+                "audit_ms":elapsed_ms(began,audited_at),
+                "prepare_and_materialize_ms":elapsed_ms(audited_at,materialized_at),
+                "write_ms":elapsed_ms(materialized_at,written_at),
+                "hash_and_structure_ms":elapsed_ms(written_at,hashed_at),
+                "reopen_ms":elapsed_ms(hashed_at,reopened_at),
+                "compare_manifest_ms":elapsed_ms(reopened_at,compared_at),
+                "total_ms":elapsed_ms(began,compared_at),
+            },
         }))
     }
 
@@ -1291,6 +1319,51 @@ mod tests {
         app.automation_op(r#"{"op":"run","cmd":"LINE 0,0 10,0"}"#);
         let lines = app.automation_op(r#"{"op":"query","type":"Line"}"#);
         assert_eq!(lines["entities"][0]["layer"], "Annotations");
+    }
+
+    #[test]
+    fn layer_off_command_invalidates_scene_and_panel() {
+        let mut app = super::OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        app.automation_op(r#"{"op":"run","cmd":"LAYER NEW OCS_DIM_REF"}"#);
+        app.automation_op(r#"{"op":"run","cmd":"CLAYER OCS_DIM_REF"}"#);
+        app.automation_op(r#"{"op":"run","cmd":"LINE 0,0 10,0"}"#);
+        app.automation_op(r#"{"op":"run","cmd":"CLAYER 0"}"#);
+        let i = app.active_tab;
+        let before = app.tabs[i].scene.geometry_epoch;
+        app.automation_op(r#"{"op":"run","cmd":"LAYER OFF OCS_DIM_REF"}"#);
+        assert!(app.tabs[i]
+            .scene
+            .document
+            .layers
+            .get("OCS_DIM_REF")
+            .unwrap()
+            .flags
+            .off);
+        assert_ne!(app.tabs[i].scene.geometry_epoch, before);
+        assert!(!app.tabs[i]
+            .layers
+            .layers
+            .iter()
+            .find(|layer| layer.name == "OCS_DIM_REF")
+            .unwrap()
+            .visible);
+        app.automation_op(r#"{"op":"run","cmd":"LAYER ON OCS_DIM_REF"}"#);
+        assert!(!app.tabs[i]
+            .scene
+            .document
+            .layers
+            .get("OCS_DIM_REF")
+            .unwrap()
+            .flags
+            .off);
+        assert!(app.tabs[i]
+            .layers
+            .layers
+            .iter()
+            .find(|layer| layer.name == "OCS_DIM_REF")
+            .unwrap()
+            .visible);
     }
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
@@ -1375,8 +1448,84 @@ mod tests {
         assert_eq!(result["target_version"], "AC1014", "{result}");
         assert_eq!(result["manifest"]["total"], 1, "{result}");
         assert_eq!(result["sha256"].as_str().map(str::len), Some(64));
+        assert_eq!(result["timings"]["scope"], "gui_process_monotonic");
+        for field in ["audit_ms", "prepare_and_materialize_ms", "write_ms",
+            "hash_and_structure_ms", "reopen_ms", "compare_manifest_ms", "total_ms"] {
+            assert!(result["timings"][field].as_f64().is_some_and(|value| value >= 0.0),
+                "missing or negative timing {field}: {result}");
+        }
         assert!(path.is_file());
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_verified_compares_materialized_dimension_geometry() {
+        let mut app = OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        assert_eq!(
+            app.automation_op(r#"{"op":"run","cmd":"DIMLINEAR 0,0 2.5,0 1.25,1"}"#)["ok"],
+            true
+        );
+        let path = std::env::temp_dir().join(format!(
+            "ocs_verified_dimension_{}_{}.dwg",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        let result = app.save_verified_request(&serde_json::json!({
+            "path":path,
+            "target_format":"dwg",
+            "target_version":"2018",
+        })).expect("verified dimension save");
+        assert_eq!(result["manifest"]["by_type"]["Dimension"], 1, "{result}");
+        assert!(result["manifest"]["total"].as_u64().unwrap() > 1, "{result}");
+        assert_eq!(result["source_manifest"]["total"], 1, "{result}");
+        assert_eq!(result["materialized_manifest"], result["manifest"], "{result}");
+        let reopened = crate::io::load_file(&path).expect("reopen dimension");
+        let dimension = reopened.entities().find_map(|entity| match entity {
+            acadrust::EntityType::Dimension(dimension) => Some(dimension),
+            _ => None,
+        }).expect("native dimension");
+        assert!((dimension.base().actual_measurement - 2.5).abs() < 1e-6);
+        assert!(dimension.base().block_name.starts_with("*D"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn typed_face_midpoints_create_associative_native_dimension() {
+        use acadrust::entities::Dimension;
+        use acadrust::EntityType;
+        use crate::scene::ChangeKind;
+
+        let mut app = OpenCADStudio::new_for_test();
+        app.automation_op(r#"{"op":"new"}"#);
+        for command in ["LINE 0,0.1 4,0.1", "LINE 0,-0.1 4,-0.1",
+                        "DIMLINEAR 2,0.1 2,-0.1 2.5,0"] {
+            let result = app.automation_op(&serde_json::json!({"op":"run","cmd":command}).to_string());
+            assert_eq!(result["ok"], true, "{command}: {result}");
+        }
+        let scene = &mut app.tabs[app.active_tab].scene;
+        let lines: Vec<_> = scene.document.entities().filter_map(|entity| match entity {
+            EntityType::Line(line) => Some((line.common.handle, line.start.y)),
+            _ => None,
+        }).collect();
+        let dimension = scene.document.entities().find_map(|entity| match entity {
+            EntityType::Dimension(dimension) => Some(dimension.base().common.handle),
+            _ => None,
+        }).expect("native dimension");
+        assert_eq!(lines.len(), 2);
+        let upper = lines.iter().find(|(_, y)| *y > 0.0).unwrap().0;
+        let lower = lines.iter().find(|(_, y)| *y < 0.0).unwrap().0;
+        assert_eq!(scene.dimension_association_sources(dimension), vec![upper, lower]);
+        let Some(EntityType::Line(line)) = scene.document.get_entity_mut(upper) else { panic!() };
+        line.start.y = 0.15;
+        line.end.y = 0.15;
+        scene.bump_entities(&[(upper, ChangeKind::Modified)]);
+        let Some(EntityType::Dimension(Dimension::Linear(updated))) =
+            scene.document.get_entity(dimension) else { panic!() };
+        assert!((updated.measurement() - 0.25).abs() < 1e-6);
     }
 
     #[test]

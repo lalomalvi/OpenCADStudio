@@ -6,6 +6,9 @@ use serde_json::{Value, json};
 use std::{collections::VecDeque, sync::OnceLock};
 #[cfg(not(target_arch = "wasm32"))]
 mod transport;
+mod wall_edit;
+#[cfg(not(target_arch = "wasm32"))]
+mod metric_plot;
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) use transport::subscribe;
 
@@ -126,6 +129,9 @@ struct Operation {
     document_id: Option<u64>,
     origin_document: u64,
     geometry_revision: u64,
+    started_at: std::time::Instant,
+    capture_dispatched: bool,
+    capture_clean_frames: u8,
     result: Value,
 }
 fn failure(code: &str, error: impl ToString) -> Value {
@@ -408,7 +414,7 @@ impl OpenCADStudio {
             "mtext_editor":self.mtext_editor.as_ref().map(|e|json!({"text":e.content.text(),"height":e.height,"style":e.style})),
             "text_editor":self.text_inline.is_some(),"event_cursor":self.control.serial,
             "operation":self.control.pending.as_ref().map(|p| &p.id),
-            "capabilities":["commands","command_manifest","step_input","batch","run_script","strict_command_validation","compact_results","entity_pick","structure_pick","selection","properties","records","record_schemas","record_filters","atomic_record_updates","layers","history","documents","events","capture","viewport_capture","measure","spatial_query","audit","verified_save","explicit_save_version"]
+            "capabilities":["commands","command_manifest","step_input","batch","run_script","strict_command_validation","compact_results","entity_pick","structure_pick","selection","properties","records","record_schemas","record_filters","atomic_record_updates","edit_wall_thickness","edit_wall_length","metric_plot_pdf","metric_page_setup","layers","history","documents","events","capture","viewport_capture","measure","spatial_query","audit","verified_save","explicit_save_version"]
         })
     }
 
@@ -432,6 +438,7 @@ impl OpenCADStudio {
                 | "header"
                 | "history"
                 | "audit"
+                | "metric_page_setup"
         );
         if !query && !self.control.enabled {
             return (
@@ -606,7 +613,7 @@ impl OpenCADStudio {
                     Task::none(),
                 );
             }
-        } else if !query && !matches!(op, "new" | "open" | "stop") {
+        } else if !query && !matches!(op, "new" | "open" | "stop" | "shutdown") {
             return (
                 failure("document_required", "Read state and supply document_id"),
                 Task::none(),
@@ -635,6 +642,8 @@ impl OpenCADStudio {
                 "history" => {
                     json!({"ok":true,"entries":self.command_line.history.iter().map(|e|json!({"kind":format!("{:?}",e.kind),"text":e.text})).collect::<Vec<_>>()})
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                "metric_page_setup" => self.control_metric_page_setup(),
                 _ => self.automation_op_inner(&req.to_string()),
             };
             return (response, Task::none());
@@ -686,6 +695,9 @@ impl OpenCADStudio {
             document_id: doc,
             origin_document: tab.id,
             geometry_revision: tab.scene.geometry_epoch,
+            started_at: std::time::Instant::now(),
+            capture_dispatched: false,
+            capture_clean_frames: 0,
             result: json!({}),
         });
         self.control.routing = true;
@@ -845,6 +857,12 @@ impl OpenCADStudio {
             }
             "property" => self.control_set_property(req)?,
             "set_properties" => self.control_set_record_properties(req)?,
+            "edit_wall_thickness" => self.control_edit_wall_thickness(req)?,
+            "edit_wall_length" => self.control_edit_wall_length(req)?,
+            #[cfg(not(target_arch = "wasm32"))]
+            "metric_plot_pdf" => self.control_export_metric_plot(req)?,
+            #[cfg(not(target_arch = "wasm32"))]
+            "set_metric_page_setup" => self.control_set_metric_page_setup(req)?,
             "action" => self.control_ui_action(req)?,
             #[cfg(not(target_arch = "wasm32"))]
             "embed_image" => self.control_embed_image(req)?,
@@ -907,25 +925,93 @@ impl OpenCADStudio {
                 Task::none()
             }
             "capture" => {
-                let window = self
-                    .main_window
+                self.main_window
                     .ok_or_else(|| failure("gui_required", "Capture requires a GUI window"))?;
-                let path = string(req, "path")?.to_owned();
-                // A minimized window has a 0x0 surface and the renderer
-                // panics reading it back, so report instead of capturing.
-                iced::window::size(window).then(move |size| {
-                    let path = path.clone();
-                    if size.width <= 0.0 || size.height <= 0.0 {
-                        Task::done(Message::ControlScreenshot(path, None))
-                    } else {
-                        iced::window::screenshot(window)
-                            .map(move |s| Message::ControlScreenshot(path.clone(), Some(s)))
+                string(req, "path")?;
+                if let Some(landmarks) = req.get("landmarks") {
+                    let values = landmarks.as_array().filter(|items| items.len() <= 32)
+                        .ok_or_else(|| failure("capture_landmarks_invalid", "At most 32 landmarks are allowed"))?;
+                    if req["scope"] != "viewport" {
+                        return Err(failure("capture_landmarks_invalid", "Landmarks require viewport scope"));
                     }
-                })
+                    let mut ids = Vec::new();
+                    for item in values {
+                        let id = item["id"].as_str().filter(|id| !id.is_empty() && id.len() <= 80 &&
+                            id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+                            .ok_or_else(|| failure("capture_landmarks_invalid", "Landmark ID is invalid"))?;
+                        let point = item["point"].as_array().filter(|point| point.len() == 3)
+                            .ok_or_else(|| failure("capture_landmarks_invalid", "Landmark needs xyz"))?;
+                        if ids.contains(&id) || point.iter().any(|value| value.as_f64()
+                            .is_none_or(|number| !number.is_finite() || number.abs() > 1_000_000.0)) ||
+                            item.as_object().is_none_or(|map| map.len() != 2) {
+                            return Err(failure("capture_landmarks_invalid", "Landmark is duplicate or out of range"));
+                        }
+                        ids.push(id);
+                    }
+                }
+                if req["scope"] == "viewport" {
+                    if self.thumbnail_capture_clean {
+                        return Err(failure("capture_busy", "Thumbnail capture is in progress"));
+                    }
+                    self.control_capture_clean = true;
+                }
+                // Keep the operation pending until a viewport shader frame
+                // encodes this document/camera revision. The frame subscription
+                // drives the screenshot or a bounded failure.
+                if let Some(pending) = self.control.pending.as_mut() {
+                    pending.pending += 1;
+                }
+                Task::none()
             }
             "stop" => {
                 self.control.enabled = false;
                 Task::none()
+            }
+            "close_document" => {
+                if string(req, "policy")? != "require_saved" {
+                    return Err(failure("invalid_close_policy", "Use policy=require_saved"));
+                }
+                let root = std::path::Path::new(string(req, "owned_root")?)
+                    .canonicalize().map_err(|_| failure("invalid_owned_root", "Owned root is absent"))?;
+                let tab = &self.tabs[self.active_tab];
+                if tab.is_start {
+                    return Err(failure("no_document", "Start tab is not a drawing"));
+                }
+                if self.active_modal.is_some() || tab.active_cmd.is_some() {
+                    return Err(failure("editor_busy", "Close modal and active command first"));
+                }
+                if tab.dirty {
+                    return Err(failure("dirty_document", "Save this document before closing"));
+                }
+                let path = tab.current_path.as_ref()
+                    .ok_or_else(|| failure("unverified_document", "Document has no saved path"))?
+                    .canonicalize().map_err(|_| failure("unverified_document", "Document path is absent"))?;
+                if !path.starts_with(&root) {
+                    return Err(failure("foreign_document", "Document is outside owned root"));
+                }
+                self.update(Message::TabClose(self.active_tab))
+            }
+            "shutdown" => {
+                let root = std::path::Path::new(string(req, "owned_root")?)
+                    .canonicalize().map_err(|_| failure("invalid_owned_root", "Owned root is absent"))?;
+                if self.active_modal.is_some() || self.tabs.iter().any(|tab| tab.active_cmd.is_some()) {
+                    return Err(failure("editor_busy", "Close modal and active commands before shutdown"));
+                }
+                if self.tabs.iter().any(|tab| tab.dirty) {
+                    return Err(failure("dirty_document", "Save every dirty document before shutdown"));
+                }
+                for tab in &self.tabs {
+                    if let Some(path) = &tab.current_path {
+                        let canonical = path.canonicalize().map_err(|_|
+                            failure("unverified_document", "Open document path cannot be verified"))?;
+                        if !canonical.starts_with(&root) {
+                            return Err(failure("foreign_document", "Open document is outside owned root"));
+                        }
+                    }
+                }
+                let window = self.main_window.ok_or_else(||
+                    failure("gui_required", "Shutdown requires a GUI window"))?;
+                self.update(Message::WindowCloseRequested(window))
             }
             _ => return Err(failure("unknown_operation", "Unknown operation")),
         })
@@ -1020,6 +1106,9 @@ impl OpenCADStudio {
             return;
         }
         let p = self.control.pending.take().unwrap();
+        if p.request["op"] == "capture" {
+            self.control_capture_clean = false;
+        }
         let previous = self.active_tab;
         if let Some(index) = p
             .document_id
@@ -1046,7 +1135,15 @@ impl OpenCADStudio {
         };
         let changes = self.tabs[self.active_tab].scene.replay_since(p.geometry_revision)
             .map(|values| values.into_iter().take(1000).map(|(handle,kind)|json!({"handle":format!("{:X}",handle.value()),"kind":format!("{kind:?}")})).collect::<Vec<_>>());
-        let response = json!({"ok":!failed,"status":status,"request_id":p.id,"error":if failed{self.command_line.last_error.clone()}else{None},"result":p.result,"changes":changes,"state":self.control_state()});
+        let response = json!({
+            "ok": !failed, "status": status, "request_id": p.id,
+            "error": if failed { self.command_line.last_error.clone() } else { None },
+            "result": p.result, "changes": changes, "state": self.control_state(),
+            "timings": {
+                "scope": "gui_operation_elapsed",
+                "total_ms": p.started_at.elapsed().as_secs_f64() * 1000.0
+            }
+        });
         self.control.serial += 1;
         self.control.events.push_back(json!({"sequence":self.control.serial,"request_id":p.id,"status":status,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision}));
         while self.control.events.len() > 128 {
@@ -1110,14 +1207,101 @@ impl OpenCADStudio {
         json!({"ok":true,"document_id":tab.id,"geometry_revision":tab.scene.geometry_epoch,"measurements":out})
     }
 
+    pub(super) fn capture_awaiting_render(&self) -> bool {
+        self.control.pending.as_ref().is_some_and(|pending|
+            pending.request["op"] == "capture" && !pending.capture_dispatched)
+    }
+
+    pub(super) fn control_capture_clean_frame(&mut self) {
+        if let Some(pending) = self.control.pending.as_mut().filter(|p|
+            p.request["op"] == "capture" && !p.capture_dispatched && self.control_capture_clean)
+        {
+            pending.capture_clean_frames = pending.capture_clean_frames.saturating_add(1);
+        }
+    }
+
+    pub(super) fn control_capture_frame(&mut self) -> Task<Message> {
+        let Some(pending) = self.control.pending.as_ref().filter(|p|
+            p.request["op"] == "capture" && !p.capture_dispatched)
+        else {
+            return Task::none();
+        };
+        let expired = pending.started_at.elapsed() >= std::time::Duration::from_secs(8);
+        let active = &self.tabs[self.active_tab];
+        let requested_doc = pending.request["document_id"].as_u64();
+        let requested_geometry = pending.request["geometry_revision"].as_u64();
+        let requested_camera = pending.request["camera_revision"].as_u64();
+        let stale = requested_doc.is_some_and(|value| value != active.id)
+            || requested_geometry.is_some_and(|value| value != active.scene.geometry_epoch)
+            || requested_camera.is_some_and(|value| value != active.scene.camera_generation);
+        let rendered = *active.scene.rendered_revision.lock().unwrap();
+        if stale || expired {
+            self.command_line.push_error(if stale {
+                "Capture document or revision changed while awaiting render"
+            } else {
+                "Viewport render did not reach capture revision within eight seconds"
+            });
+            if let Some(pending) = self.control.pending.as_mut() {
+                pending.pending = pending.pending.saturating_sub(1);
+            }
+            self.control_settle();
+            return Task::none();
+        }
+        if !rendered.is_some_and(|(geometry, camera, at)|
+            geometry == active.scene.geometry_epoch
+                && camera == active.scene.camera_generation
+                && at >= pending.started_at)
+        {
+            return Task::none();
+        }
+        // Two compositor frames with the clean view prevent capturing a frame
+        // from the interactive layout immediately before overlays were hidden.
+        if self.control_capture_clean && pending.capture_clean_frames < 2 {
+            return Task::none();
+        }
+        let Some(window) = self.main_window else { return Task::none() };
+        let path = pending.request["path"].as_str().unwrap_or("").to_owned();
+        // A minimized window has a 0x0 surface and its screenshot readback
+        // panics. The existing screenshot handler turns None into a failure.
+        let task = iced::window::size(window).then(move |size| {
+            let path = path.clone();
+            if size.width <= 0.0 || size.height <= 0.0 {
+                Task::done(Message::ControlScreenshot(path, None))
+            } else {
+                iced::window::screenshot(window)
+                    .map(move |s| Message::ControlScreenshot(path.clone(), Some(s)))
+            }
+        });
+        if let Some(pending) = self.control.pending.as_mut() {
+            pending.capture_dispatched = true;
+        }
+        let tracked = self.control_track(task);
+        if let Some(pending) = self.control.pending.as_mut() {
+            pending.pending = pending.pending.saturating_sub(1);
+        }
+        tracked
+    }
+
     pub(super) fn control_screenshot(
         &mut self,
         path: String,
         screenshot: Option<iced::window::Screenshot>,
     ) {
+        let screenshot_available_at = std::time::Instant::now();
         let result = (|| -> Result<Value, String> {
             let s = screenshot
                 .ok_or("The window is minimized or has no size; restore it and capture again")?;
+            let tab = &self.tabs[self.active_tab];
+            let rendered = *tab.scene.rendered_revision.lock().unwrap();
+            if !rendered.is_some_and(|(geometry, camera, at)|
+                geometry == tab.scene.geometry_epoch
+                    && camera == tab.scene.camera_generation
+                    && self.control.pending.as_ref().is_some_and(|p| at >= p.started_at))
+            {
+                return Err("Viewport render revision changed before screenshot completed".into());
+            }
+            let requested_at = self.control.pending.as_ref().unwrap().started_at;
+            let rendered_at = rendered.unwrap().2;
             let requested_scope = self
                 .control
                 .pending
@@ -1135,30 +1319,53 @@ impl OpenCADStudio {
                 image::RgbaImage::from_raw(s.size.width, s.size.height, s.rgba.to_vec())
                     .ok_or("Renderer returned malformed image data")?;
             let mut actual_scope = "window";
+            let mut landmark_pixels_raw: Vec<(String, f64, f64)> = Vec::new();
+            let mut raw_viewport_size = None;
             if requested_scope == "viewport" {
-                if let Some(bounds) = crate::ui::wrap_bar::dropdown_bounds(
+                let bounds = crate::ui::wrap_bar::dropdown_bounds(
                     crate::app::view::VIEWPORT_CAPTURE_BOUNDS_ID,
-                ) {
-                    let scale = s.scale_factor;
-                    let left = (bounds.x * scale).floor().clamp(0.0, image.width() as f32) as u32;
-                    let top = (bounds.y * scale).floor().clamp(0.0, image.height() as f32) as u32;
-                    let right = ((bounds.x + bounds.width) * scale)
-                        .ceil()
-                        .clamp(0.0, image.width() as f32) as u32;
-                    let bottom = ((bounds.y + bounds.height) * scale)
-                        .ceil()
-                        .clamp(0.0, image.height() as f32) as u32;
-                    if right > left && bottom > top {
-                        image = image::imageops::crop_imm(
-                            &image,
-                            left,
-                            top,
-                            right - left,
-                            bottom - top,
-                        )
-                        .to_image();
-                        actual_scope = "viewport";
+                ).ok_or("Viewport bounds are unavailable for capture")?;
+                let scale = s.scale_factor;
+                let left = (bounds.x * scale).floor().clamp(0.0, image.width() as f32) as u32;
+                let top = (bounds.y * scale).floor().clamp(0.0, image.height() as f32) as u32;
+                let right = ((bounds.x + bounds.width) * scale)
+                    .ceil()
+                    .clamp(0.0, image.width() as f32) as u32;
+                let bottom = ((bounds.y + bounds.height) * scale)
+                    .ceil()
+                    .clamp(0.0, image.height() as f32) as u32;
+                if right > left && bottom > top {
+                    raw_viewport_size = Some((right - left, bottom - top));
+                    if let Some(landmarks) = self.control.pending.as_ref()
+                        .and_then(|pending| pending.request["landmarks"].as_array()) {
+                        let camera = tab.scene.camera.borrow();
+                        let view_rot = camera.view_proj_rte(bounds);
+                        let eye = camera.eye();
+                        for landmark in landmarks {
+                            let point = landmark["point"].as_array().unwrap();
+                            let world = glam::DVec3::new(point[0].as_f64().unwrap(),
+                                point[1].as_f64().unwrap(), point[2].as_f64().unwrap());
+                            let screen = crate::scene::pick::hit_test::world_to_screen(
+                                world, view_rot, eye, bounds);
+                            if !screen.x.is_finite() || !screen.y.is_finite() {
+                                return Err("Landmark projection is not finite".into());
+                            }
+                            landmark_pixels_raw.push((landmark["id"].as_str().unwrap().to_owned(),
+                                ((bounds.x + screen.x) * scale - left as f32) as f64,
+                                ((bounds.y + screen.y) * scale - top as f32) as f64));
+                        }
                     }
+                    image = image::imageops::crop_imm(
+                        &image,
+                        left,
+                        top,
+                        right - left,
+                        bottom - top,
+                    )
+                    .to_image();
+                    actual_scope = "viewport";
+                } else {
+                    return Err("Viewport bounds are empty for capture".into());
                 }
             }
             let longest = image.width().max(image.height());
@@ -1173,11 +1380,23 @@ impl OpenCADStudio {
                     image::imageops::FilterType::Triangle,
                 );
             }
+            let landmarks_px: Vec<Value> = if let Some((raw_width, raw_height)) = raw_viewport_size {
+                landmark_pixels_raw.into_iter().map(|(id, raw_x, raw_y)| {
+                    let x = raw_x * image.width() as f64 / raw_width as f64;
+                    let y = raw_y * image.height() as f64 / raw_height as f64;
+                    json!({"id":id,"pixel":[x,y],"inside":x >= 0.0 && y >= 0.0 &&
+                        x < image.width() as f64 && y < image.height() as f64})
+                }).collect()
+            } else { Vec::new() };
             image
                 .save_with_format(&path, image::ImageFormat::Png)
                 .map_err(|e| e.to_string())?;
+            let encoded_at = std::time::Instant::now();
+            let elapsed_ms = |start: std::time::Instant, end: std::time::Instant| {
+                end.saturating_duration_since(start).as_secs_f64() * 1000.0
+            };
             Ok(
-                json!({"path":path,"scope":actual_scope,"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"camera_revision":self.tabs[self.active_tab].scene.camera_generation}),
+                json!({"path":path,"scope":actual_scope,"overlay_policy":if actual_scope == "viewport" && self.control_capture_clean { "drawing_only" } else { "interactive" },"width":image.width(),"height":image.height(),"scale_factor":s.scale_factor,"projection_contract":if actual_scope == "viewport" { "viewport-rte-pixels-1" } else { "unavailable" },"landmarks_px":landmarks_px,"document_id":self.tabs[self.active_tab].id,"revision":self.tabs[self.active_tab].edit_revision,"geometry_revision":self.tabs[self.active_tab].scene.geometry_epoch,"camera_revision":self.tabs[self.active_tab].scene.camera_generation,"rendered_geometry_revision":rendered.unwrap().0,"rendered_camera_revision":rendered.unwrap().1,"render_fence":"shader_encoded_frame","timings":{"scope":"gui_process_monotonic","wait_for_encoded_frame_ms":elapsed_ms(requested_at,rendered_at),"frame_to_screenshot_callback_ms":elapsed_ms(rendered_at,screenshot_available_at),"encode_and_write_png_ms":elapsed_ms(screenshot_available_at,encoded_at),"total_ms":elapsed_ms(requested_at,encoded_at)}}),
             )
         })();
         match result {
@@ -1198,6 +1417,45 @@ pub(super) fn action_names() -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shutdown_rechecks_dirty_and_foreign_documents_in_gui() {
+        let mut app = OpenCADStudio::new_for_test();
+        request(&mut app, json!({"op":"new"}));
+        request(&mut app, json!({"op":"run","cmd":"LINE 0,0 1,0"}));
+        let root = std::env::current_dir().unwrap();
+        let refused = request(&mut app, json!({"op":"shutdown","request_id":"dirty-shutdown",
+            "owned_root":root}));
+        assert_eq!(refused["code"], "dirty_document");
+        let foreign = std::env::temp_dir().join(format!("ocs-foreign-{}.dwg", session_id()));
+        std::fs::write(&foreign, b"synthetic").unwrap();
+        app.tabs[app.active_tab].dirty = false;
+        app.tabs[app.active_tab].current_path = Some(foreign.clone());
+        let refused = request(&mut app, json!({"op":"shutdown","request_id":"foreign-shutdown",
+            "owned_root":root}));
+        assert_eq!(refused["code"], "foreign_document");
+        let _ = std::fs::remove_file(foreign);
+    }
+
+    #[test]
+    fn close_document_requires_saved_path_inside_owned_root() {
+        let mut app = OpenCADStudio::new_for_test();
+        request(&mut app, json!({"op":"new"}));
+        request(&mut app, json!({"op":"run","cmd":"LINE 0,0 1,0"}));
+        let root = std::env::current_dir().unwrap();
+        let refused = request(&mut app, json!({"op":"close_document","request_id":"close-dirty",
+            "policy":"require_saved","owned_root":root}));
+        assert_eq!(refused["code"], "dirty_document");
+        let foreign = std::env::temp_dir().join(format!("ocs-close-foreign-{}.dwg", session_id()));
+        std::fs::write(&foreign, b"synthetic").unwrap();
+        app.tabs[app.active_tab].dirty = false;
+        app.tabs[app.active_tab].current_path = Some(foreign.clone());
+        let refused = request(&mut app, json!({"op":"close_document","request_id":"close-foreign",
+            "policy":"require_saved","owned_root":root}));
+        assert_eq!(refused["code"], "foreign_document");
+        let _ = std::fs::remove_file(foreign);
+    }
+
     fn request(app: &mut OpenCADStudio, mut req: Value) -> Value {
         let state = app.control_state();
         req["protocol"] = json!(1);

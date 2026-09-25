@@ -2048,6 +2048,10 @@ pub struct Scene {
     /// Committed-segment wire drawn during multi-point commands (normal colour).
     pub interim_wire: Option<WireModel>,
     pub camera_generation: u64,
+    /// Last geometry/camera pair actually encoded by the viewport shader.
+    /// Capture waits for this pair before reading the window surface.
+    pub(crate) rendered_revision:
+        Arc<std::sync::Mutex<Option<(u64, u64, std::time::Instant)>>>,
     /// Incremented whenever geometry-affecting state changes (entities, selection,
     /// preview wires, layer visibility, layout). The GPU pipeline uses this to
     /// skip re-uploading unchanged geometry buffers every frame.
@@ -2610,6 +2614,7 @@ impl Scene {
             preview_text: vec![],
             interim_wire: None,
             camera_generation: 0,
+            rendered_revision: Arc::new(std::sync::Mutex::new(None)),
             geometry_epoch: GEOMETRY_EPOCH.fetch_add(1, Ordering::Relaxed),
             projection_bounds_epoch: std::cell::Cell::new(0),
             block_epoch: GEOMETRY_EPOCH.fetch_add(1, Ordering::Relaxed),

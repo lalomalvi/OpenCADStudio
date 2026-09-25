@@ -58,44 +58,68 @@ impl OpenCADStudio {
                         }
                     }
                     "ON" => {
+                        let mut affected = Vec::new();
                         for name in &parts[1..] {
                             if let Some(l) = self.tabs[i].scene.document.layers.get_mut(name) {
                                 l.flags.off = false;
                                 l.flags.frozen = false;
+                                affected.push(l.name.clone());
                             }
                         }
                         self.push_undo_snapshot(i, "LAYER ON");
                         self.tabs[i].dirty = true;
+                        if !affected.is_empty() {
+                            self.tabs[i].scene.invalidate_layer_dependencies(&affected);
+                            self.refresh_layer_panel();
+                        }
                         self.command_line.push_output(crate::t!("LAYER: layers turned on.").as_ref());
                     }
                     "OFF" => {
+                        let mut affected = Vec::new();
                         for name in &parts[1..] {
                             if let Some(l) = self.tabs[i].scene.document.layers.get_mut(name) {
                                 l.flags.off = true;
+                                affected.push(l.name.clone());
                             }
                         }
                         self.push_undo_snapshot(i, "LAYER OFF");
                         self.tabs[i].dirty = true;
+                        if !affected.is_empty() {
+                            self.tabs[i].scene.invalidate_layer_dependencies(&affected);
+                            self.refresh_layer_panel();
+                        }
                         self.command_line.push_output(crate::t!("LAYER: layers turned off.").as_ref());
                     }
                     "FREEZE" | "FR" => {
+                        let mut affected = Vec::new();
                         for name in &parts[1..] {
                             if let Some(l) = self.tabs[i].scene.document.layers.get_mut(name) {
                                 l.flags.frozen = true;
+                                affected.push(l.name.clone());
                             }
                         }
                         self.push_undo_snapshot(i, "LAYER FREEZE");
                         self.tabs[i].dirty = true;
+                        if !affected.is_empty() {
+                            self.tabs[i].scene.invalidate_layer_dependencies(&affected);
+                            self.refresh_layer_panel();
+                        }
                         self.command_line.push_output(crate::t!("LAYER: layers frozen.").as_ref());
                     }
                     "THAW" | "TH" => {
+                        let mut affected = Vec::new();
                         for name in &parts[1..] {
                             if let Some(l) = self.tabs[i].scene.document.layers.get_mut(name) {
                                 l.flags.frozen = false;
+                                affected.push(l.name.clone());
                             }
                         }
                         self.push_undo_snapshot(i, "LAYER THAW");
                         self.tabs[i].dirty = true;
+                        if !affected.is_empty() {
+                            self.tabs[i].scene.invalidate_layer_dependencies(&affected);
+                            self.refresh_layer_panel();
+                        }
                         self.command_line.push_output(crate::t!("LAYER: layers thawed.").as_ref());
                     }
                     "LOCK" | "LO" => {
@@ -1141,6 +1165,12 @@ impl OpenCADStudio {
                         let prop = parts.get(2).map(|s| s.to_lowercase()).unwrap_or_default();
                         let val_str = parts.get(3).map(|s| s.trim()).unwrap_or("");
                         if let Ok(val) = val_str.parse::<f64>() {
+                            if (prop == "dimdec" && (!val.is_finite() || val.fract() != 0.0 || !(0.0..=8.0).contains(&val)))
+                                || (prop == "dimzin" && (!val.is_finite() || val.fract() != 0.0 || !(0.0..=15.0).contains(&val)))
+                            {
+                                self.command_line.push_error(crate::t!("DIMSTYLE: invalid integer property value").as_ref());
+                                return Some(Task::none());
+                            }
                             let undo = self.begin_dim_style_undo(
                                 i,
                                 "DIMSTYLE SET",
@@ -1173,6 +1203,12 @@ impl OpenCADStudio {
                                     }
                                     "dimlfac" => {
                                         ds.dimlfac = val;
+                                    }
+                                    "dimdec" => {
+                                        ds.dimdec = val as i16;
+                                    }
+                                    "dimzin" => {
+                                        ds.dimzin = val as i16;
                                     }
                                     "dimdle" => {
                                         ds.dimdle = val;

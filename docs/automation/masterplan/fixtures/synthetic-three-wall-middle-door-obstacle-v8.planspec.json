@@ -1,0 +1,224 @@
+{
+  "schema_version": "planspec-8",
+  "units": "m",
+  "origin": {
+    "x": 0,
+    "y": 0
+  },
+  "nodes": [
+    {
+      "id": "a",
+      "x": 0,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "junction",
+      "x": 4,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "c",
+      "x": 4,
+      "y": 3,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "d",
+      "x": 7,
+      "y": 3,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "lines": [],
+  "circles": [],
+  "dimensions": [],
+  "topology": {
+    "contours": []
+  },
+  "walls": [
+    {
+      "id": "wall-horizontal",
+      "start": "a",
+      "end": "junction",
+      "thickness_m": 0.2,
+      "layer": "0",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "wall-vertical",
+      "start": "junction",
+      "end": "c",
+      "thickness_m": 0.2,
+      "layer": "0",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "wall-top",
+      "start": "c",
+      "end": "d",
+      "thickness_m": 0.2,
+      "layer": "0",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "openings": [
+    {
+      "id": "door-middle",
+      "wall_id": "wall-vertical",
+      "offset_m": 1.05,
+      "width_m": 0.9,
+      "kind": "door",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      },
+      "swing": {
+        "hinge": "start",
+        "side": "left",
+        "angle_deg": 90,
+        "leaf_height_m": 2.1
+      }
+    }
+  ],
+  "joins": [
+    {
+      "id": "join-corner",
+      "wall_a_id": "wall-horizontal",
+      "wall_a_end": "end",
+      "wall_b_id": "wall-vertical",
+      "wall_b_end": "start",
+      "style": "orthogonal_union",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "join-top",
+      "wall_a_id": "wall-vertical",
+      "wall_a_end": "end",
+      "wall_b_id": "wall-top",
+      "wall_b_end": "start",
+      "style": "orthogonal_union",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          100,
+          100
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "dimension_bindings": [],
+  "dimension_style": {
+    "name": "OCS_WALL_READABLE",
+    "text_height_m": 0.07,
+    "arrow_size_m": 0.035,
+    "gap_m": 0.015,
+    "scale": 1,
+    "measurement_factor": 1
+  },
+  "dimension_placements": [],
+  "obstacles": [
+    {
+      "id": "furniture-middle",
+      "kind": "furniture",
+      "min_x_m": 3.3,
+      "min_y_m": 1.4,
+      "max_x_m": 3.5,
+      "max_y_m": 1.6,
+      "base_z_m": 0,
+      "height_m": 0.8,
+      "source": {
+        "region_px": [
+          10,
+          0,
+          20,
+          10
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ]
+}

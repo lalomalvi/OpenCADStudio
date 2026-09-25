@@ -19,7 +19,7 @@ use printpdf::{
     BlendMode, BuiltinFont, Color, ExtendedGraphicsState, ExtendedGraphicsStateId, Line,
     LineCapStyle, LineDashPattern, LineJoinStyle, LinePoint, Mm, Op, PaintMode, PdfDocument,
     PdfFontHandle, PdfPage, PdfSaveOptions, Point, Polygon, PolygonRing, Pt, Rgb, TextItem,
-    WindingOrder,
+    TextRenderingMode, WindingOrder,
 };
 use std::path::Path;
 
@@ -28,6 +28,16 @@ use std::path::Path;
 pub struct PlotWire {
     pub wire: WireModel,
     pub draw_depth: f32,
+    /// Original, plain CAD TEXT for an invisible PDF search layer. The visible
+    /// SDF geometry remains authoritative; unsupported text has no overlay.
+    pub semantic_text: Option<PlotSemanticText>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlotSemanticText {
+    pub value: String,
+    pub origin: [f64; 2],
+    pub height: f64,
 }
 
 impl std::ops::Deref for PlotWire {
@@ -653,6 +663,9 @@ fn append_pdf_page(
                     plot_style,
                     options,
                 );
+                if let Some(semantic) = &wire.semantic_text {
+                    emit_semantic_text(&mut ops, semantic, ox, oy);
+                }
                 last_color = None;
                 last_lw = None;
                 last_dash = None;
@@ -877,6 +890,27 @@ fn append_pdf_page(
     let page = PdfPage::new(Mm(paper_w), Mm(paper_h), ops);
     doc.pages.push(page);
     Ok(())
+}
+
+/// PDF render mode 3 retains a searchable text object without painting it.
+/// Position and scale use the same page CTM as the visible vector glyphs.
+#[cfg(not(target_arch = "wasm32"))]
+fn emit_semantic_text(ops: &mut Vec<Op>, text: &PlotSemanticText, ox: f64, oy: f64) {
+    let x = text.origin[0] + ox;
+    let y = text.origin[1] + oy;
+    if !x.is_finite() || !y.is_finite() || !text.height.is_finite() || text.height <= 0.0 {
+        return;
+    }
+    ops.extend([
+        Op::SaveGraphicsState,
+        Op::StartTextSection,
+        Op::SetTextRenderingMode { mode: TextRenderingMode::Invisible },
+        Op::SetTextCursor { pos: Point::new(Mm(x as f32), Mm(y as f32)) },
+        Op::SetFont { font: PdfFontHandle::Builtin(BuiltinFont::Helvetica), size: Pt((text.height as f32) * MM_TO_PT) },
+        Op::ShowText { items: vec![TextItem::Text(text.value.clone())] },
+        Op::EndTextSection,
+        Op::RestoreGraphicsState,
+    ]);
 }
 
 /// Build a PDF dash array (in points) from a WireModel linetype pattern.
@@ -1720,6 +1754,7 @@ mod tests {
                 false,
             ),
             draw_depth: 0.0,
+            semantic_text: None,
         };
         let mut page = test_page(vec![w]);
         page.scale = 2.0;
@@ -1748,7 +1783,24 @@ mod tests {
                 ..WireModel::solid("t".into(), Vec::new(), WireModel::WHITE, false)
             },
             draw_depth: 0.0,
+            semantic_text: None,
         }
+    }
+
+    #[test]
+    fn semantic_text_uses_invisible_pdf_render_mode() {
+        let semantic = PlotSemanticText {
+            value: "TEST123".into(), origin: [20.0, 20.0], height: 10.0,
+        };
+        let mut ops = Vec::new();
+        emit_semantic_text(&mut ops, &semantic, 1.0, 2.0);
+        assert!(ops.iter().any(|op| matches!(op,
+            Op::SetTextRenderingMode { mode: TextRenderingMode::Invisible })));
+        assert!(ops.iter().any(|op| matches!(op,
+            Op::ShowText { items } if matches!(items.as_slice(), [TextItem::Text(value)] if value == "TEST123"))));
+        let mut wire = text_wire("TEST123", [20.0, 20.0, 0.0]);
+        wire.semantic_text = Some(semantic);
+        assert!(build_pdf_pages(&[test_page(vec![wire])], None).unwrap().starts_with(b"%PDF"));
     }
 
     // End-to-end: a page whose only content is SDF text produces a larger PDF

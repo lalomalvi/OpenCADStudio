@@ -1,0 +1,5 @@
+# Veredicto externo vinculado
+
+`external_l4_verdict.py` vincula la casilla sintética M7 con journal, sobre, evidencia CAD, puente ID→handle y reporte AutoCAD. Exige hashes de PlanSpec/DWG/L2 coincidentes, identidad del motor, entrada inalterada, `AUDIT` 0/0, unidades métricas, censo de cuatro LINE y cuatro geometrías por handle a `1e-6`. El positivo quedó `passed_scoped_l4` 4/4 y una copia con handle adversarial quedó `failed_scoped_l4` 3/4; G0–G10 siguen `pending`. Los reportes completos permanecen bajo `target/mcp-external/`.
+
+`cli_development_l4.py` aplica una comparación equivalente de cuatro extremos LINE a los DWG exploratorios generados desde imágenes. Vincula el PlanSpec, evidencia CAD anidada, hash del DWG y censo bruto de AutoCAD. Comprueba auditoría, unidades, capa, handle y coordenadas; una copia negativa con extremo cambiado falla. Los resultados de muestra son geométricos y acotados; no prueban toda la imagen ni certifican el modelo generador. Véanse [M7-CODEX-CLI-EXPLORATORY-V1.md](M7-CODEX-CLI-EXPLORATORY-V1.md) y [M7-CINCO-MUESTRAS-V1.md](M7-CINCO-MUESTRAS-V1.md).

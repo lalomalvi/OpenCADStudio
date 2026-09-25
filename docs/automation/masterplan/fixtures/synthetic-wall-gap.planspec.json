@@ -1,0 +1,84 @@
+{
+  "schema_version": "planspec-3",
+  "units": "m",
+  "origin": {
+    "x": 0,
+    "y": 0
+  },
+  "nodes": [
+    {
+      "id": "a",
+      "x": 0,
+      "y": 0,
+      "source": {
+        "region_px": [
+          0,
+          0,
+          10,
+          10
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    },
+    {
+      "id": "b",
+      "x": 4,
+      "y": 0,
+      "source": {
+        "region_px": [
+          40,
+          0,
+          50,
+          10
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "lines": [],
+  "circles": [],
+  "dimensions": [],
+  "topology": {
+    "contours": []
+  },
+  "walls": [
+    {
+      "id": "wall-south",
+      "start": "a",
+      "end": "b",
+      "thickness_m": 0.2,
+      "layer": "0",
+      "source": {
+        "region_px": [
+          0,
+          0,
+          50,
+          10
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ],
+  "openings": [
+    {
+      "id": "gap-south",
+      "wall_id": "wall-south",
+      "offset_m": 1,
+      "width_m": 0.9,
+      "kind": "clear",
+      "source": {
+        "region_px": [
+          10,
+          0,
+          20,
+          10
+        ],
+        "confidence": 1,
+        "classification": "measured"
+      }
+    }
+  ]
+}

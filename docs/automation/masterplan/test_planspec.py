@@ -1,0 +1,1132 @@
+import importlib.util
+import json
+import unittest
+from copy import deepcopy
+from pathlib import Path
+
+
+SPEC = importlib.util.spec_from_file_location("planspec", Path(__file__).with_name("planspec.py"))
+module = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(module)
+
+
+SOURCE = {"region_px": [0, 0, 10, 10], "confidence": 1, "classification": "measured"}
+
+
+def plan():
+    return {"schema_version": "planspec-1", "units": "m", "origin": {"x": 0, "y": 0},
+            "nodes": [{"id": "a", "x": 0, "y": 0, "source": SOURCE},
+                      {"id": "b", "x": 2.5, "y": 0, "source": SOURCE},
+                      {"id": "c", "x": 5, "y": 0, "source": SOURCE}],
+            "lines": [{"id": "wall-a", "start": "a", "end": "b", "layer": "0", "source": SOURCE},
+                      {"id": "wall-b", "start": "b", "end": "c", "layer": "0", "source": SOURCE}],
+            "circles": [], "dimensions": []}
+
+
+def bound_face_chain():
+    fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
+    value = json.loads(fixture.read_text(encoding="utf-8"))
+    value["dimensions"] = []
+    value["dimension_bindings"] = []
+    for name, x in (("a", 1), ("b", 2.0009),
+                    ("b-again", 2.0009), ("c", 3.0018)):
+        value["nodes"].append({"id": name, "x": x, "y": 0.1, "source": SOURCE})
+    stations = {item["id"]: item["x"] for item in value["nodes"]}
+    for name, start, end, metric in (("d-ab", "a", "b", 1),
+                                     ("d-ac", "a", "c", 2.0027),
+                                     ("d-bc", "b-again", "c", 1)):
+        value["dimensions"].append({
+            "id": name, "start": start, "end": end, "axis": "x",
+            "reference_type": "face", "value": metric, "text": str(metric),
+            "source": SOURCE})
+        value["dimension_bindings"].append({
+            "dimension_id": name,
+            "start_ref": {"wall_id": "wall-1", "side": "left",
+                          "station_m": stations[start]},
+            "end_ref": {"wall_id": "wall-1", "side": "left",
+                        "station_m": stations[end]},
+            "source": SOURCE})
+    return value
+
+
+class PlanSpecTests(unittest.TestCase):
+    def test_same_plan_has_same_commands_hash_regardless_of_collection_order(self):
+        first = module.dry_run(plan())
+        reversed_plan = plan()
+        reversed_plan["lines"].reverse()
+        reversed_plan["nodes"].reverse()
+        self.assertEqual(first["commands_sha256"], module.dry_run(reversed_plan)["commands_sha256"])
+        self.assertEqual(first["geometry_qa"], module.dry_run(reversed_plan)["geometry_qa"])
+        self.assertEqual(first["commands"][0]["command"], "LINE 0,0 2.5,0")
+        self.assertEqual(first["execution_steps"][0]["command"], "SETVAR INSUNITS 6")
+        self.assertEqual(first["dwg_unit_profile"], {"plan_units": "m", "insunits": 6})
+        self.assertTrue(first["executable"])
+
+    def test_different_references_do_not_create_false_conflict(self):
+        value = plan()
+        value["dimensions"] = [
+            {"id": "d1", "start": "a", "end": "b", "axis": "x", "reference_type": "face",
+             "value": 2.5, "text": "2.50", "source": SOURCE},
+            {"id": "d2", "start": "b", "end": "c", "axis": "x", "reference_type": "axis",
+             "value": 2.5, "text": "2.50", "source": SOURCE}]
+        result = module.dry_run(value)
+        self.assertEqual(result["unsupported"], ["native_dimension"])
+        self.assertFalse(result["executable"])
+        self.assertEqual(result["dimension_graph"]["status"], "satisfied")
+
+    def test_cumulative_dimension_chain_conflict_is_localized(self):
+        value = plan()
+        value["nodes"][1]["x"] = 1.0009
+        value["nodes"][2]["x"] = 2.0018
+        value["dimensions"] = [
+            {"id": "d-ab", "start": "a", "end": "b", "axis": "x", "reference_type": "face",
+             "value": 1, "text": "1.00", "source": SOURCE},
+            {"id": "d-ac", "start": "a", "end": "c", "axis": "x", "reference_type": "face",
+             "value": 2.0027, "text": "2.0027", "source": SOURCE},
+            {"id": "d-bc", "start": "b", "end": "c", "axis": "x", "reference_type": "face",
+             "value": 1, "text": "1.00", "source": SOURCE}]
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["status"], "conflict")
+        self.assertEqual(report["conflicts"][0]["dimension_id"], "d-bc")
+        with self.assertRaisesRegex(module.PlanError, "Dimension chain conflict: d-bc"):
+            module.dry_run(value)
+        value["dimensions"][1]["reference_type"] = "axis"
+        self.assertEqual(module.analyze_dimension_graph(value)["status"], "satisfied")
+
+    def test_single_aligned_dimension_is_solved(self):
+        value = plan()
+        value["dimensions"] = [{"id": "d-aligned", "start": "a", "end": "b", "axis": "aligned",
+                                "reference_type": "face", "value": 2.5, "text": "2.50",
+                                "source": SOURCE}]
+        report = module.dry_run(value)["dimension_graph"]
+        self.assertEqual(report["schema_version"], "planspec-dimension-graph-3")
+        self.assertEqual(report["status"], "satisfied")
+        self.assertEqual(report["unresolved_aligned"], [])
+
+    def test_aligned_triangle_closes_without_false_conflict(self):
+        value = plan()
+        value["nodes"][1].update(x=3, y=0)
+        value["nodes"][2].update(x=3, y=4)
+        value["dimensions"] = [
+            {"id": name, "start": start, "end": end, "axis": "aligned",
+             "reference_type": "face", "value": metric, "text": str(metric),
+             "source": SOURCE}
+            for name, start, end, metric in (("d-ab", "a", "b", 3),
+                                             ("d-bc", "b", "c", 4),
+                                             ("d-ac", "a", "c", 5))]
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["status"], "satisfied")
+        self.assertEqual(report["components"], 1)
+
+    def test_aligned_cycle_accumulates_conflict_by_reference_type(self):
+        value = plan()
+        value["nodes"][1].update(x=0.60054, y=0.80072)
+        value["nodes"][2].update(x=1.20108, y=1.60144)
+        value["dimensions"] = [
+            {"id": name, "start": start, "end": end, "axis": "aligned",
+             "reference_type": "face", "value": metric, "text": str(metric),
+             "source": SOURCE}
+            for name, start, end, metric in (("d-ab", "a", "b", 1),
+                                             ("d-ac", "a", "c", 2.0027),
+                                             ("d-bc", "b", "c", 1))]
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["status"], "conflict")
+        self.assertEqual(report["conflicts"][0]["dimension_id"], "d-bc")
+        self.assertEqual(report["conflicts"][0]["axis"], "aligned")
+        with self.assertRaisesRegex(module.PlanError, "Dimension chain conflict"):
+            module.dry_run(value)
+        value["dimensions"][1]["reference_type"] = "axis"
+        self.assertEqual(module.analyze_dimension_graph(value)["status"], "satisfied")
+
+    def test_bound_face_identity_joins_distinct_node_ids(self):
+        value = bound_face_chain()
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["vertex_identity"], "wall_side_station")
+        self.assertEqual(report["status"], "conflict")
+        self.assertEqual(report["conflicts"][0]["dimension_id"], "d-bc")
+        with self.assertRaisesRegex(module.PlanError, "Dimension chain conflict"):
+            module.dry_run(value)
+
+    def test_coincident_nodes_on_distinct_wall_faces_do_not_join(self):
+        value = bound_face_chain()
+        value["nodes"].extend([
+            {"id": "wall2-start", "x": 0, "y": 0.2, "source": SOURCE},
+            {"id": "wall2-end", "x": 4, "y": 0.2, "source": SOURCE}])
+        second = deepcopy(value["walls"][0])
+        second.update(id="wall-2", start="wall2-start", end="wall2-end")
+        value["walls"].append(second)
+        binding = value["dimension_bindings"][2]
+        binding["start_ref"].update(wall_id="wall-2", side="right")
+        binding["end_ref"].update(wall_id="wall-2", side="right")
+        report = module.analyze_dimension_graph(value)
+        self.assertEqual(report["status"], "satisfied")
+        self.assertEqual(report["components"], 2)
+
+    def test_label_over_wrong_geometry_is_rejected(self):
+        value = plan()
+        value["nodes"][1]["x"] = 2.54
+        value["dimensions"] = [{"id": "d1", "start": "a", "end": "b", "axis": "x",
+                                 "reference_type": "face", "value": 2.5, "text": "2.50",
+                                 "source": SOURCE}]
+        with self.assertRaisesRegex(module.PlanError, "differs from referenced geometry"):
+            module.dry_run(value)
+
+    def test_mixed_units_unknown_fields_and_dangling_references_fail(self):
+        value = plan()
+        value["units"] = "mm"
+        with self.assertRaises(module.PlanError):
+            module.validate(value)
+        value = plan()
+        value["unexpected"] = True
+        with self.assertRaises(module.PlanError):
+            module.validate(value)
+        value = plan()
+        value["lines"][0]["end"] = "missing"
+        with self.assertRaises(module.PlanError):
+            module.validate(value)
+
+    def test_nonfinite_duplicate_and_uncompiled_layer_fail_closed(self):
+        value = plan()
+        value["nodes"][0]["x"] = float("nan")
+        with self.assertRaises(module.PlanError):
+            module.validate(value)
+        value = plan()
+        value["lines"][1]["id"] = "wall-a"
+        with self.assertRaises(module.PlanError):
+            module.validate(value)
+        value = plan()
+        value["lines"][0]["layer"] = "A-WALL"
+        self.assertEqual(module.dry_run(value)["unsupported"], ["layer_assignment"])
+        compiled = module.dry_run(value, capabilities={"layer_assignment"})
+        self.assertTrue(compiled["executable"])
+        self.assertEqual([item["command"] for item in compiled["execution_steps"]],
+                         ["SETVAR INSUNITS 6", "LAYER NEW A-WALL", "CLAYER A-WALL", "LINE 0,0 2.5,0",
+                          "CLAYER 0", "LINE 2.5,0 5,0"])
+
+    def test_geometry_qa_detects_reversed_duplicate_overlap_and_open_ends(self):
+        value = plan()
+        value["lines"].extend([
+            {"id": "wall-reversed", "start": "b", "end": "a", "layer": "0", "source": SOURCE},
+            {"id": "wall-overlap", "start": "a", "end": "c", "layer": "0", "source": SOURCE}])
+        value["circles"] = [
+            {"id": "circle-a", "center": "a", "radius": 1, "layer": "0", "source": SOURCE},
+            {"id": "circle-b", "center": "a", "radius": 1, "layer": "0", "source": SOURCE}]
+        report = module.dry_run(value)["geometry_qa"]
+        self.assertEqual(report["status"], "review_required")
+        self.assertIn(["wall-a", "wall-reversed"], report["duplicate_lines"])
+        self.assertIn(["wall-a", "wall-overlap"], report["overlapping_lines"])
+        self.assertEqual(report["duplicate_circles"], [["circle-a", "circle-b"]])
+        self.assertEqual(report["open_line_endpoints"], [])
+
+    def test_geometry_qa_separates_crossing_t_junction_and_open_chain(self):
+        value = plan()
+        value["nodes"].extend([
+            {"id": "d", "x": 1, "y": -1, "source": SOURCE},
+            {"id": "e", "x": 1, "y": 1, "source": SOURCE},
+            {"id": "f", "x": 1.25, "y": 1, "source": SOURCE},
+            {"id": "g", "x": 1.25, "y": 0, "source": SOURCE}])
+        value["lines"].extend([
+            {"id": "cross", "start": "d", "end": "e", "layer": "0", "source": SOURCE},
+            {"id": "tee", "start": "g", "end": "f", "layer": "0", "source": SOURCE}])
+        report = module.analyze_geometry(value)
+        self.assertIn(["cross", "wall-a"], report["interior_crossings"])
+        self.assertIn(["tee", "wall-a"], report["t_junctions"])
+        self.assertGreater(len(report["open_line_endpoints"]), 0)
+        self.assertEqual(report["scope"], "2d_line_circle_primitives_no_contour_semantics")
+
+    def test_geometry_qa_classifies_line_circle_and_circle_circle_contacts(self):
+        value = plan()
+        value["lines"] = value["lines"][:1]
+        value["nodes"].extend([
+            {"id": "on", "x": 1, "y": 0, "source": SOURCE},
+            {"id": "above", "x": 1, "y": 1, "source": SOURCE},
+            {"id": "edge", "x": 3.5, "y": 0, "source": SOURCE},
+            {"id": "near", "x": 1.5, "y": 0, "source": SOURCE},
+            {"id": "touch", "x": 2, "y": 0, "source": SOURCE},
+            {"id": "far", "x": 10, "y": 0, "source": SOURCE}])
+        value["circles"] = [
+            {"id": identifier, "center": center, "radius": radius,
+             "layer": "0", "source": SOURCE}
+            for identifier, center, radius in (
+                ("c-secant", "on", 0.5), ("c-tangent", "above", 1),
+                ("c-endpoint", "edge", 1), ("c-overlap", "near", 0.5),
+                ("c-touch", "touch", 0.5), ("c-away", "far", 0.5))]
+        report = module.analyze_geometry(value)
+        self.assertEqual(report["schema_version"], "planspec-geometry-qa-2")
+        self.assertIn({"line_id": "wall-a", "circle_id": "c-secant", "kind": "secant"},
+                      report["line_circle_intersections"])
+        self.assertIn({"line_id": "wall-a", "circle_id": "c-tangent", "kind": "tangent"},
+                      report["line_circle_intersections"])
+        self.assertIn({"line_id": "wall-a", "circle_id": "c-endpoint", "kind": "one_on_segment"},
+                      report["line_circle_intersections"])
+        self.assertNotIn("c-away", [item["circle_id"] for item in report["line_circle_intersections"]])
+        self.assertIn({"circle_ids": ["c-overlap", "c-secant"], "kind": "secant"},
+                      report["circle_circle_intersections"])
+        self.assertIn({"circle_ids": ["c-secant", "c-touch"], "kind": "tangent"},
+                      report["circle_circle_intersections"])
+        reverse = deepcopy(value)
+        reverse["nodes"].reverse()
+        reverse["circles"].reverse()
+        self.assertEqual(report, module.analyze_geometry(reverse))
+
+    def test_v2_explicit_contour_preserves_compiled_geometry(self):
+        value = plan()
+        value["nodes"].append({"id": "d", "x": 0, "y": 2, "source": SOURCE})
+        value["nodes"][2]["x"] = 2.5
+        value["nodes"][2]["y"] = 2
+        value["lines"].extend([
+            {"id": "wall-c", "start": "c", "end": "d", "layer": "0", "source": SOURCE},
+            {"id": "wall-d", "start": "d", "end": "a", "layer": "0", "source": SOURCE}])
+        value["schema_version"] = "planspec-2"
+        value["topology"] = {"contours": [{"id": "room-1", "role": "room",
+            "line_ids": ["wall-a", "wall-b", "wall-c", "wall-d"], "source": SOURCE}]}
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["topology"]["contours"][0]["signed_area_m2"], "5.0")
+        self.assertEqual(len(result["commands"]), 4)
+        reversed_nodes = dict(value)
+        reversed_nodes["nodes"] = list(reversed(value["nodes"]))
+        self.assertEqual(result["commands_sha256"], module.dry_run(reversed_nodes)["commands_sha256"])
+
+        broken = dict(value)
+        broken["topology"] = {"contours": [{**value["topology"]["contours"][0],
+            "line_ids": ["wall-a", "wall-c", "wall-b", "wall-d"]}]}
+        with self.assertRaisesRegex(module.PlanError, "not a closed ordered chain"):
+            module.dry_run(broken)
+
+    def test_v2_contour_rejects_crossing_and_missing_reference(self):
+        value = plan()
+        value["nodes"][1]["x"] = 3
+        value["nodes"][2]["x"] = 0
+        value["nodes"][2]["y"] = 2
+        value["nodes"].append({"id": "d", "x": 2, "y": 2, "source": SOURCE})
+        value["lines"].extend([
+            {"id": "wall-c", "start": "c", "end": "d", "layer": "0", "source": SOURCE},
+            {"id": "wall-d", "start": "d", "end": "a", "layer": "0", "source": SOURCE}])
+        value["schema_version"] = "planspec-2"
+        value["topology"] = {"contours": [{"id": "room-1", "role": "room",
+            "line_ids": ["wall-a", "wall-b", "wall-c", "wall-d"], "source": SOURCE}]}
+        with self.assertRaisesRegex(module.PlanError, "crosses itself"):
+            module.validate(value)
+        value["topology"]["contours"][0]["line_ids"][2] = "unknown"
+        with self.assertRaisesRegex(module.PlanError, "dangling line"):
+            module.validate(value)
+
+    def test_v3_wall_openings_validate_but_do_not_emit_unproven_cad(self):
+        value = plan()
+        value["schema_version"] = "planspec-3"
+        value["topology"] = {"contours": []}
+        value["walls"] = [{"id": "wall-1", "start": "a", "end": "c",
+                           "thickness_m": 0.2, "layer": "0", "source": SOURCE}]
+        value["openings"] = [
+            {"id": "door-1", "wall_id": "wall-1", "offset_m": 1,
+             "width_m": 0.9, "kind": "door", "source": SOURCE},
+            {"id": "window-1", "wall_id": "wall-1", "offset_m": 3,
+             "width_m": 1, "kind": "window", "source": SOURCE}]
+        result = module.dry_run(value)
+        self.assertEqual(result["architecture"]["status"], "validated")
+        self.assertEqual(result["architecture"]["walls"][0]["length_m"], "5.0")
+        self.assertEqual(result["unsupported"], ["opening_compilation", "wall_compilation"])
+        self.assertFalse(result["executable"])
+        self.assertEqual(len(result["commands"]), 2)
+
+    def test_v3_rejects_opening_overlap_outside_and_dangling_wall(self):
+        value = plan()
+        value["schema_version"] = "planspec-3"
+        value["topology"] = {"contours": []}
+        value["walls"] = [{"id": "wall-1", "start": "a", "end": "c",
+                           "thickness_m": 0.2, "layer": "0", "source": SOURCE}]
+        value["openings"] = [
+            {"id": "door-1", "wall_id": "wall-1", "offset_m": 1,
+             "width_m": 1, "kind": "door", "source": SOURCE},
+            {"id": "door-2", "wall_id": "wall-1", "offset_m": 1.5,
+             "width_m": 1, "kind": "door", "source": SOURCE}]
+        with self.assertRaisesRegex(module.PlanError, "overlap or touch"):
+            module.validate(value)
+        value["openings"][1]["offset_m"] = 4.5
+        with self.assertRaisesRegex(module.PlanError, "beyond wall"):
+            module.validate(value)
+        value["openings"][1]["offset_m"] = 3
+        value["openings"][1]["wall_id"] = "absent"
+        with self.assertRaisesRegex(module.PlanError, "Opening reference"):
+            module.validate(value)
+
+    def test_v3_single_unopened_wall_compiles_four_traceable_edges(self):
+        value = plan()
+        value["schema_version"] = "planspec-3"
+        value["lines"] = []
+        value["topology"] = {"contours": []}
+        value["walls"] = [{"id": "wall-1", "start": "a", "end": "c",
+                           "thickness_m": 0.2, "layer": "0", "source": SOURCE}]
+        value["openings"] = []
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_unopened_wall", "generated_parts": 4})
+        self.assertEqual([item["command"] for item in result["commands"]], [
+            "LINE 0,0.1 5,0.1", "LINE 5,0.1 5,-0.1",
+            "LINE 5,-0.1 0,-0.1", "LINE 0,-0.1 0,0.1"])
+        self.assertEqual([item["source_id"] for item in result["commands"]], ["wall-1"] * 4)
+        self.assertEqual(len({item["planspec_id"] for item in result["commands"]}), 4)
+
+    def test_v3_clear_opening_compiles_gap_and_jambs_without_door_symbol(self):
+        value = plan()
+        value["schema_version"] = "planspec-3"
+        value["lines"] = []
+        value["topology"] = {"contours": []}
+        value["walls"] = [{"id": "wall-1", "start": "a", "end": "c",
+                           "thickness_m": 0.2, "layer": "0", "source": SOURCE}]
+        value["openings"] = [{"id": "gap-1", "wall_id": "wall-1", "offset_m": 1,
+                              "width_m": 0.9, "kind": "clear", "source": SOURCE}]
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_clear_opening_wall", "generated_parts": 8})
+        self.assertEqual([item["command"] for item in result["commands"]], [
+            "LINE 0,0.1 1,0.1", "LINE 1.9,0.1 5,0.1",
+            "LINE 0,-0.1 1,-0.1", "LINE 1.9,-0.1 5,-0.1",
+            "LINE 0,0.1 0,-0.1", "LINE 5,0.1 5,-0.1",
+            "LINE 1,0.1 1,-0.1", "LINE 1.9,0.1 1.9,-0.1"])
+        self.assertEqual([item["source_id"] for item in result["commands"]][-2:],
+                         ["gap-1", "gap-1"])
+        value["openings"][0]["kind"] = "door"
+        self.assertFalse(module.dry_run(value)["executable"])
+        self.assertEqual(module.dry_run(value)["unsupported"],
+                         ["opening_compilation", "wall_compilation"])
+
+    def test_v4_door_swing_is_explicit_and_compiles_one_symbol(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertEqual(result["architecture"]["openings"][0]["swing"],
+                         {"hinge": "start", "side": "left", "angle_deg": 90})
+        self.assertEqual(result["unsupported"], [])
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_door_wall", "generated_parts": 10})
+        self.assertEqual([item["command"] for item in result["commands"][-2:]],
+                         ["LINE 1,0.1 1,1", "ARC 1.9,0.1 1.636396,0.736396 1,1"])
+        self.assertEqual([item["source_id"] for item in result["commands"][-2:]],
+                         ["door-south", "door-south"])
+        self.assertEqual(len({item["planspec_id"] for item in result["commands"]}),
+                         len(result["commands"]))
+        for bad in ({"hinge": "middle", "side": "left", "angle_deg": 90},
+                    {"hinge": "start", "side": "inside", "angle_deg": 90},
+                    {"hinge": "start", "side": "left", "angle_deg": 120},
+                    {"hinge": "start", "side": "left", "angle_deg": "90"}):
+            changed = deepcopy(value)
+            changed["openings"][0]["swing"] = bad
+            with self.assertRaises(module.PlanError):
+                module.validate(changed)
+        changed = deepcopy(value)
+        del changed["openings"][0]["swing"]
+        with self.assertRaises(module.PlanError):
+            module.validate(changed)
+
+    def test_door_open_leaf_crossing_is_reviewed_by_source_category(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        clear = module.dry_run(value)["door_clearance_qa"]
+        self.assertEqual(clear["status"], "clear")
+        reversed_door = deepcopy(value)
+        reversed_door["openings"][0]["swing"] = {"hinge": "end", "side": "right",
+                                                "angle_deg": 90}
+        reversed_door["nodes"] += [
+            {"id": "right-a", "x": 1.5, "y": -0.5, "source": SOURCE},
+            {"id": "right-b", "x": 1.6, "y": -0.5, "source": SOURCE}]
+        reversed_door["lines"].append({"id": "right-obstacle", "start": "right-a",
+                                       "end": "right-b", "layer": "0", "source": SOURCE})
+        self.assertEqual(module.dry_run(reversed_door)["door_clearance_qa"]["sweep_intersections"],
+                         [{"door_id": "door-south", "line_id": "right-obstacle",
+                           "line_category": "unclassified"}])
+        value["nodes"] += [
+            {"id": "obstacle-a", "x": 0.5, "y": 0.5, "source": SOURCE},
+            {"id": "obstacle-b", "x": 1.5, "y": 0.5, "source": SOURCE}]
+        value["lines"].append({"id": "candidate-obstacle", "start": "obstacle-a",
+                               "end": "obstacle-b", "layer": "0", "source": SOURCE})
+        report = module.dry_run(value)["door_clearance_qa"]
+        self.assertEqual(report["status"], "review_required")
+        self.assertEqual(report["strict_crossings"], [{"door_id": "door-south",
+            "line_id": "candidate-obstacle", "line_category": "unclassified"}])
+        self.assertEqual(report["sweep_intersections"], report["strict_crossings"])
+        value["nodes"][4].update(x=1.2, y=0.5)
+        value["nodes"][5].update(x=1.3, y=0.5)
+        swept = module.dry_run(value)["door_clearance_qa"]
+        self.assertEqual(swept["strict_crossings"], [])
+        self.assertEqual(swept["sweep_intersections"], [{"door_id": "door-south",
+            "line_id": "candidate-obstacle", "line_category": "unclassified"}])
+        value["nodes"][4].update(x=1.2, y=1.0)
+        value["nodes"][5].update(x=1.3, y=1.0)
+        self.assertEqual(module.dry_run(value)["door_clearance_qa"]["status"], "clear")
+        value["lines"].pop()
+        value["nodes"][2]["y"] = 0.5
+        value["nodes"][3]["y"] = 0.5
+        result = module.dry_run(value)
+        contour = result["door_clearance_qa"]
+        self.assertEqual(contour["strict_crossings"], [{"door_id": "door-south",
+            "line_id": "outline-c", "line_category": "contour"}])
+        self.assertEqual(contour["sweep_intersections"], contour["strict_crossings"])
+        self.assertEqual(result["quality_blockers"], ["door_swing_sweep_crosses_contour"])
+        self.assertFalse(result["executable"])
+
+    def test_v8_typed_obstacle_height_kind_and_containment(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        value = json.loads((fixtures / "synthetic-door-obstacle-v8.planspec.json")
+                           .read_text(encoding="utf-8"))
+        schema = json.loads((Path(__file__).with_name("planspec-8.schema.json"))
+                            .read_text(encoding="utf-8"))
+        self.assertEqual(schema["properties"]["schema_version"]["const"], "planspec-8")
+        self.assertIn("obstacles", schema["required"])
+        blocked = module.dry_run(value)
+        self.assertEqual(blocked["quality_blockers"], ["door_sweep_hits_typed_obstacle"])
+        self.assertEqual(blocked["door_clearance_qa"]["typed_obstacle_intersections"],
+                         [{"door_id": "door-south", "obstacle_id": "furniture-a",
+                           "kind": "furniture", "source_classification": "measured",
+                           "source_confidence": 1, "disposition": "blocking"}])
+        self.assertFalse(blocked["executable"])
+        above = deepcopy(value)
+        above["obstacles"][0]["base_z_m"] = 2.1
+        self.assertEqual(module.dry_run(above)["door_clearance_qa"]["status"], "clear")
+        self.assertTrue(module.dry_run(above)["executable"])
+        self.assertEqual(blocked["commands_sha256"], module.dry_run(above)["commands_sha256"])
+        annotation = deepcopy(value)
+        annotation["obstacles"][0]["kind"] = "annotation"
+        annotated = module.dry_run(annotation)
+        self.assertEqual(annotated["quality_blockers"], [])
+        self.assertEqual(annotated["door_clearance_qa"]["typed_obstacle_intersections"][0]
+                         ["disposition"], "nonphysical")
+        uncertain = deepcopy(value)
+        uncertain["obstacles"][0]["source"] = {**uncertain["obstacles"][0]["source"],
+                                                "classification": "inferred"}
+        self.assertEqual(module.dry_run(uncertain)["door_clearance_qa"]
+                         ["typed_obstacle_intersections"][0]["disposition"], "review_blocked")
+        self.assertFalse(module.dry_run(uncertain)["executable"])
+        enclosing = deepcopy(value)
+        enclosing["obstacles"][0].update(min_x_m=0.5, min_y_m=0,
+                                         max_x_m=2.5, max_y_m=1.5)
+        self.assertEqual(module.dry_run(enclosing)["quality_blockers"],
+                         ["door_sweep_hits_typed_obstacle"])
+        for field, bad in (("kind", "unknown"), ("height_m", 0),
+                           ("base_z_m", -0.1), ("max_x_m", 1.2)):
+            invalid = deepcopy(value)
+            invalid["obstacles"][0][field] = bad
+            with self.assertRaises(module.PlanError):
+                module.validate(invalid)
+        missing_height = deepcopy(value)
+        del missing_height["openings"][0]["swing"]["leaf_height_m"]
+        with self.assertRaises(module.PlanError):
+            module.validate(missing_height)
+
+    def test_v8_two_doors_compile_deterministically_and_qa_each_door(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        value = json.loads((fixtures / "synthetic-two-door-wall-v8.planspec.json")
+                           .read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_multi_door_wall", "generated_parts": 16})
+        self.assertEqual(len(result["commands"]), 20)
+        self.assertEqual([item["command"] for item in result["commands"]
+                          if item.get("part") == "swing_arc"],
+                         ["ARC 1.9,0.1 1.636396103,0.736396103 1,1",
+                          "ARC 3,0.1 2.765685425,0.665685425 2.2,0.9"])
+        self.assertEqual(result["door_clearance_qa"]["status"], "clear")
+        reversed_order = deepcopy(value)
+        reversed_order["openings"].reverse()
+        self.assertEqual(module.dry_run(reversed_order)["commands_sha256"],
+                         result["commands_sha256"])
+        overlap = deepcopy(value)
+        overlap["openings"][1]["offset_m"] = 1.7
+        with self.assertRaises(module.PlanError):
+            module.dry_run(overlap)
+        obstacle = deepcopy(value)
+        obstacle["obstacles"] = json.loads((fixtures / "synthetic-door-obstacle-v8.planspec.json")
+                                           .read_text(encoding="utf-8"))["obstacles"]
+        obstacle["obstacles"][0].update(min_x_m=2.4, max_x_m=2.5)
+        blocked = module.dry_run(obstacle)
+        self.assertEqual(blocked["quality_blockers"], ["door_sweep_hits_typed_obstacle"])
+        self.assertEqual([item["door_id"] for item in blocked["door_clearance_qa"]
+                          ["typed_obstacle_intersections"]], ["door-east"])
+
+    def test_v4_window_elevation_and_kind_specific_fields(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        opening = value["openings"][0]
+        opening["kind"] = "window"
+        opening["elevation"] = {"sill_m": 0.8, "head_m": 2.1}
+        del opening["swing"]
+        result = module.dry_run(value)
+        self.assertEqual(result["architecture"]["openings"][0]["elevation"],
+                         {"sill_m": 0.8, "head_m": 2.1})
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_window_wall", "generated_parts": 10})
+        self.assertEqual([item["command"] for item in result["commands"][-2:]],
+                         ["LINE 1,0.05,0.8 1.9,0.05,0.8",
+                          "LINE 1,-0.05,2.1 1.9,-0.05,2.1"])
+        changed_height = deepcopy(value)
+        changed_height["openings"][0]["elevation"]["head_m"] = 2.2
+        self.assertNotEqual(module.dry_run(changed_height)["commands_sha256"],
+                            result["commands_sha256"])
+        multi = deepcopy(value)
+        second = deepcopy(multi["openings"][0])
+        second.update(id="window-second", offset_m=2.2, width_m=0.8)
+        multi["openings"].append(second)
+        self.assertFalse(module.dry_run(multi)["executable"])
+        for sill, head in ((-0.1, 2.1), (1.2, 1.2), (2.2, 1.2)):
+            changed = deepcopy(value)
+            changed["openings"][0]["elevation"] = {"sill_m": sill, "head_m": head}
+            with self.assertRaises(module.PlanError):
+                module.validate(changed)
+        opening["kind"] = "clear"
+        with self.assertRaises(module.PlanError):
+            module.validate(value)
+
+    def test_v4_door_hinge_and_side_select_open_leaf_endpoint(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        base = json.loads(fixture.read_text(encoding="utf-8"))
+        expected = {("start", "left"): "LINE 1,0.1 1,1",
+                    ("start", "right"): "LINE 1,-0.1 1,-1",
+                    ("end", "left"): "LINE 1.9,0.1 1.9,1",
+                    ("end", "right"): "LINE 1.9,-0.1 1.9,-1"}
+        for (hinge, side), leaf in expected.items():
+            value = deepcopy(base)
+            value["openings"][0]["swing"].update(hinge=hinge, side=side)
+            result = module.dry_run(value)
+            self.assertTrue(result["executable"])
+            self.assertEqual(result["commands"][-2]["command"], leaf)
+            self.assertTrue(result["commands"][-1]["command"].startswith("ARC "))
+        multi = deepcopy(base)
+        second = deepcopy(multi["openings"][0])
+        second.update(id="door-second", offset_m=2.2, width_m=0.8)
+        multi["openings"].append(second)
+        self.assertFalse(module.dry_run(multi)["executable"])
+        self.assertEqual(module.dry_run(multi)["unsupported"],
+                         ["opening_compilation", "wall_compilation"])
+
+    def test_v5_explicit_orthogonal_join_compiles_closed_union_outline(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-join.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertEqual(result["architecture"]["joins"][0]["id"], "join-corner")
+        self.assertEqual(result["unsupported"], [])
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_orthogonal_union_two_walls", "generated_parts": 8})
+        edges = [item["command"].split()[1:] for item in result["commands"]]
+        self.assertEqual(len(edges), 8)
+        self.assertTrue(all(end == edges[(index + 1) % 8][0]
+                            for index, (_, end) in enumerate(edges)))
+        vertices = [tuple(map(float, start.split(","))) for start, _ in edges]
+        doubled_area = sum(vertices[index][0] * vertices[(index + 1) % 8][1] -
+                           vertices[(index + 1) % 8][0] * vertices[index][1]
+                           for index in range(8))
+        self.assertAlmostEqual(abs(doubled_area) / 2, 1.39, places=6)
+        self.assertEqual([item["source_id"] for item in result["commands"]],
+                         ["wall-horizontal"] * 3 + ["wall-vertical"] * 3 + ["join-corner"] * 2)
+        changed = deepcopy(value)
+        changed["nodes"][2]["x"] = 4.1
+        with self.assertRaisesRegex(module.PlanError, "perpendicular"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["walls"][1]["thickness_m"] = 0.3
+        with self.assertRaisesRegex(module.PlanError, "equal thickness"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["joins"][0]["wall_b_end"] = "end"
+        with self.assertRaisesRegex(module.PlanError, "do not coincide"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["joins"][0]["wall_a_id"] = "missing"
+        with self.assertRaisesRegex(module.PlanError, "reference"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["nodes"][2]["y"] = 0.05
+        with self.assertRaisesRegex(module.PlanError, "too short"):
+            module.dry_run(changed)
+
+    def test_v5_joined_wall_one_door_preserves_gap_jamb_and_swing(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-joined-door.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8-sig"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_joined_wall_single_door", "generated_parts": 14})
+        commands = {item["planspec_id"]: item["command"] for item in result["commands"]}
+        self.assertEqual(len(commands), 14)
+        self.assertEqual(commands["door-horizontal__jamb_start"],
+                         "LINE 1.9,-0.1 1.9,0.1")
+        self.assertEqual(commands["door-horizontal__jamb_end"],
+                         "LINE 1,-0.1 1,0.1")
+        self.assertEqual(commands["door-horizontal__leaf_open"],
+                         "LINE 1,0.1 1,1")
+        self.assertTrue(commands["door-horizontal__swing_arc"].startswith("ARC 1.9,0.1 "))
+        self.assertNotIn("join-corner__outline_0", commands)
+        self.assertNotIn("join-corner__outline_2", commands)
+        near_join = deepcopy(value)
+        near_join["openings"][0]["offset_m"] = 3
+        with self.assertRaisesRegex(module.PlanError, "clear distance from join"):
+            module.dry_run(near_join)
+        second = json.loads((fixture.with_name("synthetic-joined-door-second.planspec.json"))
+                            .read_text(encoding="utf-8"))
+        second_result = module.dry_run(second)
+        self.assertTrue(second_result["executable"])
+        self.assertEqual(second_result["wall_compilation"]["generated_parts"], 14)
+        second_commands = {item["planspec_id"]: item["command"]
+                           for item in second_result["commands"]}
+        self.assertEqual(second_commands["door-vertical__jamb_start"],
+                         "LINE 4.1,1.1 3.9,1.1")
+        self.assertEqual(second_commands["door-vertical__leaf_open"],
+                         "LINE 4.1,1.1 5,1.1")
+        near_second_join = deepcopy(second)
+        near_second_join["openings"][0]["offset_m"] = 0.5
+        with self.assertRaisesRegex(module.PlanError, "clear distance from join"):
+            module.dry_run(near_second_join)
+
+    def test_v5_three_wall_two_join_chain_has_one_outer_boundary(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-three-wall-chain.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_three_wall_two_join_union", "generated_parts": 12})
+        edges = [item["command"].split()[1:] for item in result["commands"]]
+        self.assertEqual(len(edges), 12)
+        self.assertTrue(all(end == edges[(index + 1) % 12][0]
+                            for index, (_, end) in enumerate(edges)))
+        vertices = [tuple(map(float, start.split(","))) for start, _ in edges]
+        doubled_area = sum(vertices[index][0] * vertices[(index + 1) % 12][1] -
+                           vertices[(index + 1) % 12][0] * vertices[index][1]
+                           for index in range(12))
+        self.assertAlmostEqual(abs(doubled_area) / 2, 1.98, places=6)
+        self.assertEqual(result["commands_sha256"], module.dry_run(deepcopy(value))["commands_sha256"])
+        wrong_layer = deepcopy(value)
+        wrong_layer["walls"][2]["layer"] = "A-OTHER"
+        with self.assertRaisesRegex(module.PlanError, "one layer"):
+            module.dry_run(wrong_layer)
+        touching = deepcopy(value)
+        touching["nodes"][2]["y"] = 0.2
+        touching["nodes"][3]["y"] = 0.2
+        # The changed axis remains joined at c, but the far arm touches an
+        # unjoined wall and must be rejected before any CAD command runs.
+        with self.assertRaisesRegex(module.PlanError, "Unjoined wall rectangles"):
+            module.dry_run(touching)
+        rotated = json.loads((fixture.with_name("synthetic-three-wall-rotated.planspec.json"))
+                             .read_text(encoding="utf-8"))
+        rotated_result = module.dry_run(rotated)
+        self.assertTrue(rotated_result["executable"])
+        self.assertEqual(rotated_result["wall_compilation"]["generated_parts"], 12)
+        rotated_edges = [item["command"].split()[1:] for item in rotated_result["commands"]]
+        self.assertTrue(all(end == rotated_edges[(index + 1) % 12][0]
+                            for index, (_, end) in enumerate(rotated_edges)))
+        self.assertEqual(rotated_edges[0], ["-3.1,4", "-3,4"])
+        self.assertEqual(rotated_edges[-1], ["-3.1,7", "-3.1,4"])
+
+    def test_v5_three_wall_chain_one_door_opens_both_faces(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-three-wall-door.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_three_wall_single_door", "generated_parts": 18})
+        commands = {item["planspec_id"]: item["command"] for item in result["commands"]}
+        self.assertEqual(len(commands), 18)
+        self.assertEqual(commands["three-wall-union__outline_0"], "LINE 0,-0.1 1.3,-0.1")
+        self.assertEqual(commands["three-wall-union__outline_1"], "LINE 2.2,-0.1 4,-0.1")
+        self.assertEqual(commands["three-wall-union__outline_11"], "LINE 3.9,0.1 2.2,0.1")
+        self.assertEqual(commands["three-wall-union__outline_12"], "LINE 1.3,0.1 0,0.1")
+        self.assertEqual(commands["door-chain__jamb_start"], "LINE 1.3,-0.1 1.3,0.1")
+        self.assertEqual(commands["door-chain__jamb_end"], "LINE 2.2,-0.1 2.2,0.1")
+        self.assertEqual(commands["door-chain__leaf_open"], "LINE 1.3,0.1 1.3,1")
+        self.assertTrue(commands["door-chain__swing_arc"].startswith("ARC 2.2,0.1 "))
+        self.assertEqual(result["commands_sha256"], module.dry_run(deepcopy(value))["commands_sha256"])
+        near_join = deepcopy(value)
+        near_join["openings"][0]["offset_m"] = 0.5
+        with self.assertRaisesRegex(module.PlanError, "clear distance"):
+            module.dry_run(near_join)
+        middle = deepcopy(value)
+        middle["openings"][0]["wall_id"] = "wall-vertical"
+        middle["openings"][0]["offset_m"] = 1.05
+        self.assertEqual(module.dry_run(middle)["wall_compilation"]["generated_parts"], 18)
+
+    def test_v5_middle_wall_door_fixture_has_two_open_faces(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-three-wall-middle-door.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_three_wall_single_door", "generated_parts": 18})
+        commands = {item["planspec_id"]: item["command"] for item in result["commands"]}
+        self.assertEqual(commands["three-wall-union__outline_3"], "LINE 4.1,0 4.1,1.05")
+        self.assertEqual(commands["three-wall-union__outline_4"], "LINE 4.1,1.95 4.1,2.9")
+        self.assertEqual(commands["three-wall-union__outline_10"], "LINE 3.9,3 3.9,1.95")
+        self.assertEqual(commands["three-wall-union__outline_11"], "LINE 3.9,1.05 3.9,0.1")
+        self.assertEqual(commands["door-middle__jamb_start"], "LINE 4.1,1.05 3.9,1.05")
+        self.assertEqual(commands["door-middle__leaf_open"], "LINE 3.9,1.05 3,1.05")
+        near_top_join = deepcopy(value)
+        near_top_join["openings"][0]["offset_m"] = 1.2
+        with self.assertRaisesRegex(module.PlanError, "clear distance"):
+            module.dry_run(near_top_join)
+
+    def test_v8_middle_wall_door_typed_obstacle_blocks_before_cad(self):
+        fixture = (Path(__file__).with_name("fixtures") /
+                   "synthetic-three-wall-middle-door-obstacle-v8.planspec.json")
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        blocked = module.dry_run(value)
+        self.assertEqual(blocked["wall_compilation"],
+                         {"status": "compiled_three_wall_single_door", "generated_parts": 18})
+        self.assertEqual(blocked["quality_blockers"], ["door_sweep_hits_typed_obstacle"])
+        self.assertFalse(blocked["executable"])
+        self.assertEqual(blocked["door_clearance_qa"]["typed_obstacle_intersections"],
+                         [{"door_id": "door-middle", "obstacle_id": "furniture-middle",
+                           "kind": "furniture", "source_classification": "measured",
+                           "source_confidence": 1, "disposition": "blocking"}])
+        high = deepcopy(value)
+        high["obstacles"][0]["base_z_m"] = 2.1
+        clear = module.dry_run(high)
+        self.assertTrue(clear["executable"])
+        self.assertEqual(clear["door_clearance_qa"]["status"], "clear")
+        self.assertEqual(blocked["commands_sha256"], clear["commands_sha256"])
+        inferred = deepcopy(value)
+        inferred["obstacles"][0]["source"]["classification"] = "inferred"
+        review = module.dry_run(inferred)
+        self.assertFalse(review["executable"])
+        self.assertEqual(review["door_clearance_qa"]["typed_obstacle_intersections"][0]
+                         ["disposition"], "review_blocked")
+        annotation = deepcopy(value)
+        annotation["obstacles"][0]["kind"] = "annotation"
+        noted = module.dry_run(annotation)
+        self.assertTrue(noted["executable"])
+        self.assertEqual(noted["door_clearance_qa"]["typed_obstacle_intersections"][0]
+                         ["disposition"], "nonphysical")
+
+    def test_v8_middle_wall_door_clear_fixture_preserves_geometry(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        blocked = json.loads((fixtures /
+            "synthetic-three-wall-middle-door-obstacle-v8.planspec.json").read_text(encoding="utf-8"))
+        clear = json.loads((fixtures /
+            "synthetic-three-wall-middle-door-clear-v8.planspec.json").read_text(encoding="utf-8"))
+        self.assertEqual(clear["obstacles"][0]["base_z_m"], 2.1)
+        blocked["obstacles"][0]["base_z_m"] = 2.1
+        self.assertEqual(blocked, clear)
+        result = module.dry_run(clear)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["door_clearance_qa"]["status"], "clear")
+        self.assertEqual(len(result["commands"]), 18)
+
+    def test_v6_wall_face_binding_validates_without_emitting_native_dimension(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertEqual(result["unsupported"], ["native_dimension"])
+        self.assertFalse(result["executable"])
+        self.assertEqual(result["wall_compilation"],
+                         {"status": "compiled_single_unopened_wall", "generated_parts": 4})
+        self.assertEqual(len(result["commands"]), 4)
+        self.assertTrue(all("DIM" not in item["command"] for item in result["commands"]))
+        self.assertEqual(result["dimension_graph"]["status"], "satisfied")
+
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["end_ref"]["side"] = "left"
+        with self.assertRaisesRegex(module.PlanError, "node differs"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["start_ref"]["station_m"] = 4
+        with self.assertRaisesRegex(module.PlanError, "outside"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["start_ref"]["wall_id"] = "missing"
+        with self.assertRaisesRegex(module.PlanError, "reference is invalid"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"] = []
+        with self.assertRaisesRegex(module.PlanError, "requires exactly one"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"].append(deepcopy(changed["dimension_bindings"][0]))
+        with self.assertRaisesRegex(module.PlanError, "duplicated"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["start_ref"]["side"] = "axis"
+        with self.assertRaisesRegex(module.PlanError, "reference type"):
+            module.validate(changed)
+        changed = deepcopy(value)
+        changed["openings"] = [{"id": "gap", "wall_id": "wall-1", "offset_m": 1.5,
+                                "width_m": 1, "kind": "clear", "source": SOURCE}]
+        with self.assertRaisesRegex(module.PlanError, "wall opening"):
+            module.validate(changed)
+
+    def test_v6_axis_binding_recomputes_from_wall_geometry(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        value["nodes"][2].update(x=1, y=0)
+        value["nodes"][3].update(x=3, y=0)
+        value["dimensions"][0].update(axis="x", reference_type="axis", value=2,
+                                        text="2.00 m")
+        value["dimension_bindings"][0]["start_ref"].update(side="axis", station_m=1)
+        value["dimension_bindings"][0]["end_ref"].update(side="axis", station_m=3)
+        self.assertEqual(module.dry_run(value)["unsupported"], ["native_dimension"])
+        changed = deepcopy(value)
+        changed["walls"][0]["end"] = "right-face"
+        with self.assertRaises(module.PlanError):
+            module.validate(changed)
+
+    def test_v7_single_face_thickness_compiles_with_explicit_metric_style(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-wall-face-dimension-v7.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertFalse(result["executable"])
+        self.assertEqual(result["unsupported"], [])
+        self.assertEqual(result["quality_blockers"], ["dimension_line_inside_wall_bounds"])
+        self.assertEqual(result["dimension_compilation"],
+                         {"status": "compiled_single_horizontal_face_thickness",
+                          "generated_parts": 1})
+        self.assertEqual(len(result["commands"]), 5)
+        self.assertEqual(result["commands"][-1]["command"],
+                         "DIMLINEAR 2,0.1 2,-0.1 2.5,0")
+        self.assertEqual(result["commands"][-1]["planspec_id"], "wall-thickness")
+        self.assertEqual(result["dimension_placement_qa"]["status"], "inside_wall_bounds")
+        self.assertIn("DIMSTYLE SET OCS_WALL_METRIC dimtxt 0.035",
+                      [step["command"] for step in result["execution_steps"]])
+        self.assertEqual(result["commands_sha256"], module.dry_run(value)["commands_sha256"])
+
+        changed = deepcopy(value)
+        changed["dimension_placements"][0]["offset_m"] = 0.6
+        self.assertNotEqual(result["commands_sha256"], module.dry_run(changed)["commands_sha256"])
+        changed = deepcopy(value)
+        changed["dimension_style"]["text_height_m"] = 0.04
+        self.assertNotEqual(result["commands_sha256"], module.dry_run(changed)["commands_sha256"])
+        changed = deepcopy(value)
+        changed["dimension_bindings"][0]["start_ref"]["station_m"] = 1
+        changed["nodes"][2]["x"] = 1
+        changed["nodes"][3]["x"] = 1
+        changed["dimension_bindings"][0]["end_ref"]["station_m"] = 1
+        self.assertEqual(module.dry_run(changed)["unsupported"], ["native_dimension"])
+
+        for key, bad in (("scale", 2), ("measurement_factor", 1000),
+                         ("text_height_m", 0), ("arrow_size_m", 0.6)):
+            changed = deepcopy(value)
+            changed["dimension_style"][key] = bad
+            with self.assertRaises(module.PlanError):
+                module.validate(changed)
+        changed = deepcopy(value)
+        changed["dimension_placements"] = []
+        with self.assertRaises(module.PlanError):
+            module.validate(changed)
+
+    def test_v7_exterior_dimension_line_clears_wall_bounds(self):
+        fixture = Path(__file__).with_name("fixtures") / \
+            "synthetic-wall-face-dimension-exterior-v7.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["dimension_placement_qa"],
+                         {"status": "outside_wall_bounds", "wall_id": "wall-1",
+                          "dimension_id": "wall-thickness", "wall_end_x_m": "4",
+                          "dimension_line_x_m": "4.5",
+                          "scope": "2d_dimension_line_position_only_no_text_extents"})
+        self.assertEqual(result["commands"][-1]["command"],
+                         "DIMLINEAR 2,0.1 2,-0.1 4.5,0")
+        bounds = result["source_bounds"]
+        self.assertEqual(bounds["scope"],
+                         "2d_source_footprints_no_text_arrow_or_rendered_bounds")
+        self.assertEqual({key: float(number) for key, number in
+                          bounds["architecture_bounds_m"].items()},
+                         {"min_x": 0, "min_y": -0.1, "max_x": 4, "max_y": 0.1})
+        self.assertEqual({key: float(number) for key, number in
+                          bounds["annotation_reference_bounds_m"].items()},
+                         {"min_x": 2, "min_y": -0.1, "max_x": 4.5, "max_y": 0.1})
+        self.assertEqual(bounds["unresolved"], [])
+        changed = deepcopy(value)
+        changed["dimension_placements"][0]["offset_m"] = 0
+        with self.assertRaises(module.PlanError):
+            module.validate(changed)
+
+    def test_v7_vertical_face_thickness_compiles_outside_wall(self):
+        fixture = Path(__file__).with_name("fixtures") / \
+            "synthetic-wall-face-dimension-vertical-v7.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["dimension_compilation"],
+                         {"status": "compiled_single_vertical_face_thickness",
+                          "generated_parts": 1})
+        self.assertEqual(result["commands"][-1]["command"],
+                         "DIMLINEAR -0.1,2 0.1,2 0,4.5")
+        self.assertEqual(result["dimension_placement_qa"],
+                         {"status": "outside_wall_bounds", "wall_id": "wall-1",
+                          "dimension_id": "wall-thickness", "wall_end_y_m": "4",
+                          "dimension_line_y_m": "4.5",
+                          "scope": "2d_dimension_line_position_only_no_text_extents"})
+        self.assertEqual(result["source_bounds"]["annotation_reference_bounds_m"],
+                         {"min_x": "-0.1", "min_y": "2", "max_x": "0.1", "max_y": "4.5"})
+        self.assertEqual(result["source_bounds"]["unresolved"], [])
+        inside = deepcopy(value)
+        inside["dimension_placements"][0]["offset_m"] = 0.5
+        self.assertEqual(module.dry_run(inside)["quality_blockers"],
+                         ["dimension_line_inside_wall_bounds"])
+        wrong_axis = deepcopy(value)
+        wrong_axis["dimensions"][0]["axis"] = "y"
+        with self.assertRaises(module.PlanError):
+            module.validate(wrong_axis)
+
+    def test_v8_axis_span_dimension_is_bound_and_outside_wall(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        for fixture_name, expected_command, status, expected_bounds in (
+            ("synthetic-wall-axis-span-v8.planspec.json",
+             "DIMLINEAR 0.5,0 3.5,0 2,0.5", "compiled_single_horizontal_axis_span",
+             {"min_x": "0.5", "min_y": "0", "max_x": "3.5", "max_y": "0.5"}),
+            ("synthetic-wall-axis-span-vertical-v8.planspec.json",
+             "DIMLINEAR 0,0.5 0,3.5 -0.5,2", "compiled_single_vertical_axis_span",
+             {"min_x": "-0.5", "min_y": "0.5", "max_x": "0", "max_y": "3.5"})):
+            value = json.loads((fixtures / fixture_name).read_text(encoding="utf-8"))
+            result = module.dry_run(value)
+            self.assertTrue(result["executable"])
+            self.assertEqual(result["dimension_compilation"]["status"], status)
+            self.assertEqual(result["commands"][-1]["command"], expected_command)
+            self.assertEqual(result["source_bounds"]["annotation_reference_bounds_m"],
+                             expected_bounds)
+            self.assertEqual(result["source_bounds"]["unresolved"], [])
+            inside = deepcopy(value)
+            inside["dimension_placements"][0]["offset_m"] = 0.05
+            self.assertEqual(module.dry_run(inside)["quality_blockers"],
+                             ["dimension_line_inside_wall_bounds"])
+            swapped = deepcopy(value)
+            swapped["dimension_bindings"][0]["start_ref"], \
+                swapped["dimension_bindings"][0]["end_ref"] = (
+                    swapped["dimension_bindings"][0]["end_ref"],
+                    swapped["dimension_bindings"][0]["start_ref"])
+            with self.assertRaises(module.PlanError):
+                module.validate(swapped)
+
+    def test_v8_three_axis_dimensions_compile_as_one_consistent_chain(self):
+        fixture = Path(__file__).with_name("fixtures") / \
+            "synthetic-wall-axis-chain-v8.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        result = module.dry_run(value)
+        self.assertTrue(result["executable"])
+        self.assertEqual(result["dimension_graph"]["status"], "satisfied")
+        self.assertEqual(result["dimension_compilation"],
+                         {"status": "compiled_multi_axis_spans", "generated_parts": 3})
+        self.assertEqual([item["command"] for item in result["commands"][-3:]], [
+            "DIMLINEAR 0.5,0 2,0 1.25,0.5",
+            "DIMLINEAR 0.5,0 3.5,0 2,0.9",
+            "DIMLINEAR 2,0 3.5,0 2.75,0.5"])
+        self.assertEqual(result["source_bounds"]["annotation_reference_bounds_m"],
+                         {"min_x": "0.5", "min_y": "0", "max_x": "3.5", "max_y": "0.9"})
+        reversed_plan = deepcopy(value)
+        for field in ("dimensions", "dimension_bindings", "dimension_placements"):
+            reversed_plan[field].reverse()
+        self.assertEqual(result["commands_sha256"],
+                         module.dry_run(reversed_plan)["commands_sha256"])
+
+    def test_v8_axis_chain_conflict_and_placements_fail_before_cad(self):
+        fixture = Path(__file__).with_name("fixtures") / \
+            "synthetic-wall-axis-chain-v8.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        bad = deepcopy(value)
+        for dimension in bad["dimensions"]:
+            if dimension["id"] == "axis-total":
+                dimension.update(value=3.0009, text="3.0009 m")
+            else:
+                dimension.update(value=1.4991, text="1.4991 m")
+        with self.assertRaisesRegex(module.PlanError, "Dimension chain conflict"):
+            module.dry_run(bad)
+        overlap = deepcopy(value)
+        overlap["dimension_placements"][-1]["offset_m"] = 0.52
+        result = module.dry_run(overlap)
+        self.assertFalse(result["executable"])
+        self.assertEqual(result["quality_blockers"], ["dimension_lines_overlap"])
+        inside = deepcopy(value)
+        inside["dimension_placements"][0]["offset_m"] = 0.05
+        result = module.dry_run(inside)
+        self.assertFalse(result["executable"])
+        self.assertIn("dimension_line_inside_wall_bounds", result["quality_blockers"])
+
+    def test_v9_axis_endpoints_and_aligned_wall_dimension(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        schema = json.loads((Path(__file__).with_name("planspec-9.schema.json"))
+                            .read_text(encoding="utf-8"))
+        self.assertEqual(schema["properties"]["schema_version"]["const"], "planspec-9")
+        self.assertIn("obstacles", schema["required"])
+        horizontal = json.loads((fixtures / "synthetic-wall-axis-endpoints-v9.planspec.json")
+                                .read_text(encoding="utf-8"))
+        aligned = json.loads((fixtures / "synthetic-wall-aligned-endpoints-v9.planspec.json")
+                             .read_text(encoding="utf-8"))
+        first = module.dry_run(horizontal)
+        self.assertTrue(first["executable"])
+        self.assertEqual(first["commands"][-1]["command"],
+                         "DIMLINEAR 0,0 4,0 2,0.5")
+        self.assertEqual(first["dimension_graph"]["status"], "satisfied")
+        second = module.dry_run(aligned)
+        self.assertTrue(second["executable"])
+        self.assertEqual(second["commands"][-1]["command"],
+                         "DIMALIGNED 0,0 3,4 1.1,2.3")
+        self.assertEqual(second["dimension_graph"]["direct_bound_aligned"],
+                         ["axis-span"])
+        self.assertEqual(second["dimension_graph"]["unresolved_aligned"], [])
+        self.assertEqual(second["source_bounds"]["unresolved"], [])
+        reverse = deepcopy(aligned)
+        reverse["walls"][0]["start"], reverse["walls"][0]["end"] = (
+            reverse["walls"][0]["end"], reverse["walls"][0]["start"])
+        reverse["dimensions"][0]["start"], reverse["dimensions"][0]["end"] = (
+            reverse["dimensions"][0]["end"], reverse["dimensions"][0]["start"])
+        self.assertEqual(module.dry_run(reverse)["commands"][-1]["command"],
+                         "DIMALIGNED 3,4 0,0 1.9,1.7")
+        old = deepcopy(horizontal)
+        old["schema_version"] = "planspec-8"
+        with self.assertRaisesRegex(module.PlanError, "outside the open wall span"):
+            module.validate(old)
+        inside = deepcopy(aligned)
+        inside["dimension_placements"][0]["offset_m"] = 0.05
+        self.assertEqual(module.dry_run(inside)["quality_blockers"],
+                         ["dimension_line_inside_wall_bounds"])
+        wrong = deepcopy(aligned)
+        next(node for node in wrong["nodes"] if node["id"] == "wall-end")["x"] = 3.1
+        with self.assertRaises(module.PlanError):
+            module.validate(wrong)
+
+    def test_source_bounds_do_not_merge_uncompiled_annotation_into_architecture(self):
+        value = plan()
+        value["dimensions"] = [{"id": "length", "start": "a", "end": "c",
+                                "axis": "x", "reference_type": "axis", "value": 5,
+                                "text": "5.00 m", "source": SOURCE}]
+        result = module.dry_run(value)
+        self.assertEqual(result["source_bounds"]["unresolved"],
+                         ["dimension_placement_or_rendered_extents"])
+        self.assertEqual(float(result["source_bounds"]["architecture_bounds_m"]["max_x"]), 5)
+        self.assertEqual(float(result["source_bounds"]["annotation_reference_bounds_m"]["max_x"]), 5)
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        door = module.dry_run(json.loads(fixture.read_text(encoding="utf-8")))
+        self.assertNotIn("door_swing_extrema", door["source_bounds"]["unresolved"])
+
+    def test_rotated_door_bounds_include_cardinal_arc_extremum(self):
+        fixture = Path(__file__).with_name("fixtures") / "synthetic-door-swing.planspec.json"
+        value = json.loads(fixture.read_text(encoding="utf-8"))
+        value["lines"] = []
+        value["topology"]["contours"] = []
+        value["nodes"][1].update(x=2, y=2)
+        value["openings"][0].update(offset_m=0.1, width_m=2.4)
+        result = module.dry_run(value)
+        bounds = result["source_bounds"]["architecture_bounds_m"]
+        expected_cardinal_y = (0.1 + 0.1) / (2 ** 0.5) + 2.4
+        self.assertAlmostEqual(float(bounds["max_y"]), expected_cardinal_y, places=9)
+        self.assertLess(float(bounds["min_x"]), -1.5)
+        self.assertEqual(result["source_bounds"]["unresolved"], [])
+
+    def test_v7_readable_style_changes_steps_without_moving_dimension(self):
+        fixtures = Path(__file__).with_name("fixtures")
+        compact = module.dry_run(json.loads((fixtures /
+            "synthetic-wall-face-dimension-exterior-v7.planspec.json").read_text(encoding="utf-8")))
+        readable = module.dry_run(json.loads((fixtures /
+            "synthetic-wall-face-dimension-readable-v7.planspec.json").read_text(encoding="utf-8")))
+        self.assertTrue(readable["executable"])
+        self.assertEqual(compact["commands"], readable["commands"])
+        self.assertEqual(compact["source_bounds"], readable["source_bounds"])
+        self.assertNotEqual(compact["commands_sha256"], readable["commands_sha256"])
+        self.assertIn("DIMSTYLE SET OCS_WALL_READABLE dimtxt 0.07",
+                      [step["command"] for step in readable["execution_steps"]])
+
+
+if __name__ == "__main__":
+    unittest.main()

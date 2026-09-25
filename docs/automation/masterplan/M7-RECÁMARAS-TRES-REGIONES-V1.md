@@ -1,0 +1,20 @@
+# M7 desarrollo: tres regiones de referencia en recámaras
+
+Fecha: 2026-09-24. Fuente: tercera captura de la carpeta local de muestras, ya vista en desarrollo; SHA-256 `7D85CE4AE1356DD28CE31AECCCA595A184E11FBF06AC5D0CE700B8DE6DDB43C8`. La imagen, prompts, JSONL, PNG y DWG permanecen fuera de Git bajo Downloads y `target/mcp-cli-development/`. Se solicitó `gpt-6-luna` con esfuerzo `medium` mediante Codex CLI en solo lectura, sin timeout breve impuesto a Luna. El CLI registra uso agregado, pero no autentica modelo efectivo ni proporciona recibo Responses directo. Ninguna prueba de este corte es cohorte reservada ni aceptación M7.
+
+## Contrato y resultados
+
+Antes de cada llamada se fijaron cuatro cotas visuales: ancho D-E 4.00 m, ancho E-F 4.00 m, altura inferior 3.24 m y altura superior izquierda 3.87 m. La cota 2.36 m del lado derecho corresponde a una subzona y no satisface el cuarto criterio. El modelo devuelve medidas tipadas y cajas de texto; `measurement_grid.py` valida campos, fuente y criterio métrico antes de compilar una retícula determinista de ocho nodos y diez LINE. El grafo tiene tres caras cerradas: dos inferiores y una superior. No representa muros, puertas, baño, cocina, muebles, espesores ni el contorno completo de la imagen.
+
+| Corte congelado | Lectura | Gate |
+|---|---|---|
+| `bedroom-three-region-measurements-v1` | Luna eligió 2.36 m para la altura superior, tomando la cota derecha. Freeze `DCF0BB1D4F34D89B05DE12D41477C5DC58F481A25548CD44240A0490E834A0C3`; eventos `D4D9B8EA65B612840451723AE585FC5CA6BEFC7E77EF1FD7F57DBFBA70123319`. | `failed_plan_gate`; reporte `6E95B6834ACE54E282E03FFA9398B5E110096C59246ADFDA5FEA78E94EAF9157`; sin CAD. |
+| `bedroom-three-region-measurements-v2` | Un prompt nuevo distinguió la cota izquierda de la subzona derecha, sin revelar valores. Luna devolvió 4.00, 4.00, 3.24 y 3.87 m. Freeze `FDDDB87409FCA9CB6DBD188D4ABAF6532C48B0933CE06D86B1A2DF20389D5FBE`; eventos `9CC7C0AA334CC4AD069B4521C8A0DC9CA2DAA1C1825B0CCC619988EAEAFE7B35`. | L3 métrico y L2 CAD de referencia pasaron; reporte `3FFE0721F18E46A2B97AADF29C8CAFEF615FC835E4E27490A0165C58D5ACB33B`. |
+
+El v2 utilizó 16,287 tokens de entrada y 165 de salida según el agregado JSONL del CLI. La retícula L2 cerró la GUI hija y guardó un DWG sintético SHA-256 `C9289F4D5ECDEF904989F57AEDD3D46AD4BF696520DB5CA71BFE8B5196D36AAC`. AutoCAD Core Console 25.0.162.0.0 abrió una **copia** bajo `target/mcp-isolated`, verificó `AUDIT` 0 errores/0 arreglos, `INSUNITS=6`, 10 LINE y SHA de entrada intacto; reporte externo `A43B9B9643A50FB0299F7FC4EE16494FDB7AFA20AF0B9C69623CE3C93F0B659E`. `three_region_l4.py` cotejó diez handles y extremos a 1e-6: 10/10, veredicto `865DC5176E7455867B85BCCE05F16F08E798F611FB8372C8F1E86C9CB56CB656`. Una copia del censo con un extremo alterado, y hash coherente, cayó 9/10: `F4610D30516DBE496D4DE5C6773ED0BE1C4B0C818C7DEA2C29A602792F6C8AC3`.
+
+## Procedencia visual y límite
+
+La hoja de recortes exactos enlaza la fuente, el freeze y los eventos. En revisión visual del asistente, tres cajas contienen el texto completo de su cota; `right_width_px` solo muestra una línea horizontal. El verificador confirmó `failed_source_box_containment` **3/4**, review `B0D19F18FDE11DB07AA12C06630A018FAD488A6B8B5AA19C65C4FCFF93DF8C46`. Se conserva la declaración original de Luna y el fallo; la medida 4.00 m de la derecha es visible en la fuente completa, pero la caja exacta v2 no la acredita. La revisión no es L5 humana independiente. La captura CAD prueba visibilidad de la retícula, no fidelidad arquitectónica. El avance es una prueba acotada de topología métrica; M7 y M8 continúan abiertos.
+
+Reproducción local: `python docs/automation/masterplan/test_measurement_grid.py`; `python docs/automation/masterplan/three_region_l4.py --run-root <run-v2> --image <fuente-local> --external <reporte-AutoCAD> --output <ruta-nueva>`; `python docs/automation/masterplan/source_text_crops.py --run-root <run-v2> --image <fuente-local> --verify-review <review-local>`. Los verificadores exigen hashes y artefactos originales. No se abrió el DWG privado ni se publicó ningún archivo de la fuente.

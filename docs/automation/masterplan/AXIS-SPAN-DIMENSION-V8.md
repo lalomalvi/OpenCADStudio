@@ -1,0 +1,9 @@
+# Cota de tramo interior sobre eje de muro, PlanSpec v8
+
+Este contrato compila una sola cota `DIMLINEAR` de longitud sobre el eje de un muro recto sin huecos ni uniones, con cuatro bordes `LINE`. Las dos referencias deben ser `axis`, pertenecer al mismo muro, tener estaciones interiores estrictamente crecientes y coincidir con los nodos de la cota. La dirección admitida es horizontal positiva (`axis=x`) o vertical positiva (`axis=y`). Las estaciones en extremos de muro permanecen fuera del contrato: `_wall_reference_point` exige `0 < station < length`.
+
+`dimension_placements.offset_m` mide una distancia positiva desde el eje hacia la izquierda del sentido del muro: `+y` para horizontal y `-x` para vertical. Debe superar la mitad del espesor para que `dimension_placement_qa` declare `outside_wall_bounds`; de lo contrario, `quality_blockers` impide ejecutar. El análisis de bounds incluye referencias y línea de cota, sin texto, flechas ni extensión renderizada. El estilo métrico v7/v8 mantiene `scale=1`, `measurement_factor=1`, nombre local `OCS_` y tamaños validados.
+
+Fixtures: `synthetic-wall-axis-span-v8.planspec.json` y `synthetic-wall-axis-span-vertical-v8.planspec.json`, cada uno con tramo interior de 0.5 a 3.5 m y medida 3.00 m. El L2 comprueba handle, entidad `Dimension`, medida y reapertura DWG. AutoCAD L4 coteja independientemente DXF 42, puntos DXF 13/14, posición de línea, rotación, seis propiedades de estilo, cuatro bordes, Model=5, INSUNITS=6, AUDIT 0/0 y SHA de entrada. El vínculo de referencias existe en PlanSpec; este contrato no afirma asociación nativa de la cota con los cuatro LINE ni actualización después de editar el muro.
+
+Quedan pendientes cota total en extremos, muros invertidos/oblicuos, varias cotas, huecos, joins, impresión y legibilidad L5. No modifica el fixture histórico v7 ni el DWG privado.

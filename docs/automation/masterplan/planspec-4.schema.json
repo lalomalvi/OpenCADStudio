@@ -1,0 +1,486 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencadstudio.local/schemas/planspec-4.json",
+  "title": "OpenCADStudio PlanSpec v4 explicit door swing and window elevation subset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "units",
+    "origin",
+    "nodes",
+    "lines",
+    "circles",
+    "dimensions",
+    "topology",
+    "walls",
+    "openings"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "planspec-4"
+    },
+    "units": {
+      "const": "m"
+    },
+    "origin": {
+      "$ref": "#/$defs/point"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/line"
+      }
+    },
+    "circles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/circle"
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dimension"
+      }
+    },
+    "topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contours"
+      ],
+      "properties": {
+        "contours": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/contour"
+          }
+        }
+      }
+    },
+    "walls": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/wall"
+      }
+    },
+    "openings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/opening"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,80}$"
+    },
+    "number": {
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        }
+      ]
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "$ref": "#/$defs/number"
+        },
+        "y": {
+          "$ref": "#/$defs/number"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "region_px",
+        "confidence",
+        "classification"
+      ],
+      "properties": {
+        "region_px": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "classification": {
+          "enum": [
+            "measured",
+            "inferred",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "x",
+        "y",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "x": {
+          "$ref": "#/$defs/number"
+        },
+        "y": {
+          "$ref": "#/$defs/number"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "start",
+        "end",
+        "layer",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "start": {
+          "$ref": "#/$defs/id"
+        },
+        "end": {
+          "$ref": "#/$defs/id"
+        },
+        "layer": {
+          "$ref": "#/$defs/id"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "circle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "center",
+        "radius",
+        "layer",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "center": {
+          "$ref": "#/$defs/id"
+        },
+        "radius": {
+          "$ref": "#/$defs/number"
+        },
+        "layer": {
+          "$ref": "#/$defs/id"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "start",
+        "end",
+        "axis",
+        "reference_type",
+        "value",
+        "text",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "start": {
+          "$ref": "#/$defs/id"
+        },
+        "end": {
+          "$ref": "#/$defs/id"
+        },
+        "axis": {
+          "enum": [
+            "x",
+            "y",
+            "aligned"
+          ]
+        },
+        "reference_type": {
+          "enum": [
+            "face",
+            "axis",
+            "exterior",
+            "interior"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/number"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "contour": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "line_ids",
+        "role",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "line_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 3,
+          "uniqueItems": true
+        },
+        "role": {
+          "enum": [
+            "exterior",
+            "room"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "wall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "start",
+        "end",
+        "thickness_m",
+        "layer",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "start": {
+          "$ref": "#/$defs/id"
+        },
+        "end": {
+          "$ref": "#/$defs/id"
+        },
+        "thickness_m": {
+          "$ref": "#/$defs/number"
+        },
+        "layer": {
+          "$ref": "#/$defs/id"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "opening": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "wall_id",
+        "offset_m",
+        "width_m",
+        "kind",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "wall_id": {
+          "$ref": "#/$defs/id"
+        },
+        "offset_m": {
+          "$ref": "#/$defs/number"
+        },
+        "width_m": {
+          "$ref": "#/$defs/number"
+        },
+        "kind": {
+          "enum": [
+            "clear",
+            "door",
+            "window"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "swing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "hinge",
+            "side",
+            "angle_deg"
+          ],
+          "properties": {
+            "hinge": {
+              "enum": [
+                "start",
+                "end"
+              ]
+            },
+            "side": {
+              "enum": [
+                "left",
+                "right"
+              ]
+            },
+            "angle_deg": {
+              "type": "integer",
+              "const": 90
+            }
+          }
+        },
+        "elevation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sill_m",
+            "head_m"
+          ],
+          "properties": {
+            "sill_m": {
+              "$ref": "#/$defs/number"
+            },
+            "head_m": {
+              "$ref": "#/$defs/number"
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "clear"
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "swing"
+                ]
+              },
+              {
+                "required": [
+                  "elevation"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "door"
+            }
+          },
+          "required": [
+            "swing"
+          ],
+          "not": {
+            "required": [
+              "elevation"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "window"
+            }
+          },
+          "required": [
+            "elevation"
+          ],
+          "not": {
+            "required": [
+              "swing"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

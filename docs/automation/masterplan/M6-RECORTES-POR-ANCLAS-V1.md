@@ -1,0 +1,7 @@
+# M6.5: recortes por grupos de anclas proyectadas
+
+`region_evidence.py --groups-json` acepta uno a doce grupos declarados, cada uno con dos a treinta y dos IDs de anclas. Solo opera sobre una captura `drawing_only` de un run aprobado con contrato `viewport-rte-pixels-1`, identidad coincidente de documento/revisiones y probes visibles para todas las anclas. Comprueba coordenadas CAD/píxel finitas, IDs únicos y puntos dentro del viewport. Calcula cada rectángulo con margen acotado; `build_regions` conserva el PNG original, crea recortes nuevos y manifiesto con hashes e identidad. `verify_anchor_regions` recalcula los rectángulos desde el mismo archivo de grupos y compara además los píxeles de cada recorte con el PNG padre.
+
+Prueba L2 con copia de un reporte/captura sintéticos de dos puertas: tres grupos (cada puerta y ambas) produjeron recortes visibles y fueron revalidados. El reporte fuente copiado conserva SHA-256 `9FDAB9EEA0664B9F1D00ABDA4DD8C5B2EF49F72DF13FE8B68E3DBA94F28A5576`; el manifiesto local `target/mcp-region-generic/20260924-two-door-anchor-groups/grouped-regions/manifest.json` tiene SHA-256 `882C374D2E7FC6B9BA1BB6AB229C4FB399650009D861996154BB15E9DFFF2C67`. Los tres recortes se inspeccionaron; la revisión humana formal del producto sigue `pending`.
+
+El contrato generaliza la selección de zonas **entre anclas ya proyectadas**, no crea proyecciones para geometría arbitraria ni compara la captura con la imagen de entrada. El archivo de grupos debe conservarse junto al manifiesto para reproducir su selección. No concede G6 ni L5 por sí solo.

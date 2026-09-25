@@ -4,8 +4,9 @@
 //! to the authenticated GUI control bridge; this module contains no geometry.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs::{File, OpenOptions},
@@ -13,6 +14,8 @@ use std::{
     net::TcpStream,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::atomic::{AtomicUsize, Ordering},
+    sync::{Mutex, OnceLock},
     thread,
     time::{Duration, Instant},
 };
@@ -21,6 +24,7 @@ const PROTOCOL_VERSION: &str = "2025-11-25";
 const MODERN_PROTOCOL_VERSION: &str = "2026-07-28";
 const MAX_REQUEST: usize = 1_048_576;
 const MAX_RESPONSE: u64 = 16 * 1024 * 1024;
+const MAX_DESCRIPTOR: u64 = 8 * 1024;
 const CACHE_TTL_MS: u64 = 3_600_000;
 const INSTRUCTIONS: &str = "Call ocs_sessions, then pass its session_id as ocs_session_id to ocs_read, ocs_execute and ocs_capture. Read capabilities to discover the complete CAD automation surface. Call record_schema to discover every record type, property path, JSON type, enum, unit, constraint and write rule before editing unfamiliar data. Use records to inspect every serializable entity, object, table, header and document record; filter with RFC 6901 JSON Pointer paths. Use set_properties for atomic, type-checked record edits and preserve document_id, revision and request_id. Use commands with parameters.name for a command manifest. Use run_script for a long, known sequence of complete command lines; it is resumable, strict by default and returns a compact summary. Use batch when operations other than command lines must be mixed, and request changed_entities only when resulting geometry is needed. For interactive work, call start and follow state.command.accepts, options and input_example. A run.cmd contains the command name followed by prompt answers separated by spaces; points use x,y or x,y,z. After a timeout, query the existing operation and never replay a mutation with a new request_id. waiting_input and running are not completion. Let OCS and its geometry kernel calculate geometry; use query near, contains_point and intersections for exact relationships. Before delivery call audit with the intended target_format and target_version; use save_verified with an explicit absolute path to save, reopen, hash and compare the semantic manifest.";
 const READ_OPS: &[&str] = &[
@@ -40,6 +44,7 @@ const READ_OPS: &[&str] = &[
     "events",
     "operation",
     "audit",
+    "metric_page_setup",
 ];
 const EXECUTE_OPS: &[&str] = &[
     "new",
@@ -54,6 +59,10 @@ const EXECUTE_OPS: &[&str] = &[
     "select",
     "property",
     "set_properties",
+    "edit_wall_thickness",
+    "edit_wall_length",
+    "metric_plot_pdf",
+    "set_metric_page_setup",
     "action",
     "embed_image",
     "save",
@@ -61,6 +70,8 @@ const EXECUTE_OPS: &[&str] = &[
     "stop",
     "batch",
     "run_script",
+    "shutdown_owned_session",
+    "close_document",
 ];
 const BATCH_STEP_OPS: &[&str] = &[
     "new",
@@ -90,7 +101,31 @@ struct Descriptor {
     session_id: String,
     port: u16,
     token: String,
+    #[serde(default)]
+    pid: Option<u32>,
+    #[serde(default)]
+    executable: Option<String>,
+    #[serde(default)]
+    started_at_unix_ms: Option<u64>,
 }
+
+#[derive(Default)]
+struct LaunchState {
+    child: Option<Child>,
+    started: Option<Instant>,
+    failure: Option<String>,
+    closed: Option<ClosedSession>,
+}
+
+struct ClosedSession {
+    session_id: String,
+    process_id: u32,
+    started_at_unix_ms: u64,
+    request_id: String,
+    owned_root: PathBuf,
+}
+
+static LAUNCH: OnceLock<Mutex<LaunchState>> = OnceLock::new();
 
 struct GuiClient {
     descriptor: Descriptor,
@@ -99,6 +134,7 @@ struct GuiClient {
     batches: VecDeque<BatchExecution>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct BatchExecution {
     id: String,
     request: Value,
@@ -109,6 +145,130 @@ struct BatchExecution {
     changes: Vec<Value>,
     state: Option<Value>,
     terminal: Option<Value>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct BatchJournal {
+    schema_version: u32,
+    session_id: String,
+    batch: BatchExecution,
+}
+
+const MAX_BATCH_JOURNAL: u64 = 16 * 1024 * 1024;
+
+fn batch_journal_dir() -> Result<PathBuf, String> {
+    let dir = crate::config::config_dir()
+        .ok_or_else(|| "No user configuration directory".to_string())?
+        .join("automation").join("batch-journal");
+    if dir.symlink_metadata().is_ok_and(|meta| meta.file_type().is_symlink()) {
+        return Err("Batch journal directory must not be a symlink".into());
+    }
+    Ok(dir)
+}
+
+fn batch_journal_path(dir: &Path, session_id: &str, batch_id: &str) -> PathBuf {
+    let mut hasher = Sha256::new();
+    hasher.update(session_id.as_bytes());
+    hasher.update([0]);
+    hasher.update(batch_id.as_bytes());
+    let digest = hasher.finalize();
+    let name: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    dir.join(format!("{name}.json"))
+}
+
+#[cfg(windows)]
+fn atomic_replace(source: &Path, destination: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+    // canonicalize returns verbatim (\\?\) paths, required for deep worktrees.
+    let source = source.canonicalize().map_err(|error| error.to_string())?;
+    let parent = destination.parent().ok_or_else(|| "Journal has no parent".to_string())?
+        .canonicalize().map_err(|error| error.to_string())?;
+    let destination = parent.join(destination.file_name()
+        .ok_or_else(|| "Journal has no file name".to_string())?);
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) } == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn atomic_replace(source: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::rename(source, destination).map_err(|error| error.to_string())
+}
+
+fn persist_batch(session_id: &str, batch: &BatchExecution) -> Result<(), String> {
+    let dir = batch_journal_dir()?;
+    persist_batch_in(&dir, session_id, batch)
+}
+
+fn persist_batch_in(dir: &Path, session_id: &str, batch: &BatchExecution) -> Result<(), String> {
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let path = batch_journal_path(&dir, session_id, &batch.id);
+    if path.symlink_metadata().is_ok_and(|meta| !meta.file_type().is_file()) {
+        return Err("Batch journal target must be a regular file".into());
+    }
+    let temporary = path.with_extension(format!("{}.tmp", random_id()?));
+    let wire = serde_json::to_vec(&BatchJournal {
+        schema_version: 1, session_id: session_id.into(), batch: batch.clone(),
+    }).map_err(|error| error.to_string())?;
+    if wire.len() as u64 > MAX_BATCH_JOURNAL {
+        return Err("Batch journal exceeds size limit".into());
+    }
+    let mut file = crate::automation_security::create_private_file(&temporary)
+        .map_err(|error| error.to_string())?;
+    file.write_all(&wire).and_then(|_| file.sync_all()).map_err(|error| error.to_string())?;
+    drop(file);
+    atomic_replace(&temporary, &path)?;
+    #[cfg(unix)] {
+        File::open(&dir).and_then(|file| file.sync_all()).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn load_batch(session_id: &str, batch_id: &str) -> Result<Option<BatchExecution>, String> {
+    load_batch_in(&batch_journal_dir()?, session_id, batch_id)
+}
+
+fn load_batch_in(dir: &Path, session_id: &str, batch_id: &str) -> Result<Option<BatchExecution>, String> {
+    let path = batch_journal_path(dir, session_id, batch_id);
+    let Ok(meta) = path.symlink_metadata() else { return Ok(None); };
+    if !meta.file_type().is_file() || meta.len() > MAX_BATCH_JOURNAL
+        || !private_descriptor(&path) {
+        return Err("Batch journal is unsafe or exceeds size limit".into());
+    }
+    let wire = std::fs::read(path).map_err(|error| error.to_string())?;
+    let journal: BatchJournal = serde_json::from_slice(&wire)
+        .map_err(|_| "Batch journal is corrupt; do not replay its mutation".to_string())?;
+    if journal.schema_version != 1 || journal.session_id != session_id
+        || journal.batch.id != batch_id {
+        return Err("Batch journal identity differs; do not replay its mutation".into());
+    }
+    Ok(Some(journal.batch))
+}
+
+#[cfg(test)]
+fn load_batches_in(dir: &Path, session_id: &str) -> Result<VecDeque<BatchExecution>, String> {
+    let Ok(entries) = dir.read_dir() else { return Ok(VecDeque::new()); };
+    let mut paths: Vec<_> = entries.filter_map(Result::ok).map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("json"))
+        .filter(|path| path.symlink_metadata().is_ok_and(|meta|
+            meta.file_type().is_file() && meta.len() <= MAX_BATCH_JOURNAL))
+        .collect();
+    paths.sort_by_key(|path| std::cmp::Reverse(path.metadata().and_then(|meta| meta.modified()).ok()));
+    let mut batches = VecDeque::new();
+    for path in paths.into_iter().take(256) {
+        if !private_descriptor(&path) { continue; }
+        let Ok(bytes) = std::fs::read(path) else { continue; };
+        let Ok(journal) = serde_json::from_slice::<BatchJournal>(&bytes) else { continue; };
+        if journal.schema_version == 1 && journal.session_id == session_id {
+            batches.push_back(journal.batch);
+            if batches.len() == 64 { break; }
+        }
+    }
+    Ok(batches)
 }
 
 struct McpTask {
@@ -182,9 +342,93 @@ fn private_descriptor(path: &Path) -> bool {
     file.uid() == directory.uid() && file.mode() & 0o077 == 0
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn private_descriptor(path: &Path) -> bool {
+    crate::automation_security::private_file(path)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn private_descriptor(_: &Path) -> bool {
     true
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProcessIdentity {
+    Matches,
+    DeadOrReused,
+    Unknown,
+}
+
+#[cfg(windows)]
+fn process_identity(descriptor: &Descriptor) -> ProcessIdentity {
+    use windows_sys::Win32::{Foundation::{CloseHandle, GetLastError, FILETIME, ERROR_INVALID_PARAMETER,
+        WAIT_OBJECT_0, WAIT_TIMEOUT},
+        Storage::FileSystem::SYNCHRONIZE,
+        System::Threading::{GetProcessTimes, OpenProcess, WaitForSingleObject,
+            PROCESS_QUERY_LIMITED_INFORMATION}};
+    let (Some(pid), Some(expected)) = (descriptor.pid, descriptor.started_at_unix_ms) else {
+        return ProcessIdentity::Unknown;
+    };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid) };
+    if handle.is_null() {
+        let error = unsafe { GetLastError() };
+        return if error == ERROR_INVALID_PARAMETER {
+            ProcessIdentity::DeadOrReused
+        } else {
+            ProcessIdentity::Unknown
+        };
+    }
+    let wait = unsafe { WaitForSingleObject(handle, 0) };
+    if wait == WAIT_OBJECT_0 {
+        unsafe { CloseHandle(handle) };
+        return ProcessIdentity::DeadOrReused;
+    }
+    if wait != WAIT_TIMEOUT {
+        unsafe { CloseHandle(handle) };
+        return ProcessIdentity::Unknown;
+    }
+    let mut created: FILETIME = unsafe { std::mem::zeroed() };
+    let mut exited: FILETIME = unsafe { std::mem::zeroed() };
+    let mut kernel: FILETIME = unsafe { std::mem::zeroed() };
+    let mut user: FILETIME = unsafe { std::mem::zeroed() };
+    let success = unsafe { GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) } != 0;
+    unsafe { CloseHandle(handle) };
+    if !success { return ProcessIdentity::Unknown; }
+    let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+    let actual = ticks.checked_sub(116_444_736_000_000_000).map(|value| value / 10_000);
+    if actual == Some(expected) { ProcessIdentity::Matches }
+    else { ProcessIdentity::DeadOrReused }
+}
+
+#[cfg(not(windows))]
+fn process_identity(_: &Descriptor) -> ProcessIdentity { ProcessIdentity::Unknown }
+
+fn heartbeat_age_ms(directory: &Path, session_id: &str) -> Option<u128> {
+    let path = directory.join(format!("{session_id}.heartbeat"));
+    if !path.symlink_metadata().ok()?.file_type().is_file() { return None; }
+    std::time::SystemTime::now().duration_since(path.metadata().ok()?.modified().ok()?)
+        .ok().map(|age| age.as_millis())
+}
+
+fn quarantine_dead_descriptor(directory: &Path, path: &Path, descriptor: &Descriptor) -> Result<(), String> {
+    let directory = directory.canonicalize().map_err(|error| error.to_string())?;
+    let expected_name = format!("{}.json", descriptor.session_id);
+    if path.parent().and_then(|parent| parent.canonicalize().ok()).as_deref() != Some(directory.as_path())
+        || !path.symlink_metadata().is_ok_and(|meta| meta.file_type().is_file())
+        || path.file_name().and_then(|name| name.to_str()) != Some(expected_name.as_str()) {
+        return Err("Descriptor quarantine path failed containment check".into());
+    }
+    let quarantine = directory.join("quarantine");
+    if quarantine.symlink_metadata().is_ok_and(|meta| meta.file_type().is_symlink()) {
+        return Err("Descriptor quarantine directory is a symlink".into());
+    }
+    std::fs::create_dir_all(&quarantine).map_err(|error| error.to_string())?;
+    let quarantine = quarantine.canonicalize().map_err(|error| error.to_string())?;
+    if !quarantine.starts_with(&directory) {
+        return Err("Descriptor quarantine target escaped automation directory".into());
+    }
+    let destination = quarantine.join(format!("{}-{}.json", descriptor.session_id, random_id()?));
+    atomic_replace(path, &destination)
 }
 
 fn exchange(descriptor: &Descriptor, request: Value, timeout: Duration) -> Result<Value, String> {
@@ -225,10 +469,7 @@ fn exchange(descriptor: &Descriptor, request: Value, timeout: Duration) -> Resul
     serde_json::from_str(response.trim_end()).map_err(|error| error.to_string())
 }
 
-fn descriptors() -> Result<Vec<(Descriptor, Value)>, String> {
-    let directory = crate::config::config_dir()
-        .ok_or_else(|| "No user configuration directory".to_string())?
-        .join("automation");
+fn descriptors_in(directory: &Path) -> Result<Vec<(Descriptor, Value)>, String> {
     let Ok(entries) = directory.read_dir() else {
         return Ok(Vec::new());
     };
@@ -236,30 +477,101 @@ fn descriptors() -> Result<Vec<(Descriptor, Value)>, String> {
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("json"))
+        .filter(|path| path.symlink_metadata().is_ok_and(|meta| meta.file_type().is_file()))
         .collect();
-    paths.sort();
-
-    let mut found = Vec::new();
-    for path in paths {
-        if !private_descriptor(&path) {
-            continue;
+    paths.sort_by_key(|path| std::cmp::Reverse(
+        path.metadata().and_then(|m| m.modified()).ok()));
+    let next = AtomicUsize::new(0);
+    let found = Mutex::new(Vec::new());
+    let unsafe_descriptor = std::sync::atomic::AtomicBool::new(false);
+    thread::scope(|scope| {
+        for _ in 0..paths.len().min(16) {
+            let paths = &paths;
+            let next = &next;
+            let found = &found;
+            let unsafe_descriptor = &unsafe_descriptor;
+            scope.spawn(move || {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(path) = paths.get(index) else { break };
+                    if !path.metadata().is_ok_and(|meta| meta.len() <= MAX_DESCRIPTOR) { continue; }
+                    if !private_descriptor(path) {
+                        let name = path.file_stem().and_then(|name| name.to_str()).unwrap_or_default();
+                        if name.len() == 32 && name.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                            unsafe_descriptor.store(true, Ordering::Relaxed);
+                        }
+                        continue;
+                    }
+                    let Ok(text) = std::fs::read_to_string(path) else { continue };
+                    let Ok(descriptor) = serde_json::from_str::<Descriptor>(&text) else { continue };
+                    if descriptor.session_id.len() != 32
+                        || !descriptor.session_id.bytes().all(|byte| byte.is_ascii_hexdigit()) { continue; }
+                    let identity = process_identity(&descriptor);
+                    if identity == ProcessIdentity::DeadOrReused {
+                        let _ = quarantine_dead_descriptor(directory, path, &descriptor);
+                        continue;
+                    }
+                    let Ok(mut state) = exchange(&descriptor, json!({"op":"hello"}), Duration::from_millis(250)) else { continue };
+                    if state["ok"].as_bool() == Some(true)
+                        && state["session_id"].as_str() == Some(descriptor.session_id.as_str())
+                    {
+                        if let Some(object) = state.as_object_mut() {
+                            object.insert("heartbeat_age_ms".into(), json!(heartbeat_age_ms(directory, &descriptor.session_id)));
+                            object.insert("process_identity".into(), json!(if identity == ProcessIdentity::Matches { "matched" } else { "unknown" }));
+                        }
+                        if let Ok(mut matches) = found.lock() {
+                            matches.push((descriptor, state));
+                        }
+                    }
+                }
+            });
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(descriptor) = serde_json::from_str::<Descriptor>(&text) else {
-            continue;
-        };
-        let Ok(state) = exchange(&descriptor, json!({"op":"hello"}), Duration::from_secs(1)) else {
-            continue;
-        };
-        if state["ok"].as_bool() == Some(true)
-            && state["session_id"].as_str() == Some(descriptor.session_id.as_str())
-        {
-            found.push((descriptor, state));
-        }
+    });
+    if unsafe_descriptor.load(Ordering::Relaxed) {
+        return Err("Unsafe session descriptor present; inspect its ACL before launch".into());
     }
+    let mut found = found.into_inner().map_err(|_| "Discovery lock poisoned".to_string())?;
+    found.sort_by(|a, b| a.0.session_id.cmp(&b.0.session_id));
     Ok(found)
+}
+
+fn descriptors() -> Result<Vec<(Descriptor, Value)>, String> {
+    let directory = crate::config::config_dir()
+        .ok_or_else(|| "No user configuration directory".to_string())?
+        .join("automation");
+    descriptors_in(&directory)
+}
+
+fn descriptor_for_session(session_id: &str) -> Result<(Descriptor, Value), String> {
+    if session_id.len() != 32 || !session_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("session_id must be a 32-character hexadecimal ID".into());
+    }
+    let path = crate::config::config_dir()
+        .ok_or_else(|| "No user configuration directory".to_string())?
+        .join("automation")
+        .join(format!("{session_id}.json"));
+    if !path.symlink_metadata().is_ok_and(|meta| meta.file_type().is_file() && meta.len() <= MAX_DESCRIPTOR)
+        || !private_descriptor(&path)
+    {
+        return Err("Selected session descriptor is absent or unsafe".into());
+    }
+    let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let descriptor: Descriptor = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    if descriptor.session_id != session_id {
+        return Err("Selected session descriptor identity differs".into());
+    }
+    if process_identity(&descriptor) == ProcessIdentity::DeadOrReused {
+        return Err("Selected session process is absent or has a different creation time".into());
+    }
+    // A cold GUI can briefly exceed the discovery probe's 250 ms budget.
+    // Probe only this selected descriptor with a bounded, longer handshake.
+    let state = exchange(&descriptor, json!({"op":"hello"}), Duration::from_secs(2))?;
+    if state["ok"].as_bool() != Some(true)
+        || state["session_id"].as_str() != Some(session_id)
+    {
+        return Err("Selected session handshake failed".into());
+    }
+    Ok((descriptor, state))
 }
 
 fn log_file() -> Result<File, String> {
@@ -287,26 +599,54 @@ fn start_gui() -> Result<Child, String> {
         .map_err(|error| error.to_string())
 }
 
-fn sessions(launch_if_none: bool) -> Result<Vec<Value>, String> {
-    let mut available = descriptors()?;
-    if available.is_empty() && launch_if_none {
-        let mut child = start_gui()?;
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while Instant::now() < deadline {
-            if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-                return Err(format!("OpenCADStudio exited while starting ({status})"));
-            }
-            thread::sleep(Duration::from_millis(200));
-            available = descriptors()?;
-            if !available.is_empty() {
-                break;
-            }
+fn sessions(launch_if_none: bool) -> Result<Value, String> {
+    let available = descriptors()?;
+    if !available.is_empty() {
+        return Ok(json!({"ok":true,"status":"ready","result":
+            available.into_iter().map(|(descriptor, mut state)| {
+                if let Some(object) = state.as_object_mut() {
+                    object.insert("process_id".into(), json!(descriptor.pid));
+                    object.insert("executable_path".into(), json!(descriptor.executable));
+                    object.insert("process_started_at_unix_ms".into(), json!(descriptor.started_at_unix_ms));
+                }
+                state
+            }).collect::<Vec<_>>()}));
+    }
+    let mut launch = LAUNCH.get_or_init(|| Mutex::new(LaunchState::default()))
+        .lock().map_err(|_| "Launch state lock poisoned".to_string())?;
+    if let Some(reason) = &launch.failure {
+        return Ok(json!({"ok":false,"status":"failed","reason":reason,"result":[]}));
+    }
+    if let Some(child) = launch.child.as_mut() {
+        if child.try_wait().map_err(|error| error.to_string())?.is_some() {
+            launch.failure = Some("launched_editor_exited".into());
+        } else if launch.started.is_some_and(|at| at.elapsed() >= Duration::from_secs(90)) {
+            launch.failure = Some("readiness_deadline_exceeded".into());
         }
-        if available.is_empty() {
-            return Err("OpenCADStudio is still starting; call ocs_sessions again".into());
+        if let Some(reason) = &launch.failure {
+            return Ok(json!({"ok":false,"status":"failed","reason":reason,"result":[]}));
+        }
+        let remaining = 90_000u128.saturating_sub(
+            launch.started.map_or(0, |at| at.elapsed().as_millis()));
+        return Ok(json!({"ok":true,"status":"starting","reason":"waiting_for_editor_descriptor",
+            "retry_after_ms":200,"deadline_remaining_ms":remaining,"result":[]}));
+    }
+    if !launch_if_none {
+        return Ok(json!({"ok":true,"status":"absent","result":[]}));
+    }
+    match start_gui() {
+        Ok(child) => {
+            launch.child = Some(child);
+            launch.started = Some(Instant::now());
+            launch.closed = None;
+            Ok(json!({"ok":true,"status":"starting","reason":"editor_launch_requested",
+                "retry_after_ms":200,"deadline_remaining_ms":90_000,"result":[]}))
+        }
+        Err(_) => {
+            launch.failure = Some("editor_launch_failed".into());
+            Ok(json!({"ok":false,"status":"failed","reason":"editor_launch_failed","result":[]}))
         }
     }
-    Ok(available.into_iter().map(|(_, state)| state).collect())
 }
 
 fn insert_default(object: &mut Map<String, Value>, key: &str, value: Value) {
@@ -316,18 +656,33 @@ fn insert_default(object: &mut Map<String, Value>, key: &str, value: Value) {
 }
 
 impl GuiClient {
-    fn connect(session_id: &str) -> Result<Self, String> {
-        let mut matching: Vec<_> = descriptors()?
-            .into_iter()
-            .filter(|(descriptor, _)| descriptor.session_id == session_id)
-            .collect();
-        if matching.len() != 1 {
-            return Err(format!(
-                "Choose session_id from ocs_sessions; found {} matching sessions",
-                matching.len()
-            ));
+    #[cfg(test)]
+    fn batch_operation(&self, id: &str) -> Option<Value> {
+        self.batches.iter().find(|batch| batch.id == id).map(|batch| {
+            batch.terminal.clone().unwrap_or_else(|| batch_result(batch, "running", true))
+        })
+    }
+
+    fn resume_batch_operation(&mut self, id: &str) -> Result<Option<Value>, String> {
+        if !self.batches.iter().any(|batch| batch.id == id) {
+            if let Some(batch) = load_batch(&self.descriptor.session_id, id)? {
+                self.batches.push_back(batch);
+            }
         }
-        let (descriptor, state) = matching.remove(0);
+        let Some(batch) = self.batches.iter().find(|batch| batch.id == id) else {
+            return Ok(None);
+        };
+        if let Some(terminal) = &batch.terminal {
+            return Ok(Some(terminal.clone()));
+        }
+        // A previous MCP response may have been lost. Resume from the saved
+        // step and query an active GUI request_id; never issue it again.
+        let request = batch.request.clone();
+        self.execute_batch(request, 30.0).map(Some)
+    }
+
+    fn connect(session_id: &str) -> Result<Self, String> {
+        let (descriptor, state) = descriptor_for_session(session_id)?;
         Ok(Self {
             descriptor,
             state,
@@ -397,6 +752,11 @@ impl GuiClient {
 
     fn execute_batch(&mut self, request: Value, wait_seconds: f64) -> Result<Value, String> {
         let id = required_string(&request, "request_id")?.to_owned();
+        if !self.batches.iter().any(|batch| batch.id == id) {
+            if let Some(saved) = load_batch(&self.descriptor.session_id, &id)? {
+                self.batches.push_back(saved);
+            }
+        }
         let mut batch = if let Some(position) = self.batches.iter().position(|batch| batch.id == id)
         {
             let batch = self
@@ -409,11 +769,20 @@ impl GuiClient {
             }
             batch
         } else {
+            let expected_document = request["document_id"].as_u64()
+                .ok_or_else(|| "batch requires document_id from selected session".to_string())?;
+            let expected_revision = request["revision"].as_u64()
+                .ok_or_else(|| "batch requires revision from selected session".to_string())?;
+            let current = self.request(json!({"op":"state"}), 0.0)?;
+            if current["document_id"].as_u64() != Some(expected_document)
+                || current["revision"].as_u64() != Some(expected_revision) {
+                return Err("Selected document or revision changed; read state before editing".into());
+            }
             let steps = request["steps"]
                 .as_array()
                 .cloned()
                 .ok_or_else(|| "batch requires a steps array".to_string())?;
-            BatchExecution {
+            let batch = BatchExecution {
                 id,
                 request,
                 steps,
@@ -423,7 +792,9 @@ impl GuiClient {
                 changes: Vec::new(),
                 state: None,
                 terminal: None,
-            }
+            };
+            persist_batch(&self.descriptor.session_id, &batch)?;
+            batch
         };
 
         if let Some(result) = batch.terminal.clone() {
@@ -449,6 +820,7 @@ impl GuiClient {
                     true,
                 );
                 batch.terminal = Some(result.clone());
+                persist_batch(&self.descriptor.session_id, &batch)?;
                 self.batches.push_back(batch);
                 trim_batches(&mut self.batches);
                 return Ok(result);
@@ -461,11 +833,14 @@ impl GuiClient {
             }
             attempted = true;
 
-            let step_id = batch
-                .active
-                .clone()
+            let resuming = batch.active.is_some();
+            let step_id = batch.active.clone()
                 .unwrap_or_else(|| batch_step_id(&batch.id, batch.next));
-            let response = if batch.active.is_some() {
+            if !resuming {
+                batch.active = Some(step_id.clone());
+                persist_batch(&self.descriptor.session_id, &batch)?;
+            }
+            let response = if resuming {
                 self.request(
                     json!({"op":"operation","request_id":step_id}),
                     deadline
@@ -478,7 +853,6 @@ impl GuiClient {
                     .cloned()
                     .ok_or_else(|| format!("batch step {} must be an object", batch.next))?;
                 for key in [
-                    "revision",
                     "geometry_revision",
                     "camera_revision",
                     "selection",
@@ -486,6 +860,9 @@ impl GuiClient {
                 ] {
                     step.remove(key);
                 }
+                let expected = batch.state.as_ref().unwrap_or(&batch.request);
+                step.insert("document_id".into(), expected["document_id"].clone());
+                step.insert("revision".into(), expected["revision"].clone());
                 step.insert("request_id".into(), Value::String(step_id.clone()));
                 self.request(
                     Value::Object(step),
@@ -498,6 +875,7 @@ impl GuiClient {
                 Ok(response) => response,
                 Err(error) => {
                     batch.active = Some(step_id);
+                    persist_batch(&self.descriptor.session_id, &batch)?;
                     self.batches.push_back(batch);
                     trim_batches(&mut self.batches);
                     return Err(error);
@@ -519,6 +897,7 @@ impl GuiClient {
             if matches!(response["status"].as_str(), Some("accepted" | "running")) {
                 batch.active = Some(step_id);
                 let result = batch_result(&batch, "running", true);
+                persist_batch(&self.descriptor.session_id, &batch)?;
                 self.batches.push_back(batch);
                 trim_batches(&mut self.batches);
                 return Ok(result);
@@ -557,6 +936,7 @@ impl GuiClient {
                     false,
                 );
                 batch.terminal = Some(result.clone());
+                persist_batch(&self.descriptor.session_id, &batch)?;
                 self.batches.push_back(batch);
                 trim_batches(&mut self.batches);
                 return Ok(result);
@@ -570,10 +950,12 @@ impl GuiClient {
             {
                 let result = batch_result(&batch, "waiting_input", true);
                 batch.terminal = Some(result.clone());
+                persist_batch(&self.descriptor.session_id, &batch)?;
                 self.batches.push_back(batch);
                 trim_batches(&mut self.batches);
                 return Ok(result);
             }
+            persist_batch(&self.descriptor.session_id, &batch)?;
         }
     }
 }
@@ -621,12 +1003,17 @@ fn batch_result(batch: &BatchExecution, status: &str, ok: bool) -> Value {
             "code":failed_result.as_ref().and_then(|result| result.get("code")).cloned(),
             "error":failed_result.as_ref().and_then(|result| result.get("error")).cloned(),
             "completed_commands":batch.next,
+            "attempted_commands":batch.next,
             "successful_commands":if ok { batch.next } else { batch.next.saturating_sub(1) },
             "failed_command":(!ok).then(|| batch.next.saturating_sub(1)),
             "total_commands":batch.steps.len(),
             "next_command":(batch.next < batch.steps.len()).then_some(batch.next),
             "added_entities":added_entities,
             "failed_result":failed_result,
+            "command_timings_ms":batch.results.iter()
+                .map(|result| result["timings"]["total_ms"].clone())
+                .collect::<Vec<_>>(),
+            "command_timing_scope":"gui_operation_elapsed",
             "changes":batch.changes,
             "state":batch.state
         });
@@ -658,6 +1045,154 @@ fn client<'a>(
         clients.insert(session_id.into(), GuiClient::connect(session_id)?);
     }
     Ok(clients.get_mut(session_id).expect("client inserted"))
+}
+
+fn shutdown_owned_session(
+    clients: &mut HashMap<String, GuiClient>,
+    session_id: &str,
+    request: &Value,
+) -> Result<Value, String> {
+    let root = Path::new(required_string(request, "owned_root")?);
+    if !root.is_absolute() {
+        return Err("owned_root must be an existing absolute directory".into());
+    }
+    let root = root.canonicalize().map_err(|_| "owned_root does not exist".to_string())?;
+    if !root.is_dir() {
+        return Err("owned_root must be a directory".into());
+    }
+    let expected_pid = request["process_id"].as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| "process_id is required".to_string())?;
+    let expected_start = request["process_started_at_unix_ms"].as_u64()
+        .ok_or_else(|| "process_started_at_unix_ms is required".to_string())?;
+    let expected_executable = Path::new(required_string(request, "executable_path")?)
+        .canonicalize().map_err(|_| "executable_path is absent".to_string())?;
+    let own_executable = std::env::current_exe().map_err(|error| error.to_string())?
+        .canonicalize().map_err(|error| error.to_string())?;
+    if expected_executable != own_executable {
+        return Err("Requested executable is not this MCP server build".into());
+    }
+    let request_id = required_string(request, "request_id")?;
+    {
+        let launch = LAUNCH.get_or_init(|| Mutex::new(LaunchState::default()))
+            .lock().map_err(|_| "Launch state lock poisoned".to_string())?;
+        if launch.closed.as_ref().is_some_and(|closed|
+            closed.session_id == session_id && closed.process_id == expected_pid
+                && closed.started_at_unix_ms == expected_start
+                && closed.request_id == request_id && closed.owned_root == root) {
+            return Ok(json!({"ok":true,"status":"completed","request_id":request_id,
+                "result":{"closed":true,"process_id":expected_pid}}));
+        }
+        if launch.child.as_ref().map(Child::id) != Some(expected_pid) {
+            return Err("Session is not owned by this MCP process".into());
+        }
+    }
+    let gui = client(clients, session_id)?;
+    if gui.descriptor.pid != Some(expected_pid) {
+        return Err("Selected session PID changed".into());
+    }
+    if gui.descriptor.started_at_unix_ms != Some(expected_start) {
+        return Err("Selected session creation time changed".into());
+    }
+    let descriptor_executable = gui.descriptor.executable.as_deref()
+        .ok_or_else(|| "Selected session has no executable identity".to_string())?;
+    if Path::new(descriptor_executable).canonicalize()
+        .map_err(|_| "Selected session executable is absent".to_string())? != own_executable {
+        return Err("Selected session executable changed".into());
+    }
+    let state = gui.request(json!({"op":"state"}), 0.0)?;
+    if state["modal"].as_str().is_some()
+        || state["command"].as_object().is_some()
+    {
+        return Ok(json!({"ok":false,"status":"waiting_user","code":"editor_busy",
+            "error":"Close the modal or active command before shutdown"}));
+    }
+    let documents = state["documents"].as_array()
+        .ok_or_else(|| "GUI state has no documents array".to_string())?;
+    for document in documents {
+        if document["dirty"].as_bool() != Some(false) {
+            return Ok(json!({"ok":false,"status":"waiting_user","code":"dirty_document",
+                "error":"Save or explicitly close every dirty document before shutdown"}));
+        }
+        if let Some(path) = document["path"].as_str() {
+            let path = Path::new(path).canonicalize()
+                .map_err(|_| "Open document path cannot be verified".to_string())?;
+            if !path.starts_with(&root) {
+                return Ok(json!({"ok":false,"status":"waiting_user","code":"foreign_document",
+                    "error":"Open document lies outside owned_root"}));
+            }
+        }
+    }
+    // The GUI can exit before its reply reaches MCP; inspect only the owned
+    // child afterward. Never send another shutdown with a new ID here.
+    if let Ok(response) = gui.request(json!({"op":"shutdown","request_id":request_id,
+        "owned_root":root.to_string_lossy()}), 0.0) {
+        if response["ok"].as_bool() == Some(false) {
+            return Ok(response);
+        }
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let mut launch = LAUNCH.get_or_init(|| Mutex::new(LaunchState::default()))
+            .lock().map_err(|_| "Launch state lock poisoned".to_string())?;
+        if let Some(child) = launch.child.as_mut() {
+            if child.try_wait().map_err(|error| error.to_string())?.is_some() {
+                launch.child = None;
+                launch.started = None;
+                launch.failure = None;
+                launch.closed = Some(ClosedSession { session_id: session_id.into(),
+                    process_id: expected_pid, started_at_unix_ms: expected_start,
+                    request_id: request_id.into(), owned_root: root.clone() });
+                return Ok(json!({"ok":true,"status":"completed","request_id":request_id,
+                    "result":{"closed":true,"process_id":expected_pid}}));
+            }
+        }
+        drop(launch);
+        if Instant::now() >= deadline {
+            return Ok(json!({"ok":false,"status":"waiting_user","code":"shutdown_unconfirmed",
+                "error":"Owned GUI did not exit; inspect its state without retrying shutdown",
+                "request_id":request_id}));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn close_owned_document(
+    clients: &mut HashMap<String, GuiClient>, session_id: &str,
+    request: Value, wait_seconds: f64,
+) -> Result<Value, String> {
+    let root = Path::new(required_string(&request, "owned_root")?);
+    if !root.is_absolute() || !root.is_dir() {
+        return Err("owned_root must be an existing absolute directory".into());
+    }
+    let expected_pid = request["process_id"].as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| "process_id is required".to_string())?;
+    let expected_start = request["process_started_at_unix_ms"].as_u64()
+        .ok_or_else(|| "process_started_at_unix_ms is required".to_string())?;
+    let executable = Path::new(required_string(&request, "executable_path")?)
+        .canonicalize().map_err(|_| "Executable path is absent".to_string())?;
+    if executable != std::env::current_exe().map_err(|error| error.to_string())?
+        .canonicalize().map_err(|error| error.to_string())? {
+        return Err("Requested executable is not this MCP server build".into());
+    }
+    {
+        let launch = LAUNCH.get_or_init(|| Mutex::new(LaunchState::default()))
+            .lock().map_err(|_| "Launch state lock poisoned".to_string())?;
+        if launch.child.as_ref().map(Child::id) != Some(expected_pid) {
+            return Err("Session is not owned by this MCP process".into());
+        }
+    }
+    let gui = client(clients, session_id)?;
+    if gui.descriptor.pid != Some(expected_pid)
+        || gui.descriptor.started_at_unix_ms != Some(expected_start) {
+        return Err("Selected session process identity changed".into());
+    }
+    if gui.descriptor.executable.as_deref()
+        .and_then(|path| Path::new(path).canonicalize().ok()) != Some(executable) {
+        return Err("Selected session executable changed".into());
+    }
+    gui.request(request, wait_seconds)
 }
 
 fn required_string<'a>(arguments: &'a Value, key: &str) -> Result<&'a str, String> {
@@ -773,6 +1308,25 @@ fn validate_execute_request(request: &Value, op: &str) -> Result<(), String> {
                 r#"{"op":"set_properties","collection":"entities","handle":"2A","updates":[{"path":"/common/layer","value":"Walls"}]}"#,
             )
         }
+        "edit_wall_thickness" if request["edge_handles"].as_array().is_none_or(|edges| edges.len() != 4)
+            || request["expected_thickness_m"].as_f64().is_none()
+            || request["new_thickness_m"].as_f64().is_none() => {
+            missing("edge_handles or thickness", r#"{"op":"edit_wall_thickness","edge_handles":["64","65","66","67"],"expected_thickness_m":0.2,"new_thickness_m":0.25}"#)
+        }
+        "edit_wall_length" if request["edge_handles"].as_array().is_none_or(|edges| edges.len() != 4)
+            || request["dimension_handle"].as_str().is_none()
+            || request["expected_length_m"].as_f64().is_none()
+            || request["new_length_m"].as_f64().is_none()
+            || request["expected_thickness_m"].as_f64().is_none() => {
+            missing("wall edges, dimension or length", r#"{"op":"edit_wall_length","edge_handles":["64","65","66","67"],"dimension_handle":"68","expected_length_m":4,"new_length_m":4.5,"expected_thickness_m":0.2}"#)
+        }
+        "metric_plot_pdf" if request["path"].as_str().is_none_or(str::is_empty)
+            || request["scale_denominator"].as_u64().is_none() => {
+            missing("PDF path or metric scale", r#"{"op":"metric_plot_pdf","path":"/absolute/plot.pdf","scale_denominator":100}"#)
+        }
+        "set_metric_page_setup" if request["scale_denominator"].as_u64().is_none() => {
+            missing("metric scale", r#"{"op":"set_metric_page_setup","scale_denominator":100}"#)
+        }
         "action" => match request["name"].as_str() {
             Some(name) if crate::app::automation_action_names().contains(&name) => Ok(()),
             Some(name) => Err(format!(
@@ -780,6 +1334,23 @@ fn validate_execute_request(request: &Value, op: &str) -> Result<(), String> {
             )),
             None => missing("name", r#"{"op":"action","name":"zoom_extents"}"#),
         },
+        "shutdown_owned_session" if request["owned_root"].as_str().is_none()
+            || request["process_id"].as_u64().is_none()
+            || request["process_started_at_unix_ms"].as_u64().is_none()
+            || request["executable_path"].as_str().is_none() => {
+            missing("owned_root/process_id/process_started_at_unix_ms/executable_path",
+                r#"{"op":"shutdown_owned_session","owned_root":"/run","process_id":123,"process_started_at_unix_ms":123,"executable_path":"/path/OpenCADStudio"}"#)
+        }
+        "close_document" if request["policy"] != "require_saved"
+            || request["owned_root"].as_str().is_none()
+            || request["process_id"].as_u64().is_none()
+            || request["process_started_at_unix_ms"].as_u64().is_none()
+            || request["executable_path"].as_str().is_none()
+            || request["document_id"].as_u64().is_none()
+            || request["revision"].as_u64().is_none() => {
+            missing("policy/ownership/document_id/revision",
+                r#"{"op":"close_document","policy":"require_saved","document_id":2,"revision":1,"owned_root":"/run","process_id":123,"process_started_at_unix_ms":123,"executable_path":"/path/OpenCADStudio"}"#)
+        }
         "embed_image" if request["path"].as_str().is_none_or(str::is_empty) => {
             missing(
                 "path",
@@ -917,7 +1488,7 @@ fn call_tool(
     match name {
         "ocs_sessions" => {
             let launch = arguments["launch_if_none"].as_bool().unwrap_or(true);
-            Ok(Value::Array(sessions(launch)?))
+            sessions(launch)
         }
         "ocs_read" => {
             let session_id = required_string(arguments, "ocs_session_id")?;
@@ -930,7 +1501,15 @@ fn call_tool(
                 .cloned()
                 .unwrap_or_default();
             request.insert("op".into(), Value::String(op.into()));
-            client(clients, session_id)?.request(Value::Object(request), 30.0)
+            let gui = client(clients, session_id)?;
+            if op == "operation" {
+                if let Some(id) = request.get("request_id").and_then(Value::as_str) {
+                    if let Some(batch) = gui.resume_batch_operation(id)? {
+                        return Ok(batch);
+                    }
+                }
+            }
+            gui.request(Value::Object(request), 30.0)
         }
         "ocs_execute" => {
             let session_id = required_string(arguments, "ocs_session_id")?;
@@ -948,6 +1527,13 @@ fn call_tool(
                 return Err("request_id must not exceed 128 bytes".into());
             }
             validate_execute_request(&request, &op)?;
+            if op == "shutdown_owned_session" {
+                return shutdown_owned_session(clients, session_id, &request);
+            }
+            if op == "close_document" {
+                return close_owned_document(clients, session_id, request,
+                    arguments["wait_seconds"].as_f64().unwrap_or(30.0));
+            }
             if op == "run_script" {
                 request = expand_run_script(request);
             }
@@ -966,16 +1552,60 @@ fn call_tool(
             let path = std::env::temp_dir().join(format!("ocs-capture-{}.png", random_id()?));
             let scope = arguments["scope"].as_str().unwrap_or("viewport");
             let max_dimension = arguments["max_dimension"].as_u64().unwrap_or(1600);
+            let mut capture = json!({"op":"capture","path":path.to_string_lossy(),
+                "scope":scope,"max_dimension":max_dimension});
+            for key in ["document_id", "geometry_revision", "camera_revision"] {
+                if let Some(value) = arguments.get(key) {
+                    capture[key] = value.clone();
+                }
+            }
+            if let Some(landmarks) = arguments.get("landmarks") {
+                capture["landmarks"] = landmarks.clone();
+            }
             let result = client(clients, session_id)?
-                .request(json!({"op":"capture","path":path.to_string_lossy(),"scope":scope,"max_dimension":max_dimension}), 30.0)?;
+                .request(capture, 30.0)?;
             if result["ok"].as_bool() != Some(true)
                 || result["status"].as_str() != Some("completed")
             {
+                let _ = std::fs::remove_file(&path);
                 return Err(result.to_string());
+            }
+            let metadata = &result["result"];
+            if metadata["scope"] != scope {
+                let _ = std::fs::remove_file(&path);
+                return Err("Capture scope differs from requested scope".into());
+            }
+            if scope == "viewport" && metadata["overlay_policy"] != "drawing_only" {
+                let _ = std::fs::remove_file(&path);
+                return Err("Capture viewport includes interactive overlays".into());
+            }
+            for key in ["document_id", "geometry_revision", "camera_revision"] {
+                if arguments.get(key).is_some() && arguments[key] != metadata[key] {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(format!("Capture {key} changed before screenshot completed"));
+                }
+            }
+            if metadata["rendered_geometry_revision"] != metadata["geometry_revision"]
+                || metadata["rendered_camera_revision"] != metadata["camera_revision"]
+                || metadata["render_fence"] != "shader_encoded_frame"
+            {
+                let _ = std::fs::remove_file(&path);
+                return Err("Capture lacks matching shader render frame".into());
             }
             let bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
             let _ = std::fs::remove_file(path);
-            Ok(json!({"$image":BASE64.encode(bytes)}))
+            Ok(json!({"$image":BASE64.encode(bytes),"$meta":{
+                "ok":true,"document_id":metadata["document_id"],"revision":metadata["revision"],
+                "geometry_revision":metadata["geometry_revision"],
+                "camera_revision":metadata["camera_revision"],
+                "width":metadata["width"],"height":metadata["height"],"scope":metadata["scope"],
+                "overlay_policy":metadata["overlay_policy"],
+                "rendered_geometry_revision":metadata["rendered_geometry_revision"],
+                "rendered_camera_revision":metadata["rendered_camera_revision"],
+                "render_fence":metadata["render_fence"],
+                "projection_contract":metadata["projection_contract"],
+                "landmarks_px":metadata["landmarks_px"],
+                "timings":metadata["timings"]}}))
         }
         _ => Err(format!("Unknown tool: {name}")),
     }
@@ -1045,7 +1675,7 @@ fn execute_request_schema() -> Value {
             "point":point,
             "space":{"type":"string","enum":["wcs","ucs","relative"],"default":"wcs","description":"Coordinate space for point input."},
             "handle":handle.clone(),
-            "handles":{"type":"array","items":handle,"description":"Entity handles to select."},
+            "handles":{"type":"array","items":handle.clone(),"description":"Entity handles to select."},
             "type":{"type":"string","description":"Entity type filter for select."},
             "layer":{"type":"string","description":"Layer filter for select."},
             "clear":{"type":"boolean","description":"Clear the current selection before applying select filters."},
@@ -1053,10 +1683,24 @@ fn execute_request_schema() -> Value {
             "value":{"description":"New property value; its JSON type must match the property kind.","anyOf":[{"type":"string"},{"type":"number"},{"type":"boolean"},{"type":"object"},{"type":"array"},{"type":"null"}]},
             "collection":{"type":"string","description":"Record collection returned by ocs_read records."},
             "updates":{"type":"array","minItems":1,"description":"Atomic, type-checked property replacements. Paths are RFC 6901 JSON Pointers relative to record.properties.","items":{"type":"object","properties":{"path":{"type":"string","pattern":"^/"},"value":{},"expected":{"description":"Optional compare-and-set value."}},"required":["path","value"],"additionalProperties":false}},
+            "edge_handles":{"type":"array","minItems":4,"maxItems":4,"uniqueItems":true,"items":handle.clone(),"description":"Four LINE handles in closed contour order: first face, end cap, opposite face, start cap."},
+            "expected_thickness_m":{"type":"number","minimum":0.01,"maximum":10},
+            "new_thickness_m":{"type":"number","minimum":0.01,"maximum":10},
+            "dimension_handle":handle.clone(),
+            "expected_length_m":{"type":"number","minimum":0.1,"maximum":1000},
+            "new_length_m":{"type":"number","minimum":0.1,"maximum":1000},
+            "scale_denominator":{"type":"integer","minimum":10,"maximum":1000,"description":"Denominator of the 1:N metric model plot scale."},
+            "require_page_setup":{"type":"boolean","default":false,"description":"Reject PDF export unless Model carries matching A4 metric plot settings."},
+            "plot_style":{"type":"string","enum":["none","monochrome.ctb"],"default":"none","description":"Built-in monochrome CTB or no plot style for metric Model PDF/page setup."},
             "name":{"type":"string","enum":crate::app::automation_action_names(),"description":"UI action returned by ocs_read commands."},
             "steps":{"type":"array","minItems":1,"maxItems":MAX_BATCH_STEPS,"description":"Sequential editor operations executed with fresh state and idempotency keys. Execution stops at the first failure; completed_steps says what committed.","items":batch_step_schema()},
             "commands":{"type":"array","minItems":1,"maxItems":MAX_SCRIPT_COMMANDS,"description":"Complete one-line CAD commands for a resumable high-volume drawing script. Read command manifests first; points use x,y or x,y,z.","items":{"type":"string","minLength":1,"maxLength":MAX_SCRIPT_COMMAND_BYTES}},
-            "strict":{"type":"boolean","default":true,"description":"For run_script, fail closed when a command waits for more input or leaves unconsumed tokens."}
+            "strict":{"type":"boolean","default":true,"description":"For run_script, fail closed when a command waits for more input or leaves unconsumed tokens."},
+            "owned_root":{"type":"string","minLength":1,"description":"Canonical root allowed for every open document during owned shutdown."},
+            "process_id":{"type":"integer","minimum":1},
+            "process_started_at_unix_ms":{"type":"integer","minimum":1},
+            "executable_path":{"type":"string","minLength":1},
+            "policy":{"type":"string","enum":["require_saved"]}
         },
         "required":["op","request_id"],
         "additionalProperties":false,
@@ -1081,13 +1725,19 @@ fn execute_request_schema() -> Value {
             {"properties":{"op":{"const":"select"}}},
             {"properties":{"op":{"const":"property"}},"required":["field","value"]},
             {"properties":{"op":{"const":"set_properties"}},"required":["collection","updates"]},
+            {"properties":{"op":{"const":"edit_wall_thickness"}},"required":["edge_handles","expected_thickness_m","new_thickness_m","document_id","revision"]},
+            {"properties":{"op":{"const":"edit_wall_length"}},"required":["edge_handles","dimension_handle","expected_length_m","new_length_m","expected_thickness_m","document_id","revision"]},
+            {"properties":{"op":{"const":"metric_plot_pdf"}},"required":["path","scale_denominator","document_id","revision"]},
+            {"properties":{"op":{"const":"set_metric_page_setup"}},"required":["scale_denominator","document_id","revision"]},
             {"properties":{"op":{"const":"action"}},"required":["name"]},
             {"properties":{"op":{"const":"embed_image"}},"required":["path"]},
             {"properties":{"op":{"const":"save"}}},
             {"properties":{"op":{"const":"save_verified"}},"required":["path"]},
             {"properties":{"op":{"const":"stop"}}},
-            {"properties":{"op":{"const":"batch"}},"required":["steps"]},
-            {"properties":{"op":{"const":"run_script"}},"required":["commands"]}
+            {"properties":{"op":{"const":"batch"}},"required":["steps","document_id","revision"]},
+            {"properties":{"op":{"const":"run_script"}},"required":["commands","document_id","revision"]},
+            {"properties":{"op":{"const":"shutdown_owned_session"}},"required":["owned_root","process_id","process_started_at_unix_ms","executable_path"]},
+            {"properties":{"op":{"const":"close_document"}},"required":["policy","owned_root","process_id","process_started_at_unix_ms","executable_path","document_id","revision"]}
         ]
     })
 }
@@ -1110,7 +1760,7 @@ fn execute_output_schema() -> Value {
         "type":"object",
         "properties":{
             "ok":{"type":"boolean"},
-            "status":{"type":"string","enum":["accepted","running","waiting_input","completed","cancelled","failed"]},
+            "status":{"type":"string","enum":["accepted","running","waiting_input","waiting_user","completed","cancelled","failed"]},
             "request_id":{"type":"string"},"code":{"type":"string"},"error":{"anyOf":[{"type":"string"},{"type":"null"}]},
             "result":{"type":"object"},"changes":{"anyOf":[{"type":"array"},{"type":"null"}]},"state":{"type":"object"}
         },
@@ -1124,7 +1774,7 @@ fn tool_definitions() -> Value {
             "name":"ocs_sessions",
             "description":"List real OpenCADStudio GUI sessions and documents. Launch the installed editor if none is running.",
             "inputSchema":{"type":"object","properties":{"launch_if_none":{"type":"boolean","default":true,"description":"Launch OpenCADStudio when no live session exists."}},"additionalProperties":false},
-            "outputSchema":{"type":"object","properties":{"result":{"type":"array","items":{"type":"object","properties":{"ok":{"const":true},"session_id":{"type":"string"},"document_id":{"type":"integer"},"revision":{"type":"integer"},"selection":{"type":"array","items":{"type":"string"}},"documents":{"type":"array"}},"required":["ok","session_id","document_id","revision","selection","documents"],"additionalProperties":true}}},"required":["result"],"additionalProperties":false},
+            "outputSchema":{"type":"object","properties":{"ok":{"type":"boolean"},"status":{"type":"string","enum":["absent","starting","ready","failed"]},"reason":{"type":"string"},"retry_after_ms":{"type":"integer"},"deadline_remaining_ms":{"type":"integer"},"result":{"type":"array","items":{"type":"object","properties":{"ok":{"const":true},"session_id":{"type":"string"},"document_id":{"type":"integer"},"revision":{"type":"integer"},"selection":{"type":"array","items":{"type":"string"}},"documents":{"type":"array"}},"required":["ok","session_id","document_id","revision","selection","documents"],"additionalProperties":true}}},"required":["ok","status","result"],"additionalProperties":false},
             "annotations":{"title":"List OCS sessions","readOnlyHint":false,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
         },
         {
@@ -1144,7 +1794,7 @@ fn tool_definitions() -> Value {
         {
             "name":"ocs_capture",
             "description":"Capture the actual current OCS drawing viewport or window as a bounded PNG for visual verification.",
-            "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"scope":{"type":"string","enum":["viewport","window"],"default":"viewport","description":"Capture only the drawing viewport by default, or the complete application window."},"max_dimension":{"type":"integer","minimum":256,"maximum":4096,"default":1600,"description":"Resize the longest image edge to at most this many pixels."}},"required":["ocs_session_id"],"additionalProperties":false},
+            "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"scope":{"type":"string","enum":["viewport","window"],"default":"viewport","description":"Capture only the drawing viewport by default, or the complete application window."},"max_dimension":{"type":"integer","minimum":256,"maximum":4096,"default":1600,"description":"Resize the longest image edge to at most this many pixels."},"document_id":{"type":"integer","minimum":0},"geometry_revision":{"type":"integer","minimum":0},"camera_revision":{"type":"integer","minimum":0},"landmarks":{"type":"array","maxItems":32,"description":"World xyz points projected into the fenced viewport PNG.","items":{"type":"object","properties":{"id":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,80}$"},"point":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3}},"required":["id","point"],"additionalProperties":false}}},"required":["ocs_session_id"],"additionalProperties":false},
             "annotations":{"title":"Capture OCS window","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
         }
     ])
@@ -1152,7 +1802,8 @@ fn tool_definitions() -> Value {
 
 fn tool_result(value: Value) -> Value {
     if let Some(image) = value.get("$image").and_then(Value::as_str) {
-        return json!({"content":[{"type":"image","data":image,"mimeType":"image/png"}]});
+        return json!({"content":[{"type":"image","data":image,"mimeType":"image/png"}],
+            "structuredContent":value.get("$meta").cloned().unwrap_or(json!({"ok":true}))});
     }
     let structured = if value.is_object() {
         value.clone()
@@ -1444,6 +2095,201 @@ mod tests {
     use super::*;
 
     #[test]
+    fn batch_operation_exposes_progress_without_replaying() {
+        let mut gui = GuiClient {
+            descriptor: Descriptor { session_id: "fixture".into(), port: 0, token: String::new(), pid: None, executable: None, started_at_unix_ms: None },
+            state: json!({}),
+            client_id: "fixture-client".into(),
+            batches: VecDeque::new(),
+        };
+        gui.batches.push_back(BatchExecution {
+            id: "script-1".into(),
+            request: json!({"op":"run_script","request_id":"script-1"}),
+            steps: vec![json!({"op":"run"}), json!({"op":"run"})],
+            next: 1,
+            active: Some("step-2".into()),
+            results: vec![json!({"ok":true,"status":"completed"})],
+            changes: vec![],
+            state: None,
+            terminal: None,
+        });
+        let progress = gui.batch_operation("script-1").unwrap();
+        assert_eq!(progress["status"], "running");
+        assert_eq!(progress["completed_commands"], 1);
+        assert_eq!(progress["next_command"], 1);
+        assert_eq!(gui.batches[0].next, 1);
+        gui.batches[0].terminal = Some(json!({"ok":false,"status":"failed", "request_id":"script-1", "completed_commands":1}));
+        assert_eq!(gui.batch_operation("script-1").unwrap()["status"], "failed");
+    }
+
+    #[test]
+    fn failed_first_script_command_is_attempted_but_not_successful() {
+        let batch = BatchExecution {
+            id: "failed-script".into(),
+            request: json!({"op":"run_script","request_id":"failed-script"}),
+            steps: vec![json!({"op":"run","cmd":"DIMSTYLE SET Standard dimdec -1"})],
+            next: 1,
+            active: None,
+            results: vec![json!({"ok":false,"status":"failed",
+                "error":"DIMSTYLE: invalid integer property value"})],
+            changes: vec![],
+            state: Some(json!({"document_id":2,"revision":2,"geometry_revision":0})),
+            terminal: None,
+        };
+        let result = batch_result(&batch, "failed", false);
+        assert_eq!(result["attempted_commands"], 1);
+        assert_eq!(result["completed_commands"], 1); // legacy attempted count
+        assert_eq!(result["successful_commands"], 0);
+        assert_eq!(result["failed_command"], 0);
+        assert_eq!(result["changes"], json!([]));
+    }
+
+    #[test]
+    fn discovery_is_bounded_with_many_unresponsive_descriptors() {
+        use std::net::TcpListener;
+        use std::sync::atomic::AtomicBool;
+        let directory = std::env::current_dir().unwrap().join("target/mcp-discovery-tests")
+            .join(random_id().unwrap());
+        std::fs::create_dir_all(&directory).unwrap();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        listener.set_nonblocking(true).unwrap();
+        let done = std::sync::Arc::new(AtomicBool::new(false));
+        let worker_done = done.clone();
+        let worker = thread::spawn(move || {
+            let mut held = Vec::new();
+            while !worker_done.load(Ordering::Relaxed) {
+                match listener.accept() {
+                    Ok((stream, _)) => held.push(stream),
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock =>
+                        thread::sleep(Duration::from_millis(2)),
+                    Err(_) => break,
+                }
+            }
+        });
+        for count in [0, 1, 20, 100] {
+            let existing = directory.read_dir().unwrap().count();
+            for index in existing..count {
+                let path = directory.join(format!("{index:03}.json"));
+                let mut file = crate::automation_security::create_private_file(&path).unwrap();
+                write!(file, "{}", json!({"session_id":format!("{index:032x}"),
+                    "port":port,"token":"fixture"})).unwrap();
+            }
+            let began = Instant::now();
+            assert!(descriptors_in(&directory).unwrap().is_empty());
+            let elapsed = began.elapsed();
+            if count == 100 {
+                eprintln!("dead_descriptor_count={count} discovery_ms={:.1}", elapsed.as_secs_f64() * 1000.0);
+                assert!(elapsed < Duration::from_secs(8), "100 stale descriptors took {elapsed:?}");
+            }
+        }
+        done.store(true, Ordering::Relaxed);
+        worker.join().unwrap();
+        for entry in directory.read_dir().unwrap() {
+            std::fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn quarantines_only_a_named_regular_descriptor_under_its_directory() {
+        let base = std::env::current_dir().unwrap().join("target/mcp-quarantine-tests");
+        std::fs::create_dir_all(&base).unwrap();
+        let run_root = base.join(random_id().unwrap());
+        let dir = run_root
+            .join("long-component-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .join("long-component-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = "0123456789abcdef0123456789abcdef";
+        let descriptor = Descriptor { session_id:id.into(), port:0, token:"fixture".into(),
+            pid:Some(0), executable:None, started_at_unix_ms:Some(1) };
+        let path = dir.join(format!("{id}.json"));
+        std::fs::write(&path, b"synthetic").unwrap();
+        assert!(quarantine_dead_descriptor(&dir, &path, &descriptor).is_ok());
+        assert!(!path.exists());
+        assert_eq!(dir.join("quarantine").read_dir().unwrap().count(), 1);
+        let wrong = dir.join("wrong.json");
+        std::fs::write(&wrong, b"synthetic").unwrap();
+        assert!(quarantine_dead_descriptor(&dir, &wrong, &descriptor).is_err());
+        assert!(wrong.exists());
+        assert!(run_root.canonicalize().unwrap().starts_with(base.canonicalize().unwrap()));
+        std::fs::remove_dir_all(run_root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn exited_process_with_retained_handle_is_not_live() {
+        let mut child = Command::new("cmd").args(["/C", "exit /B 0"])
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        child.wait().unwrap();
+        let descriptor = Descriptor { session_id:"fixture".into(), port:0, token:String::new(),
+            pid:Some(child.id()), executable:None, started_at_unix_ms:Some(1) };
+        assert!(process_identity(&descriptor) == ProcessIdentity::DeadOrReused,
+            "pid={} status={:?}", child.id(), process_identity(&descriptor));
+    }
+
+    #[test]
+    fn shutdown_rejects_unowned_process_before_connecting() {
+        let request = json!({"op":"shutdown_owned_session","request_id":"close-1",
+            "owned_root":std::env::current_dir().unwrap().to_string_lossy(),
+            "process_id":u32::MAX,"process_started_at_unix_ms":1,
+            "executable_path":std::env::current_exe().unwrap().to_string_lossy()});
+        assert!(validate_execute_request(&request, "shutdown_owned_session").is_ok());
+        let error = shutdown_owned_session(&mut HashMap::new(),
+            "0123456789abcdef0123456789abcdef", &request).unwrap_err();
+        assert!(error.contains("not owned"));
+    }
+
+    #[test]
+    fn close_document_rejects_unowned_process_before_connecting() {
+        let request = json!({"op":"close_document","request_id":"close-doc-1",
+            "policy":"require_saved","document_id":2,"revision":1,
+            "owned_root":std::env::current_dir().unwrap().to_string_lossy(),
+            "process_id":u32::MAX,"process_started_at_unix_ms":1,
+            "executable_path":std::env::current_exe().unwrap().to_string_lossy()});
+        assert!(validate_execute_request(&request, "close_document").is_ok());
+        let error = close_owned_document(&mut HashMap::new(),
+            "0123456789abcdef0123456789abcdef", request, 0.0).unwrap_err();
+        assert!(error.contains("not owned"));
+    }
+
+    #[test]
+    fn batch_journal_recovers_active_step_without_persisting_tokens() {
+        let base = std::env::current_dir().unwrap().join("target/mcp-journal-tests");
+        std::fs::create_dir_all(&base).unwrap();
+        let run_root = base.join(random_id().unwrap());
+        let dir = run_root
+            .join("long-component-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .join("long-component-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+            .join("long-component-cccccccccccccccccccccccccccccccccccccccccccccccc");
+        let mut batch = BatchExecution {
+            id: "fixture-batch".into(),
+            request: json!({"op":"run_script","request_id":"fixture-batch",
+                "document_id":2,"revision":0,"steps":[{"op":"run","cmd":"LINE 0,0 1,0"}]}),
+            steps: vec![json!({"op":"run","cmd":"LINE 0,0 1,0"})],
+            next: 0,
+            active: None,
+            results: Vec::new(), changes: Vec::new(), state: None, terminal: None,
+        };
+        persist_batch_in(&dir, "session-1", &batch).unwrap();
+        batch.active = Some(batch_step_id(&batch.id, 0));
+        persist_batch_in(&dir, "session-1", &batch).unwrap();
+        let loaded = load_batches_in(&dir, "session-1").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].active, batch.active);
+        assert_eq!(loaded[0].next, 0);
+        assert!(load_batches_in(&dir, "another-session").unwrap().is_empty());
+        assert_eq!(load_batch_in(&dir, "session-1", &batch.id).unwrap().unwrap().active,
+            batch.active);
+        let journal = std::fs::read_to_string(batch_journal_path(&dir, "session-1", &batch.id)).unwrap();
+        assert!(!journal.contains("token"));
+        std::fs::write(batch_journal_path(&dir, "session-1", &batch.id), b"corrupt").unwrap();
+        assert!(load_batch_in(&dir, "session-1", &batch.id).unwrap_err().contains("corrupt"));
+        assert!(run_root.canonicalize().unwrap().starts_with(base.canonicalize().unwrap()));
+        std::fs::remove_dir_all(run_root).unwrap();
+    }
+
+    #[test]
     fn advertises_the_shared_tools() {
         let tools = tool_definitions();
         let names: Vec<_> = tools
@@ -1646,6 +2492,66 @@ mod tests {
                 .unwrap()
                 .contains("request_id")
         );
+    }
+
+    #[test]
+    fn wall_thickness_edit_requires_four_ordered_handles_and_expected_state() {
+        let request = json!({"op":"edit_wall_thickness","request_id":"wall-1",
+            "document_id":1,"revision":2,"edge_handles":["64","65","66","67"],
+            "expected_thickness_m":0.2,"new_thickness_m":0.25});
+        assert!(EXECUTE_OPS.contains(&"edit_wall_thickness"));
+        assert!(!BATCH_STEP_OPS.contains(&"edit_wall_thickness"));
+        assert!(validate_execute_request(&request, "edit_wall_thickness").is_ok());
+        let mut invalid = request.clone();
+        invalid["edge_handles"] = json!(["64","65","66"]);
+        assert!(validate_execute_request(&invalid, "edit_wall_thickness").is_err());
+        let schema = execute_request_schema();
+        assert_eq!(schema["properties"]["edge_handles"]["minItems"], 4);
+        assert_eq!(schema["properties"]["edge_handles"]["uniqueItems"], true);
+    }
+
+    #[test]
+    fn wall_length_edit_requires_associated_dimension_and_stale_guards() {
+        let request = json!({"op":"edit_wall_length","request_id":"length-1",
+            "document_id":1,"revision":2,"edge_handles":["64","65","66","67"],
+            "dimension_handle":"68","expected_length_m":4.0,"new_length_m":4.5,
+            "expected_thickness_m":0.2});
+        assert!(EXECUTE_OPS.contains(&"edit_wall_length"));
+        assert!(!BATCH_STEP_OPS.contains(&"edit_wall_length"));
+        assert!(validate_execute_request(&request, "edit_wall_length").is_ok());
+        let mut invalid = request.clone();
+        invalid.as_object_mut().unwrap().remove("dimension_handle");
+        assert!(validate_execute_request(&invalid, "edit_wall_length").is_err());
+        let schema = execute_request_schema();
+        assert_eq!(schema["properties"]["dimension_handle"]["type"], "string");
+        assert_eq!(schema["properties"]["new_length_m"]["maximum"], 1000);
+    }
+
+    #[test]
+    fn metric_plot_requires_an_explicit_metric_scale_and_is_not_batched() {
+        let request = json!({"op":"metric_plot_pdf","request_id":"plot-1",
+            "document_id":1,"revision":2,"path":"C:/synthetic/plot.pdf",
+            "scale_denominator":100});
+        assert!(EXECUTE_OPS.contains(&"metric_plot_pdf"));
+        assert!(!BATCH_STEP_OPS.contains(&"metric_plot_pdf"));
+        assert!(validate_execute_request(&request, "metric_plot_pdf").is_ok());
+        let mut invalid = request.clone();
+        invalid.as_object_mut().unwrap().remove("scale_denominator");
+        assert!(validate_execute_request(&invalid, "metric_plot_pdf").is_err());
+        let schema = execute_request_schema();
+        assert_eq!(schema["properties"]["scale_denominator"]["minimum"], 10);
+        assert_eq!(schema["properties"]["scale_denominator"]["maximum"], 1000);
+        assert_eq!(schema["properties"]["require_page_setup"]["type"], "boolean");
+        assert_eq!(schema["properties"]["plot_style"]["enum"], json!(["none","monochrome.ctb"]));
+        assert!(READ_OPS.contains(&"metric_page_setup"));
+        assert!(EXECUTE_OPS.contains(&"set_metric_page_setup"));
+        assert!(!BATCH_STEP_OPS.contains(&"set_metric_page_setup"));
+        let setup = json!({"op":"set_metric_page_setup","request_id":"setup-1",
+            "document_id":1,"revision":2,"scale_denominator":100});
+        assert!(validate_execute_request(&setup, "set_metric_page_setup").is_ok());
+        let mut invalid_setup = setup;
+        invalid_setup.as_object_mut().unwrap().remove("scale_denominator");
+        assert!(validate_execute_request(&invalid_setup, "set_metric_page_setup").is_err());
     }
 
     #[test]

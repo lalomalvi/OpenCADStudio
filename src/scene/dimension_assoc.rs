@@ -328,6 +328,16 @@ pub(crate) fn source_points(entity: &EntityType) -> Vec<Vector3> {
 }
 
 fn source_reference(entity: &EntityType, point: Vector3) -> Option<(i32, f64)> {
+    if let EntityType::Line(line) = entity {
+        let midpoint = Vector3::new(
+            (line.start.x + line.end.x) / 2.0,
+            (line.start.y + line.end.y) / 2.0,
+            (line.start.z + line.end.z) / 2.0,
+        );
+        if point_distance_squared(midpoint, point) <= 1e-16 {
+            return Some((0, 0.5));
+        }
+    }
     let curve_parameter = match entity {
         EntityType::Circle(circle) => {
             let center = circle.center_wcs();
@@ -718,6 +728,18 @@ fn source_distance_squared(entity: &EntityType, point: Vector3) -> Option<f64> {
         let plane_error = point.2 - circle.center.z;
         return Some(radial_error * radial_error + plane_error * plane_error);
     }
+    if let EntityType::Line(line) = entity {
+        let midpoint = Vector3::new(
+            (line.start.x + line.end.x) / 2.0,
+            (line.start.y + line.end.y) / 2.0,
+            (line.start.z + line.end.z) / 2.0,
+        );
+        return source_points(entity)
+            .into_iter()
+            .chain(std::iter::once(midpoint))
+            .map(|candidate| point_distance_squared(candidate, point))
+            .min_by(f64::total_cmp);
+    }
     source_points(entity)
         .into_iter()
         .map(|candidate| point_distance_squared(candidate, point))
@@ -1082,10 +1104,14 @@ impl Scene {
                     Some(marker) => (marker, source.parameter),
                     None => source_reference(entity, *point)?,
                 };
-                let osnap_type = if matches!(entity, EntityType::Circle(_)) {
-                    10
-                } else {
-                    1
+                let osnap_type = match entity {
+                    EntityType::Circle(_) => 10,
+                    EntityType::Line(_) if (parameter - 0.5).abs() <= 1e-12 => chain::osnap::MID,
+                    // AutoCAD resolves a LINE endpoint reference with marker 0
+                    // as the end point on DWG open. The explicit START_POINT
+                    // snap keeps the first endpoint distinct from marker 1.
+                    EntityType::Line(_) if marker == 0 => chain::osnap::START_POINT,
+                    _ => chain::osnap::END,
                 };
                 Some((source.handle, marker, parameter, osnap_type))
             })
@@ -2243,7 +2269,50 @@ impl Scene {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acadrust::entities::{Circle, DimensionDiameter};
+    use acadrust::entities::{Circle, DimensionDiameter, DimensionLinear, Line};
+
+    #[test]
+    fn typed_midpoints_bind_to_distinct_parallel_face_lines() {
+        let mut scene = Scene::new();
+        let upper = scene.add_entity(EntityType::Line(Line::from_points(
+            Vector3::new(0.0, 0.1, 0.0), Vector3::new(4.0, 0.1, 0.0),
+        )));
+        let lower = scene.add_entity(EntityType::Line(Line::from_points(
+            Vector3::new(0.0, -0.1, 0.0), Vector3::new(4.0, -0.1, 0.0),
+        )));
+        let mut native = DimensionLinear::new(
+                Vector3::new(2.0, 0.1, 0.0),
+                Vector3::new(2.0, -0.1, 0.0),
+            );
+        native.rotation = std::f64::consts::FRAC_PI_2;
+        native.base.actual_measurement = native.measurement();
+        let dimension = scene.add_entity(EntityType::Dimension(Dimension::Linear(native)));
+        assert_eq!(scene.infer_dimension_sources(dimension), vec![Some(upper), Some(lower)]);
+        scene.attach_dimension_association(dimension, vec![Some(upper), Some(lower)]);
+        let association = scene.dimension_association(dimension).expect("bound midpoint refs");
+        assert_eq!(association.associativity, 3);
+        for (index, handle) in [upper, lower].into_iter().enumerate() {
+            let reference = &association.references[index][0];
+            assert_eq!(reference.xrefs, vec![handle]);
+            assert_eq!(reference.osnap_type, chain::osnap::MID);
+            assert_eq!(reference.main_gs_marker, 0);
+            assert!((reference.osnap_distance - 0.5).abs() <= 1e-12);
+        }
+        let Some(EntityType::Line(line)) = scene.document.get_entity_mut(upper) else {
+            panic!("upper face line");
+        };
+        line.start.y = 0.15;
+        line.end.y = 0.15;
+        scene.bump_entities(&[(upper, ChangeKind::Modified)]);
+        let Some(EntityType::Dimension(Dimension::Linear(updated))) =
+            scene.document.get_entity(dimension) else {
+                panic!("updated thickness dimension");
+            };
+        assert!((updated.first_point.y - 0.15).abs() <= 1e-9);
+        assert!((updated.measurement() - 0.25).abs() <= 1e-9);
+        assert!(scene.dimension_association_status(dimension).iter()
+            .all(|(_, status)| *status == ReferenceStatus::Resolved));
+    }
 
     #[test]
     fn diameter_angle_sync_records_the_association_for_undo() {

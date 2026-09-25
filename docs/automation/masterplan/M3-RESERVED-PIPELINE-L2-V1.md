@@ -1,0 +1,7 @@
+# M3/M7 — integración reservada sintética L2
+
+`reserved_pipeline_smoke.py` usa seis PNG/oráculos **sintéticos**, journal congelado, Luna y supervisor falsos, y el binario/servidor/GUI OpenCADStudio reales en un perfil hijo aislado. Prepara GUI y cliente antes de reservar, cierra el modal inicial solo en esa GUI, y ejecuta `run_reserved_pipeline` con `OwnedCadExecutor`. El sobre se reabre con `verify_envelope`, que también verifica el DWG anidado. El cierre guarda la pestaña activa en un DWG sintético separado si `save_verified` la dejó sucia, envía `QUIT` y comprueba salida.
+
+Run `target/mcp-reserved-pipeline/20260924-091120-78883029/report.json`: `passed`; una llamada Luna falsa y una de supervisor falso; cinco comandos, cuatro entidades, auditoría y DWG SHA-256 `174CBBAA892F641309F846BCB33B46C079DA9079EA23519D38F1F7273C07A940`. Journal `445E5879070029E6D28F0ABD1076A7857712945E6C4304ED2463827CB9DAA562`, sobre `2BF60A489315805B8473C7E8B67DCA75DF01998192C24B0485E09E2D048B7D03`, evidencia CAD `9C4DD03F2D0C51BE6146E305B6DBBE937CB9CA2E635452E714F77885CF63FD1F`; GUI salió. Los artefactos permanecen fuera de Git.
+
+Este run prueba el cableado y el CAD interno, no una respuesta de Luna real ni la interpretación de una imagen. El supervisor falso aporta estructura/uso de prueba y ninguna evaluación. `completed` solo contabiliza metadatos; G0–G10 siguen `unevaluated`. Tampoco hay L4 externo para este run ni L5 humano.

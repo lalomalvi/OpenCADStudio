@@ -3,14 +3,54 @@ use super::{session_id, Envelope, Reply};
 use iced::futures::{channel::mpsc, Stream};
 use serde_json::{json, Value};
 use std::{
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     net::TcpListener,
+    path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+fn heartbeat_writer(dir: PathBuf, id: String, pid: u32, started_at_unix_ms: Option<u64>) {
+    let path = dir.join(format!("{id}.heartbeat"));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let Ok(mut file) = options.open(path) else { return; };
+    loop {
+        let updated_at_unix_ms = u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)
+            .unwrap_or_default().as_millis()).unwrap_or(u64::MAX);
+        let wire = json!({"session_id":id,"pid":pid,"started_at_unix_ms":started_at_unix_ms,
+            "updated_at_unix_ms":updated_at_unix_ms}).to_string();
+        if file.set_len(0).is_err() || file.seek(SeekFrom::Start(0)).is_err()
+            || file.write_all(wire.as_bytes()).is_err() || file.flush().is_err() {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+#[cfg(windows)]
+fn process_started_at_unix_ms() -> Option<u64> {
+    use windows_sys::Win32::{Foundation::FILETIME, System::Threading::{GetCurrentProcess, GetProcessTimes}};
+    let mut created: FILETIME = unsafe { std::mem::zeroed() };
+    let mut exited: FILETIME = unsafe { std::mem::zeroed() };
+    let mut kernel: FILETIME = unsafe { std::mem::zeroed() };
+    let mut user: FILETIME = unsafe { std::mem::zeroed() };
+    if unsafe { GetProcessTimes(GetCurrentProcess(), &mut created, &mut exited, &mut kernel, &mut user) } == 0 {
+        return None;
+    }
+    let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+    ticks.checked_sub(116_444_736_000_000_000).map(|value| value / 10_000)
+}
+
+#[cfg(not(windows))]
+fn process_started_at_unix_ms() -> Option<u64> { None }
 
 pub(in crate::app) fn subscribe() -> iced::Subscription<Envelope> {
     iced::Subscription::run(worker)
@@ -41,18 +81,18 @@ fn listen(sender: mpsc::Sender<Envelope>) -> std::io::Result<()> {
     let mut secret = [0u8; 32];
     getrandom::fill(&mut secret).map_err(std::io::Error::other)?;
     let token: String = secret.iter().map(|v| format!("{v:02x}")).collect();
-    let descriptor = json!({"protocol":1,"session_id":session_id(),"pid":std::process::id(),"port":listener.local_addr()?.port(),"token":token,"executable":std::env::current_exe()?.to_string_lossy()});
+    let started_at_unix_ms = process_started_at_unix_ms();
+    let descriptor = json!({"protocol":1,"session_id":session_id(),"pid":std::process::id(),
+        "started_at_unix_ms":started_at_unix_ms,"port":listener.local_addr()?.port(),
+        "token":token,"executable":std::env::current_exe()?.to_string_lossy()});
     let path = dir.join(format!("{}.json", session_id()));
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&path)?;
+    let mut file = crate::automation_security::create_private_file(&path)?;
     write!(file, "{descriptor}")?;
     drop(file);
+    let heartbeat_dir = dir.clone();
+    let heartbeat_id = session_id().to_owned();
+    std::thread::spawn(move || heartbeat_writer(heartbeat_dir, heartbeat_id,
+        std::process::id(), started_at_unix_ms));
     let clients = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming().flatten() {
         if clients.fetch_add(1, Ordering::SeqCst) >= 8 {

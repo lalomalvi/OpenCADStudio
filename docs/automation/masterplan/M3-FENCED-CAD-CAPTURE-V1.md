@@ -1,0 +1,7 @@
+# M3/M6 — captura CAD cercada en ejecución reservada v1
+
+`OwnedCadExecutor(capture_viewport=True)` encuadra la vista con `ZOOM EXTENTS` usando un ID estable derivado de la casilla. Consulta documento/revisiones y llama a `Client.capture_artifact`, que exige `render_fence=shader_encoded_frame`, `overlay_policy=drawing_only`, revisiones renderizadas iguales a las solicitadas y un PNG acotado. La evidencia JSON guarda solo nombre, bytes, SHA-256, identidad y revisiones. `verify_owned_cad_evidence`, llamado por el sobre reservado, vuelve a comprobar la imagen anidada; no guarda Base64 ni respuesta de modelo.
+
+L0: prueba de captura cercada y rechazo de PNG alterado. L2 sintético integrado `target/mcp-reserved-pipeline/20260924-091513-8b29d2e9/report.json`: `passed`, journal `605AEC86555183F5AEBF83F35F26DC4441E0E80198ADF37BD6229A106D0ADE5F`, sobre `F1049D8D80C9ADF0C8DB5457F6015F5689A0D351F0FB23996061F7C33506205C`, evidencia CAD `75A9B85DD77ABC61A74DB6A8C1AD8563708481FC8DBAE4179EECC2A21B14768F`, DWG `174CBBAA892F641309F846BCB33B46C079DA9079EA23519D38F1F7273C07A940` y PNG `08D45D440725BCDF4BD1FB0D3C194324012E525C8C702359694CF619AD0E603A`. Se inspeccionó visualmente el PNG sintético: muestra el contorno rectangular esperado. GUI salió; artefactos locales fuera de Git.
+
+El supervisor de este run aún es falso. La imagen cercada prepara una entrada visual real, pero no concede G6: falta comparación independiente con oráculo, planos reservados L3, motor externo L4 y revisión humana L5.
