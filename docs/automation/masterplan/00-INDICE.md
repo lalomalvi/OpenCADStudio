@@ -77,3 +77,4 @@ Una versión candidata requiere todos los gates técnicos y de fidelidad de su a
 [M7-REVISION-VISUAL-PLANTA-PARCIAL-V2.md](M7-REVISION-VISUAL-PLANTA-PARCIAL-V2.md): comparación actualizada de 60 entidades contra la imagen de desarrollo, con divisor y dos puertas visibles; L5 humana pendiente.
 [M8-CI-FORK-V1.md](M8-CI-FORK-V1.md): workflows manuales del fork, Rust workspace CI y Python host Linux/Windows aprobados en sus SHAs; checks automáticos del PR aún no acreditados.
 [M7-PUERTA-NORESTE-REPETIBILIDAD-V1.md](M7-PUERTA-NORESTE-REPETIBILIDAD-V1.md): seis llamadas Luna intercaladas sobre puerta ya vista; prompt inicial 0/3 y corregido 1/3, sin CAD nuevo ni aceptación M7.
+[M8-RELEASE-CANDIDATO-B79E-V1.md](M8-RELEASE-CANDIDATO-B79E-V1.md): segundo bundle Windows x64 desde SHA limpio exacto, guard de revisión probado, verificación tras extracción y smoke sintético L2/AutoCAD L4 4/4; M8 sigue parcial.
