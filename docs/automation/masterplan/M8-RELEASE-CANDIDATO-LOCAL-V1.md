@@ -32,3 +32,7 @@ La primera invocación `cargo test --workspace --locked` no pasó: varias compil
 ## Límite y siguiente gate
 
 El paquete permite reproducir un PlanSpec **ya preparado** y un fixture sintético; no invoca Luna ni transforma imagen en PlanSpec. La comparación L4 es de cuatro LINE, no de fidelidad de planta. Siguen pendientes M3 identidad/uso directo, M7 plano integral, cohorte independiente y L5 humana, compatibilidad adicional, revisión de diff/checks y merge de M8. Las cinco imágenes autorizadas permanecen material de desarrollo. No se tocó el DWG privado ni el remoto del autor.
+
+## Publicación del corte
+
+La rama `codex/mcp-m8-release-candidate` se publicó solo en `origin` (`lalomalvi/OpenCADStudio`), con SHA local/remoto `5cebf149f976833faf9e0b927f4506e60c58f075` al crear el [PR draft #1](https://github.com/lalomalvi/OpenCADStudio/pull/1). GitHub reportó `mergeable=MERGEABLE` y lista de checks vacía en la primera consulta; `gh pr checks` informó que no había checks reportados. No se ha hecho merge. Volver a verificar HEAD remoto y checks tras cualquier commit de documentación.
