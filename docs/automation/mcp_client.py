@@ -115,6 +115,7 @@ class Client:
         self.response_bytes = 0
         self._pending: dict[int, queue.Queue] = {}
         self._lock = threading.Lock()
+        self._write_lock = threading.Lock()
         self._fatal: str | None = None
         self._mutations: dict[str, tuple[str, dict | None]] = {}
         self._sessions: dict[str, dict] = {}
@@ -183,24 +184,29 @@ class Client:
     def _rpc_impl(self, method: str, params: dict, *, timeout: float | None = None) -> dict:
         assert self.process.stdin
         slot: queue.Queue = queue.Queue(maxsize=1)
-        with self._lock:
-            if self._fatal:
-                raise ProtocolError(self._fatal)
-            if len(self._pending) >= self.max_pending:
-                raise ProtocolError("MCP request queue full")
-            self.serial += 1
-            serial = self.serial
-            payload = {"jsonrpc": "2.0", "id": serial, "method": method, "params": params}
-            wire = json.dumps(payload, separators=(",", ":")) + "\n"
-            self._pending[serial] = slot
+        # A pipe write can block on a large request. Never hold the pending-map
+        # lock while writing: the stdout reader needs it to dispatch replies.
+        with self._write_lock:
+            with self._lock:
+                if self._fatal:
+                    raise ProtocolError(self._fatal)
+                if len(self._pending) >= self.max_pending:
+                    raise ProtocolError("MCP request queue full")
+                self.serial += 1
+                serial = self.serial
+                payload = {"jsonrpc": "2.0", "id": serial, "method": method, "params": params}
+                wire = json.dumps(payload, separators=(",", ":")) + "\n"
+                self._pending[serial] = slot
             try:
                 self.process.stdin.write(wire)
                 self.process.stdin.flush()
             except (BrokenPipeError, OSError) as exc:
-                self._pending.pop(serial, None)
+                with self._lock:
+                    self._pending.pop(serial, None)
                 raise ProtocolError("MCP write failed") from exc
-            self.request_bytes += len(wire.encode("utf-8"))
-            self.rpc_calls += 1
+            with self._lock:
+                self.request_bytes += len(wire.encode("utf-8"))
+                self.rpc_calls += 1
         try:
             reply = slot.get(timeout=self.timeout if timeout is None else timeout)
         except queue.Empty as exc:

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -60,6 +61,37 @@ class ClientTests(unittest.TestCase):
             second = pool.submit(client.rpc, "ping", {"seq": 2})
             self.assertEqual({first.result()["name"], second.result()["name"]},
                              {"first", "second"})
+
+    def test_blocked_stdin_write_does_not_hold_reply_dispatch_lock(self):
+        client = self.client(timeout=3)
+        original = client.process.stdin
+        entered = threading.Event()
+        release = threading.Event()
+
+        class BlockedWriter:
+            def write(self, wire):
+                entered.set()
+                if not release.wait(2):
+                    raise TimeoutError("synthetic write remained blocked")
+                return original.write(wire)
+
+            def flush(self):
+                return original.flush()
+
+        client.process.stdin = BlockedWriter()
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(client.rpc, "ping", {"seq": 1})
+                self.assertTrue(entered.wait(1))
+                acquired = client._lock.acquire(timeout=0.25)
+                if acquired:
+                    client._lock.release()
+                release.set()
+                self.assertTrue(acquired, "stdout dispatch lock held during pipe write")
+                self.assertEqual(future.result(timeout=3), {})
+        finally:
+            release.set()
+            client.process.stdin = original
 
     def test_lost_reply_queries_operation_once(self):
         client = self.client("lost_mutation", timeout=0.5)
