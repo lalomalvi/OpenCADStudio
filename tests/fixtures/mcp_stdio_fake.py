@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 
 mode = os.environ.get("OCS_FIXTURE_MODE", "normal")
 launches = 0
@@ -33,6 +34,10 @@ for line in sys.stdin:
         send(request, {"name": "second"})
         send(held, {"name": "first"})
         held = None
+        continue
+    if mode == "delayed_first_ping" and method == "ping" and request["params"].get("seq") == 1:
+        time.sleep(0.5)
+        send(request, {"name": "first"})
         continue
     if method == "server/discover":
         send(request, {"supportedVersions": ["2026-07-28"],

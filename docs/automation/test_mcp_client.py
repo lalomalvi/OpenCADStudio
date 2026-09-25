@@ -63,32 +63,37 @@ class ClientTests(unittest.TestCase):
                              {"first", "second"})
 
     def test_blocked_stdin_write_does_not_hold_reply_dispatch_lock(self):
-        client = self.client(timeout=3)
+        client = self.client("delayed_first_ping", timeout=4)
         original = client.process.stdin
+        first_written = threading.Event()
         entered = threading.Event()
         release = threading.Event()
 
         class BlockedWriter:
             def write(self, wire):
-                entered.set()
-                if not release.wait(2):
-                    raise TimeoutError("synthetic write remained blocked")
-                return original.write(wire)
+                if '"seq":2' in wire:
+                    entered.set()
+                    if not release.wait(3):
+                        raise TimeoutError("synthetic write remained blocked")
+                written = original.write(wire)
+                if '"seq":1' in wire:
+                    first_written.set()
+                return written
 
             def flush(self):
                 return original.flush()
 
         client.process.stdin = BlockedWriter()
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(client.rpc, "ping", {"seq": 1})
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                first = pool.submit(client.rpc, "ping", {"seq": 1})
+                self.assertTrue(first_written.wait(1))
+                second = pool.submit(client.rpc, "ping", {"seq": 2})
                 self.assertTrue(entered.wait(1))
-                acquired = client._lock.acquire(timeout=0.25)
-                if acquired:
-                    client._lock.release()
+                # The first reply must be delivered while the second write is blocked.
+                self.assertEqual(first.result(timeout=2), {"name": "first"})
                 release.set()
-                self.assertTrue(acquired, "stdout dispatch lock held during pipe write")
-                self.assertEqual(future.result(timeout=3), {})
+                self.assertEqual(second.result(timeout=3), {})
         finally:
             release.set()
             client.process.stdin = original
