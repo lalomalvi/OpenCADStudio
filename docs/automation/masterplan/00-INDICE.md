@@ -72,3 +72,4 @@ Una versión candidata requiere todos los gates técnicos y de fidelidad de su a
 [M8-CLI-PLANTA-PARCIAL-MIXTA-V1.md](M8-CLI-PLANTA-PARCIAL-MIXTA-V1.md): el CLI determinista reprodujo byte a byte un DWG de 55 entidades mixtas ya auditado 55/55 en AutoCAD; M8 sigue parcial.
 [M7-REVISION-VISUAL-PLANTA-PARCIAL-V1.md](M7-REVISION-VISUAL-PLANTA-PARCIAL-V1.md): superposición de PlanSpec sobre la fuente autorizada con calibración congelada, evidencia visual de los recintos aún faltantes y paquete L5 pendiente.
 [M7-APARTAMENTO-DIVISOR-ESTE-V1.md](M7-APARTAMENTO-DIVISOR-ESTE-V1.md): un divisor horizontal observado con oráculo previo, primer JSON inválido preservado, segundo pase Luna, PlanSpec 58 entidades, L2/L4 58/58 y negativos.
+[M8-RELEASE-CANDIDATO-LOCAL-V1.md](M8-RELEASE-CANDIDATO-LOCAL-V1.md): build Windows x64 `--locked`, paquete sanitizado de 20 miembros, verificación tras extracción y smoke sintético L2/L4 4/4. M8 sigue parcial.

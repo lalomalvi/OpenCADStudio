@@ -293,6 +293,7 @@ fn depth_and_paper_model_groups_order_images_with_wipeouts_and_wires() {
     input.content.wires = Arc::new(vec![PlotWire {
         wire,
         draw_depth: 0.9,
+        semantic_text: None,
     }]);
     let raster = Raster::from_pdf(&export(&[input]), 0);
     raster.assert_color(20.0, 40.0, [255, 255, 255]);

@@ -140,7 +140,7 @@ fn dump_one_blkref_leaf() {
             }
             shown += 1;
             eprintln!("--- BLKREF leaf handle={h:?} owner={owner:?} scale_target={scale_h:?} ver={raw_dwg_version:?}");
-            eprintln!("    data ({} B): {}", raw.len(), hex(raw));
+            eprintln!("    data ({} B): {}", raw.len(), hex(&raw));
             eprintln!("    handle_bits: {:?}", raw_dwg_handle_bits);
         }
     }

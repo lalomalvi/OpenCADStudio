@@ -58,6 +58,7 @@ fn text_and_dim_reach_pdf_export() {
         .map(|w| PlotWire {
             wire: w.clone(),
             draw_depth: 0.0,
+            semantic_text: None,
         })
         .collect();
 
