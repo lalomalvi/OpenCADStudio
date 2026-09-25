@@ -1,5 +1,5 @@
 # Masterplan de robustecimiento MCP y reconstrucción CAD
-Versión 1.0 · 2026-09-23 · Estado: planificación; implementación futura pendiente.
+Versión 1.0 del plan: 2026-09-23. Estado vigente al corte 147 (2026-09-25): M0 aprobado, M1 acotado L1/L2, M2–M6 parciales y M7/M8 sin aceptación global. El historial y los gates exactos están en [05-CHECKPOINT-Y-CONTINUACION.md](05-CHECKPOINT-Y-CONTINUACION.md).
 
 Actualización M0/M1: ver [M0-INTEGRACION.md](M0-INTEGRACION.md), [BASELINE.json](BASELINE.json), [mcp_client.md](../mcp_client.md) y el corte vigente en [05-CHECKPOINT-Y-CONTINUACION.md](05-CHECKPOINT-Y-CONTINUACION.md). Los contratos acotados de obstáculos M6.3 y cotas de eje M4/M5 están en [OBSTACLE-QA-V8.md](OBSTACLE-QA-V8.md), [AXIS-SPAN-DIMENSION-V8.md](AXIS-SPAN-DIMENSION-V8.md), [AXIS-ENDPOINT-ALIGNED-V9.md](AXIS-ENDPOINT-ALIGNED-V9.md), [ASSOCIATIVE-AXIS-LENGTH-EDIT.md](ASSOCIATIVE-AXIS-LENGTH-EDIT.md), [JOINED-WALL-SINGLE-DOOR-V1.md](JOINED-WALL-SINGLE-DOOR-V1.md), [THREE-WALL-UNION-V1.md](THREE-WALL-UNION-V1.md), [THREE-WALL-SINGLE-DOOR-V1.md](THREE-WALL-SINGLE-DOOR-V1.md), [METRIC-PLOT-PDF-V1.md](METRIC-PLOT-PDF-V1.md), [METRIC-PAGE-SETUP-DWG-V1.md](METRIC-PAGE-SETUP-DWG-V1.md), [METRIC-CONTENT-PRINT-QA-V1.md](METRIC-CONTENT-PRINT-QA-V1.md), [METRIC-PEN-WIDTH-QA-V1.md](METRIC-PEN-WIDTH-QA-V1.md), [METRIC-BYLAYER-PRINT-QA-V1.md](METRIC-BYLAYER-PRINT-QA-V1.md), [METRIC-MONOCHROME-CTB-V1.md](METRIC-MONOCHROME-CTB-V1.md), [METRIC-SEARCHABLE-TEXT-V1.md](METRIC-SEARCHABLE-TEXT-V1.md), [M7-ORACLE-FREEZE-V1.md](M7-ORACLE-FREEZE-V1.md), [M7-TRIAL-JOURNAL-V1.md](M7-TRIAL-JOURNAL-V1.md), [M7-INVOCATION-GATE-V1.md](M7-INVOCATION-GATE-V1.md) y [M7-EVIDENCE-BINDING-V1.md](M7-EVIDENCE-BINDING-V1.md). La tabla siguiente conserva el estado inicial histórico.
 
@@ -54,7 +54,7 @@ Los contratos aceptados de cada evaluación prevalecen sobre objetivos orientati
 | Revisión visual del usuario | Pendiente |
 
 ## Alcance y límites
-La sesión de cierre publica documentación y respalda el código previamente desarrollado en una rama. No incorpora automáticamente las 28 modificaciones experimentales a main. El siguiente trabajo empieza por M0 y M1; mantiene el plano original y el ensayo histórico intactos. No requiere redibujar el caso para iniciar.
+El corte de planificación original respaldó el código experimental sin incorporar automáticamente sus 28 modificaciones a `main`. M0 revisó e integró el alcance autorizado y M1 preparó el cliente persistente con evidencia acotada; el estado posterior se consulta en el checkpoint. El plano original y el ensayo histórico se conservan intactos. El trabajo pendiente no requiere redibujar el caso para reanudar.
 
 Unidades, permisos, validación, límites, identidad de sesión y recuperación deben residir en código verificable. El modelo propone interpretación y decisiones visuales; no certifica por sí mismo su identidad, integridad, costo o conformidad.
 
