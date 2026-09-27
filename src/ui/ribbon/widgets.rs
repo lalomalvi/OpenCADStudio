@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
 use std::time::Duration;
 
-use acadrust::types::{Color as AcadColor, LineWeight};
+use codec::types::{Color as AcadColor, LineWeight};
 use iced::advanced::{
     layout, mouse, overlay, renderer, text as advanced_text, widget, Layout, Shell, Widget,
 };
@@ -665,7 +665,15 @@ pub(super) fn render_small<'a>(
                 items.iter().find(|(candidate, _, _)| *candidate == cmd)
                     .map(|(_, _, item_icon)| *item_icon)
             }).or_else(|| items.first().map(|(_, _, item_icon)| *item_icon)).unwrap_or(*icon);
-            let localized_label = t!(*label).into_owned();
+            let localized_label = if label.is_empty() {
+                items
+                    .iter()
+                    .find(|(cmd, _, _)| *cmd == last)
+                    .map(|(_, item_label, _)| t!(*item_label).into_owned())
+                    .unwrap_or_default()
+            } else {
+                t!(*label).into_owned()
+            };
             let face = row![
                 container(make_icon(cur_icon, SMALL_ICON)).width(Length::Fixed(SMALL_W)),
                 text(localized_label.clone()).size(10).wrapping(advanced_text::Wrapping::None),

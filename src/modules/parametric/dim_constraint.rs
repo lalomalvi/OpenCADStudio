@@ -1,4 +1,4 @@
-use acadrust::{EntityType, Handle};
+use codec::{EntityType, Handle};
 use glam::DVec3;
 
 use crate::command::{CadCommand, CmdOption, CmdResult, CoincidentPick};
@@ -70,7 +70,11 @@ enum Step {
     /// Aligned's 2Lines: `Select first line:`
     TwoLinesFirst,
     /// `Select second line to make parallel:`
-    TwoLinesSecond { line: LineTarget },
+    TwoLinesSecond {
+        line: LineTarget,
+        /// Where the first line was picked.
+        pick: DVec3,
+    },
     /// The host is making the second line parallel; `accept_parallel_line`
     /// brings its solved ends.
     TwoLinesParallel {
@@ -818,13 +822,16 @@ impl CadCommand for DimConstraintCommand {
             },
             Step::TwoLinesFirst => match self.pick_line(handle, point) {
                 Ok(line) => {
-                    self.step = Step::TwoLinesSecond { line };
+                    self.step = Step::TwoLinesSecond { line, pick: point };
                     CmdResult::NeedPoint
                 }
                 Err("") => CmdResult::NeedPoint,
                 Err(message) => Self::report(message),
             },
-            Step::TwoLinesSecond { line: first_line } => match self.pick_line(handle, point) {
+            Step::TwoLinesSecond {
+                line: first_line,
+                pick: first_pick,
+            } => match self.pick_line(handle, point) {
                 Ok(second_line) => {
                     if second_line.line == first_line.line {
                         return Self::report(Self::SAME_POINT);
@@ -839,6 +846,7 @@ impl CadCommand for DimConstraintCommand {
                     CmdResult::MakeParallel {
                         first_line: first_line.line,
                         first_ends: [first_line.ends[0].0, first_line.ends[1].0],
+                        first_pick,
                         second_line: second_line.line,
                         second_ends: [second_line.ends[0].0, second_line.ends[1].0],
                     }
@@ -1424,8 +1432,8 @@ impl CadCommand for DimensionValueCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acadrust::entities::Line;
-    use acadrust::types::Vector3;
+    use codec::entities::Line;
+    use codec::types::Vector3;
 
     #[test]
     fn object_pick_takes_the_line_ends_then_asks_for_the_location() {

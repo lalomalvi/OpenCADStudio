@@ -163,7 +163,7 @@ fn shortcut_key_name(key: &keyboard::Key, modifiers: keyboard::Modifiers) -> Opt
 /// `ViewportRenderMode` enum carries the raw DXF integers, not a label,
 /// so wrap it locally with a friendly name renderer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct RenderModeChoice(pub acadrust::entities::ViewportRenderMode);
+pub(super) struct RenderModeChoice(pub codec::entities::ViewportRenderMode);
 
 impl std::fmt::Display for RenderModeChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -537,12 +537,12 @@ bg={bg_ms:.1}ms n={view_count}"
                     .flatten()
                     .and_then(|h| {
                         let indexed = match tab.scene.document.get_entity(h) {
-                            Some(acadrust::EntityType::LwPolyline(_))
-                            | Some(acadrust::EntityType::Polyline2D(_))
-                            | Some(acadrust::EntityType::Polyline3D(_))
-                            | Some(acadrust::EntityType::Spline(_))
-                            | Some(acadrust::EntityType::Face3D(_))
-                            | Some(acadrust::EntityType::PolygonMesh(_)) => true,
+                            Some(codec::EntityType::LwPolyline(_))
+                            | Some(codec::EntityType::Polyline2D(_))
+                            | Some(codec::EntityType::Polyline3D(_))
+                            | Some(codec::EntityType::Spline(_))
+                            | Some(codec::EntityType::Face3D(_))
+                            | Some(codec::EntityType::PolygonMesh(_)) => true,
                             _ => false,
                         };
                         indexed.then_some(tab.properties.prop_vertex)
@@ -612,7 +612,7 @@ bg={bg_ms:.1}ms n={view_count}"
             };
             let control_polygon = tab.selected_handle.and_then(|handle| {
                 let spline = match tab.scene.document.get_entity(handle) {
-                    Some(acadrust::EntityType::Spline(spline))
+                    Some(codec::EntityType::Spline(spline))
                         if crate::entities::spline::shows_control_vertices(spline) => spline,
                     _ => return None,
                 };
@@ -913,6 +913,7 @@ bg={bg_ms:.1}ms n={view_count}"
                     isometric: self.isometric_drafting,
                     iso_plane: self.iso_plane,
                     snap_angle_deg: self.snap_angle_deg,
+                    pick_pending: self.pending_pick_label().is_some(),
                 },
                 crate::ui::overlay::SelectionVisualOptions {
                     area: self.model_space.selection_area,
@@ -1306,7 +1307,7 @@ bg={bg_ms:.1}ms n={view_count}"
             // clicks (the shader viewport sits below it). Positioned with
             // leading Spaces sized to the viewport's screen rectangle.
             mark("active_vp_rect");
-            let active_vp_rect: Option<(acadrust::Handle, iced::Rectangle)> =
+            let active_vp_rect: Option<(codec::Handle, iced::Rectangle)> =
                 if is_paper && !tab.is_start {
                     tab.scene.active_viewport.and_then(|h| {
                         let (cw, ch) = tab.scene.selection.borrow().vp_size;
@@ -1355,7 +1356,7 @@ bg={bg_ms:.1}ms n={view_count}"
                 let vp_mode = tab
                     .scene
                     .active_viewport_render_mode()
-                    .unwrap_or(acadrust::entities::ViewportRenderMode::Wireframe2D);
+                    .unwrap_or(codec::entities::ViewportRenderMode::Wireframe2D);
                 // Adaptive (same as model): the picker measures its real width into
                 // `render_bar_w` and swaps to an empty spacer only when the viewport
                 // can't hold it; the ViewCube reads that width to decide overlap.
@@ -1600,9 +1601,32 @@ bg={bg_ms:.1}ms n={view_count}"
                 }
             }
 
-            // Paper-space context actions: a right-edge vertical toolbar
-            // (viewport / page setup / plot) instead of a contextual ribbon tab.
-            if is_paper && !tab.is_start {
+            // Selection actions: with only PDF underlays or only xrefs
+            // selected, their tools take the right edge (over the paper-space
+            // tools, which come back when the selection changes).
+            // ponytail: one right-edge toolbar at a time; stack them if both
+            // are ever needed together.
+            let selection_tools = if tab.is_start {
+                None
+            } else if self.ribbon.xref_context() {
+                crate::ui::side_toolbar::view(&crate::ui::ribbon::xref_tools())
+            } else if let Some(ctx) = self.ribbon.underlay_context() {
+                let ctx = ctx.clone();
+                crate::ui::side_toolbar::view_with_active(
+                    &crate::ui::ribbon::pdf_underlay_tools(),
+                    &move |id| match id {
+                        "_PDFULMONO" => ctx.monochrome,
+                        "_PDFULSHOW" => ctx.shown,
+                        "_PDFULSNAP" => ctx.snap,
+                        _ => false,
+                    },
+                )
+            } else {
+                None
+            };
+            if let Some(tb) = selection_tools {
+                viewport_stack = viewport_stack.push(tb);
+            } else if is_paper && !tab.is_start {
                 if let Some(tb) =
                     crate::ui::side_toolbar::view(&crate::modules::layout::paper_space_tools())
                 {
@@ -1827,6 +1851,11 @@ bg={bg_ms:.1}ms n={view_count}"
             }
         }
 
+        if self.show_node_graph && !tab.is_start {
+            let sections = self.graph_all_sections(self.active_tab);
+            viewport_stack = viewport_stack.push(tab.graph.view(sections));
+        }
+
         // Docked side panels (Properties, block palette, future palettes) live
         // in an ordered vertical stack on the left/right edge of the drawing
         // view. Auto-collapsing (pinned) panels that aren't being hovered
@@ -1841,6 +1870,7 @@ bg={bg_ms:.1}ms n={view_count}"
                 crate::ui::dock::PanelId::BlockPalette => self.show_block_palette,
                 crate::ui::dock::PanelId::ExternalReferences => self.show_external_references,
                 crate::ui::dock::PanelId::Browser => self.show_browser,
+                crate::ui::dock::PanelId::NodeGraph => self.show_node_graph,
             }
         };
         let edge_stack = |side: crate::app::config::DockSide| -> Option<Element<'_, Message>> {
@@ -2061,6 +2091,8 @@ bg={bg_ms:.1}ms n={view_count}"
             self.win_size.1,
             self.control.enabled,
             self.control_busy(),
+            self.pending_pick_label().is_some(),
+            self.show_node_graph,
         );
         let center_stack: Element<'_, Message> = if thumbnail_capture_clean {
             workspace
@@ -2739,7 +2771,11 @@ impl OpenCADStudio {
             })
         };
         #[cfg(not(target_arch = "wasm32"))]
-        let control = super::control::subscribe().map(Message::ControlRequest);
+        let control = iced::Subscription::batch([
+            super::control::subscribe().map(Message::ControlRequest),
+            // Loopback REST channel when launched with files + --http.
+            super::control::http_bridge::subscribe().map(Message::ControlRequest),
+        ]);
         #[cfg(target_arch = "wasm32")]
         let control = iced::time::every(std::time::Duration::from_millis(50))
             .map(|_| Message::PollWebControl);
@@ -2953,6 +2989,7 @@ impl OpenCADStudio {
                 width,
                 auto_collapse,
             ),
+            crate::ui::dock::PanelId::NodeGraph => tab.graph.panel(width, auto_collapse),
         };
         let divider = dock_divider(id);
         match side {

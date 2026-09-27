@@ -1,6 +1,6 @@
 //! One guarded four-edge wall thickness edit, committed in one GUI operation.
 use super::{Message, OpenCADStudio, failure};
-use acadrust::{EntityType, Handle};
+use codec::{EntityType, Handle};
 use iced::Task;
 use serde_json::{Value, json};
 

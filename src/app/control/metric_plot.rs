@@ -49,7 +49,7 @@ impl OpenCADStudio {
         &mut self,
         request: &Value,
     ) -> Result<Task<Message>, Value> {
-        use acadrust::objects::{PaperMargin, PlotPaperUnits, PlotRotation, PlotType, ScaledType};
+        use codec::objects::{PaperMargin, PlotPaperUnits, PlotRotation, PlotType, ScaledType};
         let denominator = request["scale_denominator"]
             .as_u64()
             .filter(|value| (10..=1000).contains(value))
@@ -152,7 +152,7 @@ impl OpenCADStudio {
             ));
         }
         if request["require_page_setup"] == true {
-            use acadrust::objects::{PlotPaperUnits, PlotRotation, PlotType};
+            use codec::objects::{PlotPaperUnits, PlotRotation, PlotType};
             let setup = self.control_metric_page_setup();
             let expected = request["scale_denominator"].as_u64().unwrap_or(0) as f64;
             if setup["ok"] != true

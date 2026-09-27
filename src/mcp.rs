@@ -26,7 +26,7 @@ const MAX_REQUEST: usize = 1_048_576;
 const MAX_RESPONSE: u64 = 16 * 1024 * 1024;
 const MAX_DESCRIPTOR: u64 = 8 * 1024;
 const CACHE_TTL_MS: u64 = 3_600_000;
-const INSTRUCTIONS: &str = "Call ocs_sessions, then pass its session_id as ocs_session_id to ocs_read, ocs_execute and ocs_capture. Read capabilities to discover the complete CAD automation surface. Call record_schema to discover every record type, property path, JSON type, enum, unit, constraint and write rule before editing unfamiliar data. Use records to inspect every serializable entity, object, table, header and document record; filter with RFC 6901 JSON Pointer paths. Use set_properties for atomic, type-checked record edits and preserve document_id, revision and request_id. Use commands with parameters.name for a command manifest. Use run_script for a long, known sequence of complete command lines; it is resumable, strict by default and returns a compact summary. Use batch when operations other than command lines must be mixed, and request changed_entities only when resulting geometry is needed. For interactive work, call start and follow state.command.accepts, options and input_example. A run.cmd contains the command name followed by prompt answers separated by spaces; points use x,y or x,y,z. After a timeout, query the existing operation and never replay a mutation with a new request_id. waiting_input and running are not completion. Let OCS and its geometry kernel calculate geometry; use query near, contains_point and intersections for exact relationships. Before delivery call audit with the intended target_format and target_version; use save_verified with an explicit absolute path to save, reopen, hash and compare the semantic manifest.";
+const INSTRUCTIONS: &str = "Call ocs_sessions, then pass its session_id as ocs_session_id to ocs_read, ocs_execute and ocs_capture. Read capabilities to discover the complete CAD automation surface. Call record_schema to discover every record type, property path, JSON type, enum, unit, constraint and write rule before editing unfamiliar data. Use records to inspect every serializable entity, object, table, header and document record; filter with RFC 6901 JSON Pointer paths. Use set_properties for atomic, type-checked record edits and preserve document_id, revision and request_id. Use commands with parameters.name for a command manifest. Use run_script for a long, known sequence of complete command lines; it is resumable, strict by default and returns a compact summary. Use batch when operations other than command lines must be mixed, and request changed_entities only when resulting geometry is needed. To have the person at the screen pick entities, call user_select and poll until completion. For interactive work, call start and follow state.command.accepts, options and input_example. A run.cmd contains the command name followed by prompt answers separated by spaces; points use x,y or x,y,z. After a timeout, query the existing operation and never replay a mutation with a new request_id. waiting_input and running are not completion. Let OCS and its geometry kernel calculate geometry; use query near, contains_point and intersections for exact relationships. Before delivery call audit with the intended target_format and target_version; use save_verified with an explicit absolute path to save, reopen, hash and compare the semantic manifest.";
 const READ_OPS: &[&str] = &[
     "state",
     "hello",
@@ -39,10 +39,12 @@ const READ_OPS: &[&str] = &[
     "header",
     "properties",
     "measure",
+    "snap",
     "history",
     "commands",
     "events",
     "operation",
+    "xdata_get",
     "audit",
     "metric_page_setup",
 ];
@@ -65,6 +67,26 @@ const EXECUTE_OPS: &[&str] = &[
     "set_metric_page_setup",
     "action",
     "embed_image",
+    "wblock",
+    "plot",
+    "entities_create",
+    "entities_delete",
+    "entities_transform",
+    "block_define",
+    "block_delete",
+    "xdata_set",
+    "view_focus",
+    "entities_copy_to",
+    "group_create",
+    "selection_set_save",
+    "selection_set_load",
+    "user_select",
+    "getpoint",
+    "close",
+    "sysvar",
+    "layout_create",
+    "page_setup_set",
+    "file_identity",
     "save",
     "save_verified",
     "stop",
@@ -88,6 +110,26 @@ const BATCH_STEP_OPS: &[&str] = &[
     "set_properties",
     "action",
     "embed_image",
+    "wblock",
+    "plot",
+    "entities_create",
+    "entities_delete",
+    "entities_transform",
+    "block_define",
+    "block_delete",
+    "xdata_set",
+    "view_focus",
+    "entities_copy_to",
+    "group_create",
+    "selection_set_save",
+    "selection_set_load",
+    "user_select",
+    "getpoint",
+    "close",
+    "sysvar",
+    "layout_create",
+    "page_setup_set",
+    "file_identity",
     "save",
     "stop",
 ];
@@ -1357,6 +1399,86 @@ fn validate_execute_request(request: &Value, op: &str) -> Result<(), String> {
                 r#"{"op":"embed_image","path":"/path/logo.png","at":[0,0,0],"width":100}"#,
             )
         }
+        "wblock" if request["path"].as_str().is_none_or(str::is_empty) => {
+            missing(
+                "path",
+                r#"{"op":"wblock","path":"/path/part.dwg","handles":["2A","31"]}"#,
+            )
+        }
+        "plot" if request["path"].as_str().is_none_or(str::is_empty) => {
+            missing(
+                "path",
+                r#"{"op":"plot","path":"/path/pages.pdf","layout":"Model"}"#,
+            )
+        }
+        "entities_create"
+            if request["entities"].as_array().is_none_or(Vec::is_empty) =>
+        {
+            missing(
+                "entities",
+                r#"{"op":"entities_create","entities":[{"type":"Circle","center":[0,0,0],"radius":5}]}"#,
+            )
+        }
+        "entities_delete" | "entities_transform" | "view_focus"
+            if request["handles"].as_array().is_none_or(Vec::is_empty) =>
+        {
+            missing(
+                "handles",
+                r#"{"op":"entities_delete","handles":["2A","31"]}"#,
+            )
+        }
+        "block_define"
+            if request["name"].as_str().is_none_or(str::is_empty)
+                || request["handles"].as_array().is_none_or(Vec::is_empty)
+                || request["base"].as_array().is_none() =>
+        {
+            missing(
+                "name, handles and base",
+                r#"{"op":"block_define","name":"MARK","base":[0,0,0],"handles":["2A"]}"#,
+            )
+        }
+        "xdata_set"
+            if request["app"].as_str().is_none_or(str::is_empty)
+                || request["handles"].as_array().is_none_or(Vec::is_empty) =>
+        {
+            missing(
+                "app and handles",
+                r#"{"op":"xdata_set","app":"SPM","handles":["2A"],"data":[{"code":1000,"value":"tag"}]}"#,
+            )
+        }
+        "entities_copy_to"
+            if request["handles"].as_array().is_none_or(Vec::is_empty)
+                || request["document_id"].as_u64().is_none() =>
+        {
+            missing(
+                "handles and document_id",
+                r#"{"op":"entities_copy_to","handles":["2A"],"document_id":2}"#,
+            )
+        }
+        "group_create" | "selection_set_save"
+            if request["name"].as_str().is_none_or(str::is_empty)
+                || request["handles"].as_array().is_none_or(Vec::is_empty) =>
+        {
+            missing(
+                "name and handles",
+                r#"{"op":"group_create","name":"Frame","handles":["2A"]}"#,
+            )
+        }
+        "selection_set_load" if request["name"].as_str().is_none_or(str::is_empty) => {
+            missing("name", r#"{"op":"selection_set_load","name":"Frame"}"#)
+        }
+        "block_delete" if request["name"].as_str().is_none_or(str::is_empty) => {
+            missing("name", r#"{"op":"block_delete","name":"Frame"}"#)
+        }
+        "layout_create" if request["name"].as_str().is_none_or(str::is_empty) => {
+            missing("name", r#"{"op":"layout_create","name":"Plan"}"#)
+        }
+        "page_setup_set" if request["layout"].as_str().is_none_or(str::is_empty) => {
+            missing(
+                "layout",
+                r#"{"op":"page_setup_set","layout":"Plan","paper":"ISO_A4_(210.00_x_297.00_MM)"}"#,
+            )
+        }
         "save_verified" if request["path"].as_str().is_none_or(str::is_empty) => {
             missing(
                 "path",
@@ -1611,35 +1733,17 @@ fn call_tool(
     }
 }
 
-fn batch_step_schema() -> Value {
-    json!({
-        "type":"object",
-        "properties":{
-            "op":{"type":"string","enum":BATCH_STEP_OPS},
-            "document_id":{"type":"integer","minimum":0},
-            "cmd":{"type":"string","minLength":1},
-            "path":{"type":"string","minLength":1},
-            "target_format":{"type":"string","enum":["dwg","dxf"]},
-            "target_version":{"type":"string","enum":["R14","2000","2004","2007","2010","2013","2018","AC1014","AC1015","AC1018","AC1021","AC1024","AC1027","AC1032"]},
-            "allow_lossy":{"type":"boolean","default":false},
-            "kind":{"type":"string","enum":["text","token","point","entity","structure","selection","enter"]},
-            "text":{"type":"string"},
-            "point":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},
-            "space":{"type":"string","enum":["wcs","ucs","relative"]},
-            "handle":{"type":"string"},
-            "handles":{"type":"array","items":{"type":"string"}},
-            "type":{"type":"string"},
-            "layer":{"type":"string"},
-            "clear":{"type":"boolean"},
-            "field":{"type":"string"},
-            "value":{"description":"New property value; its JSON type must match the property kind.","anyOf":[{"type":"string"},{"type":"number"},{"type":"boolean"},{"type":"object"},{"type":"array"},{"type":"null"}]},
-            "collection":{"type":"string"},
-            "updates":{"type":"array","minItems":1,"items":{"type":"object","properties":{"path":{"type":"string","pattern":"^/"},"value":{},"expected":{}},"required":["path","value"],"additionalProperties":false}},
-            "name":{"type":"string","enum":crate::app::automation_action_names()}
-        },
-        "required":["op"],
-        "additionalProperties":false
-    })
+fn batch_step_schema(properties: &Value, conditionals: &Value) -> Value {
+    // Use the same parameter types as individual requests. Keeping a second
+    // list rejected newly advertised entity/block/plot operations in batches.
+    let mut properties = properties.as_object().unwrap().clone();
+    for key in ["request_id", "steps", "commands", "strict", "owned_root",
+                "process_id", "process_started_at_unix_ms", "executable_path", "policy"] {
+        properties.remove(key);
+    }
+    properties.insert("op".into(), json!({"type":"string","enum":BATCH_STEP_OPS}));
+    json!({"type":"object", "properties":properties, "required":["op"],
+           "additionalProperties":false, "allOf":conditionals})
 }
 
 fn execute_request_schema() -> Value {
@@ -1652,7 +1756,7 @@ fn execute_request_schema() -> Value {
         "type":"array","items":{"type":"number"},"minItems":3,"maxItems":3,
         "description":"Finite [x,y,z] coordinates."
     });
-    json!({
+    let mut schema = json!({
         "type":"object",
         "properties":{
             "op":{"type":"string","enum":EXECUTE_OPS,"description":"Semantic editor operation."},
@@ -1663,7 +1767,47 @@ fn execute_request_schema() -> Value {
             "camera_revision":{"type":"integer","minimum":0,"description":"Expected camera revision when view state matters."},
             "selection":{"type":"array","items":handle.clone(),"description":"Expected selected handles from current state."},
             "cmd":{"type":"string","minLength":1,"description":"Command name followed by its prompt answers separated by spaces. Points use x,y or x,y,z; option answers use their token. Read command details first when unsure.","examples":["LINE 0,0 10,10","CIRCLE 5,5 3","PLINE 0,0 10,0 10,10 C"]},
-            "path":{"type":"string","minLength":1,"description":"Absolute path: drawing for open or save, image file for embed_image."},
+            "path":{"type":"string","minLength":1,"description":"Absolute path: drawing for open or save, image file for embed_image, target DWG/DXF for wblock, target PDF for plot; save_verified requires .dwg or .dxf."},
+            "block":{"type":"string","description":"Block definition name for wblock (exports its entities flattened into model space)."},
+            "linked":{"type":"boolean","description":"embed_image: true stores a path-linked RasterImage instead of an embedded OLE2FRAME."},
+            "layout":{"type":"string","description":"plot: Model (default), a layout name, or all."},
+            "area":{"type":"string","enum":["extents","display","limits","window","layout"],"description":"plot area; layout applies to paper-space layouts."},
+            "window":{"type":"array","items":{"type":"number"},"minItems":4,"maxItems":4,"description":"World [x0,y0,x1,y1] plot rectangle for area window."},
+            "paper":{"type":"string","description":"plot: canonical paper-catalog sheet name."},
+            "orientation":{"type":"string","enum":["Portrait","Landscape"],"description":"plot sheet orientation."},
+            "fit":{"type":"boolean","description":"plot: scale content to fit the sheet (default true)."},
+            "scale":{"type":"string","description":"plot scale as paper:drawing, e.g. 1:100; disables fit."},
+            "offset_x":{"type":"number","description":"plot offset when not centered."},
+            "offset_y":{"type":"number","description":"plot offset when not centered."},
+            "upside_down":{"type":"boolean","description":"plot: rotate content 180 degrees."},
+            "transparency":{"type":"boolean","description":"plot: keep transparency."},
+            "lineweights":{"type":"boolean","description":"plot: honor object lineweights."},
+            "merge_lines":{"type":"boolean","description":"plot: merge overlapping lines."},
+            "stamp":{"type":"boolean","description":"plot: draw the plot stamp."},
+            "entities":{"type":"array","minItems":1,"description":"entities_create: typed definitions, one object per entity. type is one of Line, Circle, Arc, LwPolyline, Point, Text, MText, Insert, Solid, Hatch; geometry fields depend on the type; layer and color (ACI) are optional and a missing layer is created.","items":{"type":"object"}},
+            "action":{"type":"string","enum":["move","copy","rotate","scale","mirror","array"],"description":"entities_transform action (default move)."},
+            "vector":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3,"description":"move/copy displacement [dx,dy(,dz)]."},
+            "center":{"oneOf":[{"type":"boolean"},{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3}],"description":"plot: center on sheet (boolean); entities_transform: rotate/scale center point."},
+            "angle_deg":{"type":"number","description":"rotate angle, degrees CCW."},
+            "factor":{"type":"number","exclusiveMinimum":0,"description":"scale factor."},
+            "axis":{"type":"array","minItems":2,"maxItems":2,"description":"mirror line [[x1,y1],[x2,y2]].","items":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2}},
+            "copy":{"type":"boolean","description":"mirror: keep the originals and return mirrored copies."},
+            "rows":{"type":"integer","minimum":1,"description":"array row count (default 1)."},
+            "columns":{"type":"integer","minimum":1,"description":"array column count (default 1)."},
+            "row_spacing":{"type":"number","description":"array row spacing."},
+            "column_spacing":{"type":"number","description":"array column spacing."},
+            "base":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3,"description":"block_define base point (becomes the block origin)."},
+            "insert_at":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3,"description":"block_define Insert placement (default = base)."},
+            "app":{"type":"string","minLength":1,"description":"xdata_set: application name; its RegApp table entry is registered automatically."},
+            "data":{"type":"array","description":"xdata_set typed values [{code,value}]: 1000 string, 1003 layer, 1004 hex bytes, 1005 hex handle, 1010-1013 [x,y,z], 1040/1041/1042 real, 1070 int16, 1071 int32. An empty or absent list removes the application record.","items":{"type":"object","properties":{"code":{"type":"integer"},"value":{}},"required":["code","value"]}},
+            "highlight":{"type":"boolean","description":"view_focus: also select the entities (default true)."},
+            "template":{"type":"string","description":"new/wblock: load this DWG/DXF/DWT file as the base document so its tables and styles survive."},
+            "discard":{"type":"boolean","description":"close: true erases unsaved changes instead of refusing a dirty document."},
+            "per_page":{"type":"boolean","description":"plot: write one PDF per layout as <stem>-<Layout>.pdf."},
+            "get":{"type":"array","items":{"type":"string"},"description":"sysvar: variable names to read (ltscale, pdmode, pdsize, celtscale, textsize, filletrad, mirrtext, insunits, osmode, clayer, ctextstyle, extmin, extmax)."},
+            "set":{"type":"object","description":"sysvar: name=value pairs to write in one undo step.","additionalProperties":true},
+            "select":{"type":"boolean","description":"selection_set_load: also select the recalled entities (default true)."},
+            "where":{"type":"array","description":"query: cross-property filters over entity properties with RFC 6901 paths and the records operator set.","items":{"type":"object","properties":{"path":{"type":"string"},"op":{"type":"string"},"value":{}},"required":["path"]}},
             "target_format":{"type":"string","enum":["dwg","dxf"],"description":"Explicit output format; it must match the path extension."},
             "target_version":{"type":"string","enum":["R14","2000","2004","2007","2010","2013","2018","AC1014","AC1015","AC1018","AC1021","AC1024","AC1027","AC1032"],"description":"Explicit CAD output version. Omit only to preserve the document version."},
             "allow_lossy":{"type":"boolean","default":false,"description":"Acknowledge dropping unsupported passthrough records reported by audit."},
@@ -1675,7 +1819,7 @@ fn execute_request_schema() -> Value {
             "point":point,
             "space":{"type":"string","enum":["wcs","ucs","relative"],"default":"wcs","description":"Coordinate space for point input."},
             "handle":handle.clone(),
-            "handles":{"type":"array","items":handle.clone(),"description":"Entity handles to select."},
+            "handles":{"type":"array","items":handle.clone(),"description":"Entity handles: selection filter for select, export set for wblock."},
             "type":{"type":"string","description":"Entity type filter for select."},
             "layer":{"type":"string","description":"Layer filter for select."},
             "clear":{"type":"boolean","description":"Clear the current selection before applying select filters."},
@@ -1691,9 +1835,9 @@ fn execute_request_schema() -> Value {
             "new_length_m":{"type":"number","minimum":0.1,"maximum":1000},
             "scale_denominator":{"type":"integer","minimum":10,"maximum":1000,"description":"Denominator of the 1:N metric model plot scale."},
             "require_page_setup":{"type":"boolean","default":false,"description":"Reject PDF export unless Model carries matching A4 metric plot settings."},
-            "plot_style":{"type":"string","enum":["none","monochrome.ctb"],"default":"none","description":"Built-in monochrome CTB or no plot style for metric Model PDF/page setup."},
-            "name":{"type":"string","enum":crate::app::automation_action_names(),"description":"UI action returned by ocs_read commands."},
-            "steps":{"type":"array","minItems":1,"maxItems":MAX_BATCH_STEPS,"description":"Sequential editor operations executed with fresh state and idempotency keys. Execution stops at the first failure; completed_steps says what committed.","items":batch_step_schema()},
+            "plot_style":{"type":"string","description":"plot: CTB path or discovered style; metric_plot_pdf/set_metric_page_setup: none or monochrome.ctb."},
+            "name":{"type":"string","minLength":1,"description":"Operation-specific name: UI action, block, group, selection set or layout."},
+            "steps":{"type":"array","minItems":1,"maxItems":MAX_BATCH_STEPS,"description":"Sequential editor operations executed with fresh state and idempotency keys. Execution stops at the first failure; completed_steps says what committed.","items":{}},
             "commands":{"type":"array","minItems":1,"maxItems":MAX_SCRIPT_COMMANDS,"description":"Complete one-line CAD commands for a resumable high-volume drawing script. Read command manifests first; points use x,y or x,y,z.","items":{"type":"string","minLength":1,"maxLength":MAX_SCRIPT_COMMAND_BYTES}},
             "strict":{"type":"boolean","default":true,"description":"For run_script, fail closed when a command waits for more input or leaves unconsumed tokens."},
             "owned_root":{"type":"string","minLength":1,"description":"Canonical root allowed for every open document during owned shutdown."},
@@ -1704,6 +1848,12 @@ fn execute_request_schema() -> Value {
         },
         "required":["op","request_id"],
         "additionalProperties":false,
+        "allOf":[
+            {"if":{"properties":{"op":{"const":"plot"}}},"then":{"properties":{"center":{"type":"boolean"}}}},
+            {"if":{"properties":{"op":{"const":"entities_transform"}}},"then":{"properties":{"center":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3}}}},
+            {"if":{"properties":{"op":{"enum":["metric_plot_pdf","set_metric_page_setup"]}}},"then":{"properties":{"plot_style":{"enum":["none","monochrome.ctb"]}}}},
+            {"if":{"properties":{"op":{"const":"action"}}},"then":{"properties":{"name":{"enum":crate::app::automation_action_names()}}}}
+        ],
         "oneOf":[
             {"properties":{"op":{"const":"new"}}},
             {"properties":{"op":{"const":"open"}},"required":["path"]},
@@ -1731,6 +1881,26 @@ fn execute_request_schema() -> Value {
             {"properties":{"op":{"const":"set_metric_page_setup"}},"required":["scale_denominator","document_id","revision"]},
             {"properties":{"op":{"const":"action"}},"required":["name"]},
             {"properties":{"op":{"const":"embed_image"}},"required":["path"]},
+            {"properties":{"op":{"const":"wblock"}},"required":["path"]},
+            {"properties":{"op":{"const":"plot"}},"required":["path"]},
+            {"properties":{"op":{"const":"entities_create"}},"required":["entities"]},
+            {"properties":{"op":{"const":"entities_delete"}},"required":["handles"]},
+            {"properties":{"op":{"const":"entities_transform"}},"required":["handles"]},
+            {"properties":{"op":{"const":"block_define"}},"required":["name","base","handles"]},
+            {"properties":{"op":{"const":"block_delete"}},"required":["name"]},
+            {"properties":{"op":{"const":"xdata_set"}},"required":["app","handles"]},
+            {"properties":{"op":{"const":"view_focus"}},"required":["handles"]},
+            {"properties":{"op":{"const":"entities_copy_to"}},"required":["handles","document_id"]},
+            {"properties":{"op":{"const":"group_create"}},"required":["name","handles"]},
+            {"properties":{"op":{"const":"selection_set_save"}},"required":["name","handles"]},
+            {"properties":{"op":{"const":"selection_set_load"}},"required":["name"]},
+            {"properties":{"op":{"const":"user_select"},"description":"Ask the person at the screen to pick entities; resolves when they press Enter (or cancel on Escape). Optional type/layer/prompt/detail/clear."}},
+            {"properties":{"op":{"const":"getpoint"},"description":"Ask the person at the screen to pick one point; resolves with the picked point when they click, or cancels on Escape. Optional prompt."}},
+            {"properties":{"op":{"const":"close"}}},
+            {"properties":{"op":{"const":"sysvar"}}},
+            {"properties":{"op":{"const":"layout_create"}},"required":["name"]},
+            {"properties":{"op":{"const":"page_setup_set"}},"required":["layout"]},
+            {"properties":{"op":{"const":"file_identity"}}},
             {"properties":{"op":{"const":"save"}}},
             {"properties":{"op":{"const":"save_verified"}},"required":["path"]},
             {"properties":{"op":{"const":"stop"}}},
@@ -1739,7 +1909,10 @@ fn execute_request_schema() -> Value {
             {"properties":{"op":{"const":"shutdown_owned_session"}},"required":["owned_root","process_id","process_started_at_unix_ms","executable_path"]},
             {"properties":{"op":{"const":"close_document"}},"required":["policy","owned_root","process_id","process_started_at_unix_ms","executable_path","document_id","revision"]}
         ]
-    })
+    });
+    schema["properties"]["steps"]["items"] =
+        batch_step_schema(&schema["properties"], &schema["allOf"]);
+    schema
 }
 
 fn read_output_schema() -> Value {
@@ -1780,13 +1953,13 @@ fn tool_definitions() -> Value {
         {
             "name":"ocs_read",
             "description":"Discover capabilities and record schemas, or read state, complete database records, command manifests, entities, properties, kernel measurements and spatial relationships, history, events or operation status from a live OCS session.",
-            "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"op":{"type":"string","enum":READ_OPS,"default":"state"},"parameters":{"type":"object","description":"Operation-specific filters.","properties":{"name":{"type":"string","description":"Command name or record name."},"search":{"type":"string","description":"Case-insensitive command or record-type search."},"document_id":{"type":"integer","minimum":0},"path":{"type":"string","description":"Optional intended output path for audit; extension determines target format."},"target_format":{"type":"string","enum":["dwg","dxf"],"description":"Intended output format for audit."},"target_version":{"type":"string","enum":["R14","2000","2004","2007","2010","2013","2018","AC1014","AC1015","AC1018","AC1021","AC1024","AC1027","AC1032"],"description":"Intended CAD output version for audit."},"collection":{"type":"string","description":"Record collection, all for records, or omit to discover collections and schema types."},"handle":{"type":"string"},"handles":{"type":"array","items":{"type":"string"},"description":"Exact entity or record handles."},"type":{"type":"string","description":"Entity or record type filter; for record_schema, returns its complete type graph and writable field paths."},"layer":{"type":"string","description":"Layer name filter for query."},"detail":{"type":"string","enum":["summary","geometry","full"],"default":"geometry","description":"Entity detail returned by query."},"fields":{"type":"array","items":{"type":"string"},"description":"Return only these entity fields plus handle."},"paths":{"type":"array","items":{"type":"string"},"description":"Project RFC 6901 JSON Pointer paths relative to record.properties."},"where":{"type":"array","description":"All property filters must match.","items":{"type":"object","properties":{"path":{"type":"string"},"op":{"type":"string","enum":["eq","ne","lt","lte","gt","gte","contains","starts_with","ends_with","in","exists","not_exists"],"default":"eq"},"value":{}},"required":["path"],"additionalProperties":false}},"near":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3,"description":"Rank planar curves by exact kernel distance to this world XY point."},"contains_point":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3,"description":"Return closed planar curves containing this world XY point."},"bounds":{"type":"array","items":{"type":"number"},"minItems":4,"maxItems":4,"description":"Filter entities whose world XY bounds overlap [min_x,min_y,max_x,max_y]."},"intersections":{"type":"array","items":{"type":"string"},"minItems":2,"maxItems":2,"description":"Return exact kernel intersections between two planar curve handles."},"after":{"type":"integer","minimum":0,"description":"Event cursor."},"request_id":{"type":"string","description":"Operation id to query."},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":10000}},"additionalProperties":false}},"required":["ocs_session_id"],"additionalProperties":false},
+            "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"op":{"type":"string","enum":READ_OPS,"default":"state"},"parameters":{"type":"object","description":"Operation-specific filters.","properties":{"name":{"type":"string","description":"Command name or record name."},"search":{"type":"string","description":"Case-insensitive command or record-type search."},"document_id":{"type":"integer","minimum":0},"path":{"type":"string","description":"Optional intended output path for audit; extension determines target format."},"target_format":{"type":"string","enum":["dwg","dxf"],"description":"Intended output format for audit."},"target_version":{"type":"string","enum":["R14","2000","2004","2007","2010","2013","2018","AC1014","AC1015","AC1018","AC1021","AC1024","AC1027","AC1032"],"description":"Intended CAD output version for audit."},"collection":{"type":"string","description":"Record collection, all for records, or omit to discover collections and schema types."},"handle":{"type":"string"},"handles":{"type":"array","items":{"type":"string"},"description":"Exact entity or record handles."},"type":{"type":"string","description":"Entity or record type filter; for record_schema, returns its complete type graph and writable field paths."},"layer":{"type":"string","description":"Layer name filter for query."},"detail":{"type":"string","enum":["summary","geometry","full"],"default":"geometry","description":"Entity detail returned by query."},"fields":{"type":"array","items":{"type":"string"},"description":"Return only these entity fields plus handle."},"paths":{"type":"array","items":{"type":"string"},"description":"Project RFC 6901 JSON Pointer paths relative to record.properties."},"where":{"type":"array","description":"All property filters must match.","items":{"type":"object","properties":{"path":{"type":"string"},"op":{"type":"string","enum":["eq","ne","lt","lte","gt","gte","contains","starts_with","ends_with","in","exists","not_exists"],"default":"eq"},"value":{}},"required":["path"],"additionalProperties":false}},"near":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3,"description":"Rank planar curves by exact kernel distance to this world XY point."},"point":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3,"description":"World point whose object snap the snap op reports."},"from":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3,"description":"Base point for perpendicular and tangent snaps (snap op)."},"contains_point":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":3,"description":"Return closed planar curves containing this world XY point."},"bounds":{"type":"array","items":{"type":"number"},"minItems":4,"maxItems":4,"description":"Filter entities whose world XY bounds overlap [min_x,min_y,max_x,max_y]."},"intersections":{"type":"array","items":{"type":"string"},"minItems":2,"maxItems":2,"description":"Return exact kernel intersections between two planar curve handles."},"after":{"type":"integer","minimum":0,"description":"Event cursor."},"request_id":{"type":"string","description":"Operation id to query."},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":10000}},"additionalProperties":false}},"required":["ocs_session_id"],"additionalProperties":false},
             "outputSchema":read_output_schema(),
             "annotations":{"title":"Read OCS state","readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
         },
         {
             "name":"ocs_execute",
-            "description":"Execute semantic OCS actions. Use current state fields and a unique request_id. Use run for one complete command, run_script for a long strict sequence, batch to mix operation types, or start plus input for guided steps. accepted, running and waiting_input are not completion.",
+            "description":"Execute semantic OCS actions. Use current state fields and a unique request_id. Use run for one complete command, run_script for a long strict sequence, batch to mix operation types, or start plus input for guided steps. user_select asks the person to pick entities and remains running until Enter or Escape. accepted, running and waiting_input are not completion.",
             "inputSchema":{"type":"object","properties":{"ocs_session_id":{"type":"string","minLength":1,"description":"Value of session_id returned by ocs_sessions."},"request":execute_request_schema(),"wait_seconds":{"type":"number","minimum":0,"maximum":60,"default":30,"description":"Total time to wait for completion before returning."},"response_detail":{"type":"string","enum":["compact","changed_entities","full"],"default":"compact","description":"compact returns only state needed for the next edit; changed_entities also returns current geometry for changed handles; full preserves the complete editor state."}},"required":["ocs_session_id","request"],"additionalProperties":false},
             "outputSchema":execute_output_schema(),
             "annotations":{"title":"Execute OCS action","readOnlyHint":false,"destructiveHint":true,"idempotentHint":true,"openWorldHint":false}
@@ -2542,7 +2715,15 @@ mod tests {
         assert_eq!(schema["properties"]["scale_denominator"]["minimum"], 10);
         assert_eq!(schema["properties"]["scale_denominator"]["maximum"], 1000);
         assert_eq!(schema["properties"]["require_page_setup"]["type"], "boolean");
-        assert_eq!(schema["properties"]["plot_style"]["enum"], json!(["none","monochrome.ctb"]));
+        assert_eq!(schema["properties"]["plot_style"]["type"], "string");
+        assert_eq!(schema["allOf"][2]["then"]["properties"]["plot_style"]["enum"],
+                   json!(["none","monochrome.ctb"]));
+        let batch = &schema["properties"]["steps"]["items"];
+        assert_eq!(batch["properties"]["entities"], schema["properties"]["entities"]);
+        assert_eq!(batch["properties"]["center"], schema["properties"]["center"]);
+        assert_eq!(batch["properties"]["name"]["type"], "string");
+        assert_eq!(batch["allOf"], schema["allOf"]);
+        assert!(batch["properties"].get("steps").is_none());
         assert!(READ_OPS.contains(&"metric_page_setup"));
         assert!(EXECUTE_OPS.contains(&"set_metric_page_setup"));
         assert!(!BATCH_STEP_OPS.contains(&"set_metric_page_setup"));

@@ -33,13 +33,15 @@ rfd = "0.17"
 clap = { version = "4", features = ["derive", "string"] }
 env_logger = "0.11"
 log = "0.4"
-acadrust = { git = "https://github.com/HakanSeven12/cadcodec.git", rev = "5b682ed", features = ["serde"] }
-cadkernel = { git = "https://github.com/HakanSeven12/cadkernel.git", rev = "6f046af", features = ["acis", "offset"] }
-cadkernel-constraints = { git = "https://github.com/HakanSeven12/cadkernel.git", rev = "6f046af" }
+codec = { package = "opencadcodec", git = "https://github.com/HakanSeven12/opencadcodec.git", rev = "4f7bd51", features = ["serde"] }
+kernel = { package = "opencadkernel", git = "https://github.com/HakanSeven12/opencadkernel.git", rev = "8186605", features = ["acis", "offset"] }
+kernel-constraints = { package = "opencadkernel-constraints", git = "https://github.com/HakanSeven12/opencadkernel.git", rev = "8186605" }
+graph = { package = "opencadgraph", git = "https://github.com/HakanSeven12/opencadgraph.git", rev = "048c9c5" }
 dwg-thumbnailer = { path = "crates/dwg-thumbnailer" }
 flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "tiff"] }
 hayro = "0.7.1"
+kurbo = "0.13"
 # Rasterises assets/logo.svg into the window icon at startup, so the taskbar
 # icon comes from the same file every other build target does. Already in the
 # tree behind iced's svg feature; named here only to use it directly.

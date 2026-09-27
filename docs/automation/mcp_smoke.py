@@ -52,7 +52,22 @@ def legacy(server: Path) -> None:
     names = set(definitions)
     assert names == TOOLS, names
     execute_request = definitions["ocs_execute"]["inputSchema"]["properties"]["request"]
-    assert len(execute_request["oneOf"]) == 19
+    advertised_ops = execute_request["properties"]["op"]["enum"]
+    schema_ops = [branch["properties"]["op"]["const"] for branch in execute_request["oneOf"]]
+    assert len(schema_ops) == len(set(schema_ops)), schema_ops
+    assert set(schema_ops) == set(advertised_ops), (schema_ops, advertised_ops)
+    assert {"run_script", "close_document", "shutdown_owned_session",
+            "edit_wall_thickness", "edit_wall_length", "metric_plot_pdf",
+            "set_metric_page_setup"} <= set(advertised_ops)
+    op_enum = execute_request["properties"]["op"]["enum"]
+    for shipped in ("entities_create", "entities_delete", "entities_transform",
+                    "block_define", "block_delete", "file_identity", "xdata_set",
+                    "view_focus", "wblock", "plot",
+                    "entities_copy_to", "group_create", "selection_set_save",
+                    "selection_set_load", "close", "sysvar", "layout_create",
+                    "page_setup_set"):
+        assert shipped in op_enum, shipped
+    assert "xdata_get" in definitions["ocs_read"]["inputSchema"]["properties"]["op"]["enum"]
     assert execute_request["properties"]["commands"]["maxItems"] == 256
     assert execute_request["properties"]["steps"]["maxItems"] == 64
     assert execute_request["properties"]["cmd"]["examples"][0] == "LINE 0,0 10,10"
