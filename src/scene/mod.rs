@@ -60,7 +60,7 @@ mod parametric_solve;
 pub(crate) use boundary::{
     boundary_entities, boundary_entities_from_sources, boundary_faces, boundary_polyline_entities,
     exact_hatch_paths, hatch_boundary_rings, hatch_path_directions, hatch_path_ring,
-    ring_source_handles, separated_hatch_path_groups, BoundarySource,
+    remap_hatch_associations, ring_source_handles, separated_hatch_path_groups, BoundarySource,
 };
 
 // Parallel tessellation free functions live in `convert::tess` (alongside the
@@ -1275,7 +1275,7 @@ fn build_derived_caches_impl(
                         } else {
                             [1.0, 1.0, 1.0, 1.0]
                         };
-                        ImageModel::from_underlay(u, def, background).map(|m| (handle, m))
+                        ImageModel::from_underlay(u, def, background, None).map(|m| (handle, m))
                     }
                     _ => None,
                 },
@@ -2329,6 +2329,11 @@ pub struct Scene {
     hidden_dynamic_dimensions: HashSet<Handle>,
     /// The camera generation the dynamic dimensions were last scaled for.
     dynamic_dimension_camera_gen: Option<u64>,
+    /// The view scale (world units per pixel, in quarter-octave steps) the
+    /// underlay rasters are made for, and a new step waiting for the view
+    /// to settle.
+    underlay_world_per_pixel: Option<f64>,
+    underlay_scale_pending: Option<(i32, iced::time::Instant)>,
     /// Session-only visibility overrides for constraint glyphs.
     hidden_parametric_constraints: HashSet<(
         parametric_constraints::ParametricScope,
@@ -2692,6 +2697,8 @@ impl Scene {
             dynamic_constraint_display: true,
             hidden_dynamic_dimensions: HashSet::default(),
             dynamic_dimension_camera_gen: None,
+            underlay_world_per_pixel: None,
+            underlay_scale_pending: None,
             hidden_parametric_constraints: HashSet::default(),
             shown_parametric_constraints: HashSet::default(),
             constraints_epoch: 0,
@@ -2744,6 +2751,47 @@ impl Scene {
     /// model camera, so a cached value applied to mm-sheet entity AABBs would
     /// be a stale model-world wpp and cull every paper-space annotation.
     /// Paper-space callers use their own scale instead.
+    /// Rasterise the underlays again when the view's scale has moved to
+    /// another quarter-octave step and stayed there briefly (not on every
+    /// frame of a zoom).
+    pub fn refresh_underlay_resolution(&mut self, now: iced::time::Instant) {
+        let Some(wpp) = self.world_per_pixel() else {
+            return;
+        };
+        let step = (f64::from(wpp).log2() * 4.0).ceil() as i32;
+        let current = self.underlay_world_per_pixel.map(|w| (w.log2() * 4.0).round() as i32);
+        if current == Some(step) {
+            self.underlay_scale_pending = None;
+            return;
+        }
+        match self.underlay_scale_pending {
+            Some((pending, since)) if pending == step => {
+                if now.duration_since(since) < std::time::Duration::from_millis(150) {
+                    return;
+                }
+            }
+            _ => {
+                self.underlay_scale_pending = Some((step, now));
+                return;
+            }
+        }
+        self.underlay_scale_pending = None;
+        self.underlay_world_per_pixel = Some(2f64.powf(step as f64 / 4.0));
+        if self.document.entities().any(|e| matches!(e, EntityType::Underlay(_))) {
+            self.reseed_underlays();
+        }
+    }
+
+    /// The view has moved to another scale step than the underlay rasters
+    /// were made for (frames are requested until they are made again).
+    pub fn underlay_resolution_stale(&self) -> bool {
+        let Some(wpp) = self.world_per_pixel() else {
+            return false;
+        };
+        let step = (f64::from(wpp).log2() * 4.0).ceil() as i32;
+        self.underlay_world_per_pixel.map(|w| (w.log2() * 4.0).round() as i32) != Some(step)
+    }
+
     pub(super) fn world_per_pixel(&self) -> Option<f32> {
         if self.current_layout != "Model" {
             return None;
@@ -8530,7 +8578,7 @@ impl Scene {
     }
 
     /// Background colour for the current layout (model vs paper).
-    fn current_bg(&self) -> [f32; 4] {
+    pub(crate) fn current_bg(&self) -> [f32; 4] {
         if self.current_layout != "Model" {
             self.paper_bg_color
         } else {

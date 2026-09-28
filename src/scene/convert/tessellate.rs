@@ -373,6 +373,7 @@ fn split_mixed_polyline(
                 world_width,
                 depth_override: None,
                 display_visible: true,
+                snap_only: false,
                 plot_visible: true,
                 fill_is_3d: false,
                 fill_is_2d_solid: false,
@@ -508,6 +509,7 @@ fn split_mixed_polyline(
             world_width: line_world_width,
             depth_override: None,
             display_visible: true,
+            snap_only: false,
             plot_visible: true,
             fill_is_3d: false,
             fill_is_2d_solid: false,
@@ -571,6 +573,7 @@ fn point_cloud_wires(
         world_width: 0.0,
         depth_override: None,
         display_visible: true,
+        snap_only: false,
         plot_visible: true,
         fill_is_3d: false,
         fill_is_2d_solid: false,
@@ -826,6 +829,7 @@ pub fn tessellate(
                     world_width: 0.0,
                     depth_override: None,
                     display_visible: true,
+                    snap_only: false,
                     plot_visible: true,
                     fill_is_3d: false,
                     fill_is_2d_solid: true,
@@ -990,6 +994,7 @@ pub fn tessellate(
                     world_width: 0.0,
                     depth_override: None,
                     display_visible: true,
+                    snap_only: false,
                     plot_visible: true,
                     fill_is_3d: false,
                     fill_is_2d_solid: false,
@@ -1382,6 +1387,7 @@ pub fn tessellate(
                                         world_width: 0.0,
                                         depth_override: None,
                                         display_visible: true,
+                                        snap_only: false,
                                         plot_visible: true,
                                         fill_is_3d: false,
                                         fill_is_2d_solid: false,
@@ -1439,6 +1445,7 @@ pub fn tessellate(
                                         world_width: 0.0,
                                         depth_override: None,
                                         display_visible: true,
+                                        snap_only: false,
                                         plot_visible: true,
                                         fill_is_3d: false,
                                         fill_is_2d_solid: false,
@@ -1493,6 +1500,7 @@ pub fn tessellate(
                             world_width: 0.0,
                             depth_override: None,
                             display_visible: true,
+                            snap_only: false,
                             plot_visible: true,
                             fill_is_3d: false,
                             fill_is_2d_solid: false,
@@ -1528,6 +1536,7 @@ pub fn tessellate(
                         world_width: 0.0,
                         depth_override: None,
                         display_visible: true,
+                        snap_only: false,
                         plot_visible: true,
                         fill_is_3d: false,
                         fill_is_2d_solid: false,
@@ -1593,6 +1602,7 @@ pub fn tessellate(
                             world_width: 0.0,
                             depth_override: None,
                             display_visible: true,
+                            snap_only: false,
                             plot_visible: true,
                             fill_is_3d: false,
                             fill_is_2d_solid: false,
@@ -1640,6 +1650,7 @@ pub fn tessellate(
                             world_width: 0.0,
                             depth_override: None,
                             display_visible: true,
+                            snap_only: false,
                             plot_visible: true,
                             fill_is_3d: false,
                             fill_is_2d_solid: false,
@@ -1684,6 +1695,7 @@ pub fn tessellate(
                         world_width: 0.0,
                         depth_override: None,
                         display_visible: true,
+                        snap_only: false,
                         plot_visible: true,
                         fill_is_3d: false,
                         fill_is_2d_solid: false,
@@ -1721,6 +1733,7 @@ pub fn tessellate(
                         world_width: 0.0,
                         depth_override: None,
                         display_visible: true,
+                        snap_only: false,
                         plot_visible: true,
                         fill_is_3d: false,
                         fill_is_2d_solid: false,
@@ -1792,6 +1805,7 @@ pub fn tessellate(
                             world_width: 0.0,
                             depth_override: None,
                             display_visible: true,
+                            snap_only: false,
                             plot_visible: true,
                             fill_is_3d: false,
                             fill_is_2d_solid: false,
@@ -1951,6 +1965,7 @@ pub fn tessellate(
                             world_width: polyline_band_width(entity, document.header.fill_mode),
                             depth_override: None,
                             display_visible: true,
+                            snap_only: false,
                             plot_visible: true,
                             fill_is_3d,
                             fill_is_2d_solid: false,
@@ -2022,6 +2037,7 @@ pub fn tessellate(
                         render_instance: None,
                         depth_override: None,
                         display_visible: true,
+                        snap_only: false,
                         plot_visible: true,
                     });
                 }
@@ -2035,6 +2051,7 @@ pub fn tessellate(
                         world_width: 0.0,
                         depth_override: None,
                         display_visible: true,
+                        snap_only: false,
                         plot_visible: true,
                         fill_is_3d: false,
                         fill_is_2d_solid: false,
@@ -2094,6 +2111,7 @@ pub fn tessellate(
                     world_width: 0.0,
                     depth_override: None,
                     display_visible: true,
+                    snap_only: false,
                     plot_visible: true,
                     fill_is_3d: false,
                     fill_is_2d_solid: false,
@@ -2183,6 +2201,7 @@ pub fn tessellate(
                     world_width: polyline_band_width(entity, document.header.fill_mode),
                     depth_override: None,
                     display_visible: true,
+                    snap_only: false,
                     plot_visible: true,
                     fill_is_3d: false,
                     fill_is_2d_solid: false,
@@ -2261,6 +2280,7 @@ pub fn tessellate(
                     world_width,
                     depth_override: None,
                     display_visible: true,
+                    snap_only: false,
                     plot_visible: true,
                     fill_is_3d: false,
                     fill_is_2d_solid: false,
@@ -2370,6 +2390,7 @@ pub fn tessellate(
         world_width: 0.0,
         depth_override: None,
         display_visible: true,
+        snap_only: false,
         plot_visible: true,
         fill_is_3d: false,
         fill_is_2d_solid: false,
@@ -2637,12 +2658,19 @@ fn append_custom_arrow_leaf(
         true,
     );
     for wire in wires {
-        append_custom_wire_points(
-            &wire.points,
-            &wire.points_low,
-            codec::types::Vector3::ZERO,
-            lines,
-        );
+        // A wide polyline's width rides on the wire as a GPU band; an arrow
+        // keeps only geometry, so turn the band into fill or it draws hairline.
+        // (#1130)
+        if wire.world_width > 0.0 || wire.taper_widths.iter().any(|width| *width > 0.0) {
+            append_custom_band(&wire, fill);
+        } else {
+            append_custom_wire_points(
+                &wire.points,
+                &wire.points_low,
+                codec::types::Vector3::ZERO,
+                lines,
+            );
+        }
         append_custom_fill_points(
             &wire.fill_tris,
             &wire.fill_tris_low,
@@ -2737,6 +2765,42 @@ fn append_custom_hatch_geometry(
             .filter_map(|&index| geometry.vertices.get(index as usize))
             .map(|&[x, y]| [x, y, z]),
     );
+}
+
+/// Triangles covering a wide polyline's band, one quad per segment.
+// ponytail: no join wedges at corners; add miters if a thick arrow shows notches.
+fn append_custom_band(wire: &WireModel, fill: &mut Vec<[f32; 3]>) {
+    let at = |index: usize| {
+        let point = wire.points[index];
+        let low = wire.points_low.get(index).copied().unwrap_or([0.0; 3]);
+        (!point[0].is_nan()).then(|| {
+            [
+                point[0] as f64 + low[0] as f64,
+                point[1] as f64 + low[1] as f64,
+                point[2] as f64 + low[2] as f64,
+            ]
+        })
+    };
+    let half = |index: usize| {
+        wire.taper_widths.get(index).copied().unwrap_or(wire.world_width).max(0.0) as f64 * 0.5
+    };
+    for index in 0..wire.points.len().saturating_sub(1) {
+        let (Some(a), Some(b)) = (at(index), at(index + 1)) else {
+            continue;
+        };
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let length = dx.hypot(dy);
+        if length <= 0.0 {
+            continue;
+        }
+        let (nx, ny) = (-dy / length, dx / length);
+        let (ha, hb) = (half(index), half(index + 1));
+        let corner = |p: [f64; 3], h: f64, side: f64| {
+            [(p[0] + nx * h * side) as f32, (p[1] + ny * h * side) as f32, p[2] as f32]
+        };
+        let quad = [corner(a, ha, 1.0), corner(a, ha, -1.0), corner(b, hb, -1.0), corner(b, hb, 1.0)];
+        fill.extend([quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]]);
+    }
 }
 
 fn append_custom_wire_points(

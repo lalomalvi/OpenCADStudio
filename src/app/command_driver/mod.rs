@@ -94,7 +94,9 @@ mod text_edit;
 mod constraint;
 mod dim_edit;
 
-pub(crate) use clipboard::{copy_to_clipboard_kernel, remap_ext_subtree_reference};
+pub(crate) use clipboard::{
+    copy_to_clipboard_kernel, paste_entities_kernel, remap_ext_subtree_reference,
+};
 
 impl OpenCADStudio {
     /// Applies one command result, then — when that result ended the active
@@ -613,12 +615,12 @@ impl OpenCADStudio {
                     crate::app::commands::pdf_import::PdfImportSource::File(import),
                 );
             }
-            CmdResult::AttachPdfPages { path, pages } => {
+            CmdResult::AttachPdfPages { kind, path, pages } => {
                 let label = self.history_label_from_active_cmd(i, "PDFATTACH");
                 self.tabs[i].scene.clear_preview_wire();
                 self.tabs[i].active_cmd = None;
                 self.tabs[i].snap_result = None;
-                self.attach_pdf_pages(i, label, &path, pages);
+                self.attach_pdf_pages(i, label, kind, &path, pages);
                 self.restore_pre_cmd_tangent();
             }
             CmdResult::PdfImport(request) => {

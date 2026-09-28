@@ -1111,32 +1111,6 @@ fn dimension_line_grip_position(dim: &Dimension) -> Option<DVec3> {
     Some((p1 + p2) * 0.5)
 }
 
-fn above_dimension_text_position(dim: &Dimension) -> Option<DVec3> {
-    if let Some((vertex, start, end, radius)) = angular_dimension_frame(dim) {
-        let angle = (start + end) * 0.5;
-        let direction = DVec3::new(angle.cos() as f64, angle.sin() as f64, 0.0);
-        return Some(
-            DVec3::new(vertex.x as f64, vertex.y as f64, vertex.z as f64)
-                + direction * (radius as f64 + 1.0),
-        );
-    }
-    let center = dimension_line_grip_position(dim)?;
-    let (ax, ay) = match dim {
-        Dimension::Linear(d) => (d.rotation.cos(), d.rotation.sin()),
-        Dimension::Aligned(d) => {
-            let dx = d.second_point.x - d.first_point.x;
-            let dy = d.second_point.y - d.first_point.y;
-            let length = (dx * dx + dy * dy).sqrt();
-            if length <= 1e-12 {
-                return None;
-            }
-            (dx / length, dy / length)
-        }
-        _ => return Some(center + DVec3::Y),
-    };
-    Some(center + DVec3::new(-ay, ax, 0.0))
-}
-
 impl Grippable for Dimension {
     fn grips(&self) -> Vec<GripDef> {
         // Auto-placed dimensions carry a zero text_middle_point sentinel; put
@@ -1489,12 +1463,13 @@ impl Grippable for Dimension {
                 base.flip_arrow1 = !base.flip_arrow1;
                 base.flip_arrow2 = !base.flip_arrow2;
             }
+            // The caller sets DIMTAD = Above as an override; the text goes
+            // back to automatic placement so DIMGAP and the text height set
+            // how far above the line it sits, at any drawing scale. (#543)
             A::AboveDimLine if grip_id == text_grip => {
-                if let Some(point) = above_dimension_text_position(self) {
-                    let base = self.base_mut();
-                    base.text_middle_point = Vector3::new(point.x, point.y + 1.0, point.z);
-                    base.text_user_positioned = true;
-                }
+                let b = self.base_mut();
+                b.text_middle_point = Vector3::new(0.0, 0.0, 0.0);
+                b.text_user_positioned = false;
             }
             _ => {}
         }
@@ -4041,6 +4016,7 @@ fn tessellate_dimension_inner(
                     world_width: 0.0,
                     depth_override: None,
                     display_visible: true,
+                    snap_only: false,
                     plot_visible: true,
                     fill_is_3d: false,
                     fill_is_2d_solid: false,
@@ -4077,6 +4053,7 @@ fn tessellate_dimension_inner(
                     world_width: 0.0,
                     depth_override: None,
                     display_visible: true,
+                    snap_only: false,
                     plot_visible: true,
                     fill_is_3d: false,
                     fill_is_2d_solid: false,
@@ -4113,6 +4090,7 @@ fn tessellate_dimension_inner(
                 world_width: 0.0,
                 depth_override: None,
                 display_visible: true,
+                snap_only: false,
                 plot_visible: true,
                 fill_is_3d: false,
                 fill_is_2d_solid: false,
@@ -4150,6 +4128,7 @@ fn tessellate_dimension_inner(
         world_width: 0.0,
         depth_override: None,
         display_visible: true,
+        snap_only: false,
         plot_visible: true,
         fill_is_3d: false,
         fill_is_2d_solid: false,
@@ -4195,6 +4174,7 @@ fn tessellate_dimension_inner(
             world_width: 0.0,
             depth_override: None,
             display_visible: true,
+            snap_only: false,
             plot_visible: true,
             fill_is_3d: false,
             fill_is_2d_solid: false,
@@ -4244,6 +4224,7 @@ fn tessellate_dimension_inner(
                     world_width: 0.0,
                     depth_override: None,
                     display_visible: true,
+                    snap_only: false,
                     plot_visible: true,
                     fill_is_3d: false,
                     fill_is_2d_solid: false,
@@ -4295,6 +4276,7 @@ fn tessellate_dimension_inner(
                 world_width: 0.0,
                 depth_override: None,
                 display_visible: true,
+                snap_only: false,
                 plot_visible: true,
                 fill_is_3d: false,
                 fill_is_2d_solid: false,
@@ -4324,8 +4306,20 @@ fn tessellate_dimension_inner(
         }
     }
 
-    if let Some(synth_text_entity) = dimension_text_entity(dim, dim_txt, style, document, dim_scale)
+    if let Some(mut synth_text_entity) =
+        dimension_text_entity(dim, dim_txt, style, document, dim_scale)
     {
+        // The glyphs take their colour from the text entity itself, which
+        // copies the dimension's (usually ByLayer); an explicit DIMCLRT has to
+        // be on the entity or the layer colour wins. (#898)
+        let text_index = dim_color_index(
+            xd,
+            crate::entities::dim_override::DIMCLRT,
+            style.map(|s| s.dimclrt).unwrap_or(0),
+        );
+        if (1..=255).contains(&text_index) {
+            synth_text_entity.common_mut().color = AcadColor::from_index(text_index);
+        }
         // Tolerance Text rendered separately so DIMTFAC scales its height
         // and DIMTOLJ aligns it vertically against the primary text.
         let tol_entity = dimension_tolerance_entity(dim, style, &synth_text_entity, dim_txt);

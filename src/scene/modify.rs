@@ -342,7 +342,9 @@ impl Scene {
             }
         }
         for &h in handles {
-            if self.sync_displayed_annotation_context(h) {
+            let others =
+                crate::scene::annotative::transform_annotation_contexts(&mut self.document, h, t);
+            if self.sync_displayed_annotation_context(h) || others {
                 self.poison_undo_recording();
             }
         }
@@ -357,6 +359,13 @@ impl Scene {
             if let Some(entity) = self.document.get_entity_mut(*h) {
                 view::dispatch::apply_transform(entity, t);
             }
+        }
+        // The moved `*D` contents are a block definition the block cache holds;
+        // without a fresh block epoch a reopened drawing's dimensions stay
+        // drawn where they were until REGEN. (#1342)
+        if !dim_block_subs.is_empty() {
+            self.block_epoch =
+                super::GEOMETRY_EPOCH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         // Only the transformed entities changed (a top-level move/rotate/scale/
         // mirror never edits a block definition) — report just those so the
@@ -642,23 +651,6 @@ impl Scene {
     pub fn copy_entities(&mut self, handles: &[Handle], t: &EntityTransform) -> Vec<Handle> {
         let copy_handles = self.handles_expanded_for_leader_annotations(handles);
 
-        // LEADER + attached MTEXT are a logical pair. Their entity clones must not
-        // retain the source extension dictionary, otherwise both copies share the
-        // same annotation-context objects.
-        let leader_pair_handles: Vec<Handle> = copy_handles
-            .iter()
-            .flat_map(|&handle| {
-                let annotation = match self.document.get_entity(handle) {
-                    Some(EntityType::Leader(leader)) if !leader.annotation_handle.is_null() => {
-                        Some(leader.annotation_handle)
-                    }
-                    _ => None,
-                };
-
-                std::iter::once(handle).chain(annotation)
-            })
-            .collect();
-
         // Objects on a locked layer can be selected but not copied.
         let clones: Vec<(Handle, EntityType, Vec<Handle>)> = copy_handles
             .iter()
@@ -666,11 +658,11 @@ impl Scene {
             .filter_map(|&h| {
                 let entity = self.document.get_entity(h)?.clone();
 
-                let annotation_scales = if leader_pair_handles.contains(&h) {
-                    crate::scene::annotative::annotation_scale_handles_for_entity(&self.document, h)
-                } else {
-                    Vec::new()
-                };
+                // Any annotative entity (not only a LEADER/MTEXT pair) needs
+                // its own context tree; a shared one ties the copy to the
+                // source. (#700)
+                let annotation_scales =
+                    crate::scene::annotative::annotation_scale_handles_for_entity(&self.document, h);
 
                 Some((h, entity, annotation_scales))
             })
@@ -759,6 +751,19 @@ impl Scene {
                 if let Some(model) = new_model {
                     self.hatches.insert(h, model);
                 }
+                // Images draw from a derived model, not the wire frame; without
+                // one the copy shows only its frame. (#829)
+                let image = self.document.get_entity(h).and_then(|entity| {
+                    matches!(
+                        entity,
+                        EntityType::RasterImage(_) | EntityType::Ole2Frame(_) | EntityType::Underlay(_)
+                    )
+                    .then(|| self.image_seed_for(entity))
+                    .flatten()
+                });
+                if let Some(model) = image {
+                    self.images.insert(h, model);
+                }
                 let rebuilt_history =
                     self.copy_solid_history(src_handle, h) && self.transform_solid_history(h, t);
                 if !rebuilt_history
@@ -810,6 +815,7 @@ impl Scene {
         // entry as targeted object deltas inside copy_complete_groups.
         self.copy_complete_groups(&handle_map);
         self.copy_dimension_associations(&handle_map);
+        self.copy_hatch_associations(&handle_map);
         // The copies are new handles (natural memo misses, tessellated fresh)
         // and reference only already-cached blocks — no block defn changes.
         // Report them as additions so derived caches patch in exactly the copies.

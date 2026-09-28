@@ -19,6 +19,21 @@ use codec::{EntityType as AcadEntityType, Handle};
 use iced::time::Instant;
 use iced::{mouse, Point, Task};
 
+/// Write an exported file: to disk on the desktop, as a browser download on
+/// the web, where there is no filesystem behind the dialog's path. (#761)
+fn write_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let name = path.file_name().map_or_else(|| "export".into(), |n| n.to_string_lossy());
+        crate::sys::download_bytes(&name, bytes);
+        Ok(())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::fs::write(path, bytes).map_err(|e| e.to_string())
+    }
+}
+
 pub(super) fn background_task<T, F, M>(work: F, map: M) -> Task<Message>
 where
     T: Send + 'static,
@@ -412,6 +427,11 @@ fn plot_scene_content(
                     }))
     });
     model_wires.retain(|wire| wire.plot_visible);
+    // A text / leader background mask is filled with the canvas colour so it
+    // hides what is behind it; on paper that colour is the sheet's, not the
+    // dark screen's. Mark such fills so the export paints them paper-white
+    // instead of plotting the canvas colour (or turning it black). (#1072)
+    let canvas = scene.current_bg();
     let with_depth = |wires: Vec<crate::scene::WireModel>| {
         let depths = scene.plot_wire_depths(&wires);
         let mut seen_text = std::collections::HashSet::new();
@@ -419,6 +439,13 @@ fn plot_scene_content(
             .into_iter()
             .zip(depths)
             .map(|(mut wire, draw_depth)| {
+                if !wire.fill_tris.is_empty() && wire.color[..3] == canvas[..3] {
+                    wire.bg_adapt = Some(Box::new(crate::scene::model::wire_model::BgAdaptInputs {
+                        raw_color: wire.color,
+                        canvas_color: true,
+                        ..Default::default()
+                    }));
+                }
                 plot_owner_aci(scene, &mut wire);
                 let semantic_text = crate::scene::Scene::handle_from_wire_name(&wire.name)
                     .filter(|handle| !wire.text_verts.is_empty() && seen_text.insert(*handle))
@@ -649,6 +676,7 @@ impl OpenCADStudio {
             right_click_mode: self.right_click_mode,
             right_click_hold_ms: self.right_click_hold_ms,
             grip_object_limit: self.grip_object_limit,
+            image_frame: crate::scene::frame::profile_image_mode(),
             ncopy_bind: self.ncopy_bind,
             cursor_type: self.cursor_type,
             crosshair_color: self.crosshair_color,
@@ -733,6 +761,7 @@ impl OpenCADStudio {
         self.right_click_mode = s.right_click_mode;
         self.right_click_hold_ms = super::super::settings::clamp_right_click_hold_ms(s.right_click_hold_ms);
         self.grip_object_limit = s.grip_object_limit.clamp(0, 32767);
+        crate::scene::frame::set_profile_image_mode(s.image_frame);
         self.ncopy_bind = s.ncopy_bind;
         self.cursor_type = s.cursor_type;
         self.crosshair_color = s.crosshair_color;
@@ -2027,7 +2056,7 @@ impl OpenCADStudio {
                 let mesh_refs: Vec<_> = meshes.iter().collect();
                 let bytes = crate::io::stl::build_stl(&mesh_refs)
                     .ok_or_else(|| "no mesh data to export".to_string())?;
-                std::fs::write(&worker_path, bytes).map_err(|e| e.to_string())
+                write_export(&worker_path, &bytes)
             },
             move |result| Message::StlExportFinished(path, result),
         )
@@ -2048,7 +2077,7 @@ impl OpenCADStudio {
                 let mesh_refs: Vec<_> = meshes.iter().collect();
                 let text = crate::io::step::build_step(&mesh_refs)
                     .ok_or_else(|| "no mesh data to export".to_string())?;
-                std::fs::write(&worker_path, text.as_bytes()).map_err(|e| e.to_string())
+                write_export(&worker_path, text.as_bytes())
             },
             move |result| Message::StepExportFinished(path, result),
         )
@@ -4449,9 +4478,9 @@ impl OpenCADStudio {
     ///
     /// On CUPS platforms (Linux, macOS) the driver's options are listed in an
     /// in-line editor and applied to every job for that printer through
-    /// `lp -o`. On Windows the driver's own document-properties sheet is
-    /// shown and its result stored as the printer's preferences, which the
-    /// print job honours. Without a named printer, or where the options
+    /// `lp -o`. On Windows the system opens the driver's own printing
+    /// preferences in its own process, and the print job honours what the
+    /// user saves there. Without a named printer, or where the options
     /// cannot be listed, the platform's printer settings open instead.
     fn on_printer_properties(&mut self) -> Task<Message> {
         // "Default" is a real printer: its preferences sheet is the one to
@@ -4462,12 +4491,18 @@ impl OpenCADStudio {
             .clone()
             .or_else(|| self.plot_dialog.default_printer.clone());
         let Some(printer) = chosen.filter(|_| !self.plot_dialog.to_file) else {
-            self.open_printer_settings_fallback();
+            self.open_printer_settings(None);
             return Task::none();
         };
         #[cfg(target_os = "windows")]
         {
-            return self.edit_windows_printer_preferences(printer);
+            // The driver's sheet is modal: it pumps messages itself until the
+            // user closes it. Hosted on our event-loop thread it starves the
+            // loop it is sharing, so the window stops painting and a core
+            // spins. The system's own preferences process pumps its own
+            // messages instead, which leaves ours free.
+            self.open_printer_settings(Some(&printer));
+            return Task::none();
         }
         #[allow(unreachable_code)]
         {
@@ -4489,40 +4524,11 @@ impl OpenCADStudio {
         }
     }
 
-    /// The driver's document-properties sheet, owned by the main window so
-    /// it sits on top of the plot dialog.
-    #[cfg(target_os = "windows")]
-    fn edit_windows_printer_preferences(&mut self, printer: String) -> Task<Message> {
-        let Some(window) = self.main_window else {
-            self.open_printer_settings_fallback();
-            return Task::none();
-        };
-        iced::window::run(window, move |w| {
-            use iced::window::raw_window_handle::RawWindowHandle;
-            let owner = match w.window_handle().ok().map(|h| h.as_raw()) {
-                Some(RawWindowHandle::Win32(handle)) => handle.hwnd.get(),
-                _ => 0,
-            };
-            match crate::io::print_to_printer::edit_printer_preferences(&printer, owner) {
-                Ok(true) => Ok(crate::tf!("Printing preferences saved for {printer}.").into_owned()),
-                Ok(false) => Ok(crate::t!("Printing preferences unchanged.").into_owned()),
-                Err(error) => Err(error),
-            }
-        })
-        .then(|result| {
-            Task::done(Message::BackgroundIoFinished(
-                result.map(|message| message),
-                false,
-            ))
-        })
-    }
-
-    /// The platform's printer settings surface: a settings panel on Linux,
-    /// the printers control panel on Windows, System Settings on macOS.
-    fn open_printer_settings_fallback(&mut self) {
-        match crate::io::print_to_printer::open_printer_properties(
-            self.plot_dialog.printer.as_deref(),
-        ) {
+    /// The platform's printer settings surface: the driver's printing
+    /// preferences for `printer`, or — without one — a settings panel on
+    /// Linux, the printers control panel on Windows, System Settings on macOS.
+    fn open_printer_settings(&mut self, printer: Option<&str>) {
+        match crate::io::print_to_printer::open_printer_properties(printer) {
             Ok(()) => self
                 .command_line
                 .push_info(crate::t!("Opened printer properties.").as_ref()),

@@ -326,7 +326,24 @@ impl OpenCADStudio {
         if self.tabs.get(self.active_tab).map(|tab| tab.id) != before {
             self.sync_underlay_tab();
         }
+        self.sync_frame_dropdown();
         task
+    }
+
+    /// The Frames list on the ribbon shows the active drawing's frame state
+    /// (FRAME), however it was changed: the list, a command, undo or another
+    /// drawing.
+    fn sync_frame_dropdown(&mut self) {
+        let Some(tab) = self.tabs.get(self.active_tab).filter(|tab| !tab.is_start) else {
+            return;
+        };
+        let current = match crate::scene::frame::master_mode(&tab.scene.document) {
+            0 => "FRAMES0",
+            1 => "FRAMES1",
+            2 => "FRAMES2",
+            _ => "FRAMES3",
+        };
+        self.ribbon.set_dropdown_current("FRAMES_DROPDOWN", current);
     }
 
     fn update_message(&mut self, msg: Message) -> Task<Message> {
@@ -478,11 +495,13 @@ impl OpenCADStudio {
         self.notify_plugins_document_changed();
         // OTRACK acquires tracking points only while a command or grip drag is
         // running; drop them once neither is active so the temporary tracking
-        // points / vectors disappear when the command ends (issue #64).
+        // points / vectors disappear when the command ends (issue #64). A grip
+        // drag's polar/ortho guide sets the vector with no tracking point, so
+        // it is dropped too. (#1456)
         let i = self.active_tab;
         if self.tabs[i].active_cmd.is_none()
             && self.tabs[i].active_grip.is_none()
-            && !self.snapper.tracking_points.is_empty()
+            && (!self.snapper.tracking_points.is_empty() || self.otrack_active.is_some())
         {
             self.snapper.clear_tracking();
             self.otrack_active = None;
@@ -1414,6 +1433,7 @@ impl OpenCADStudio {
                 Task::none()
             }
             message @ (Message::AttachPick
+            | Message::UnderlayAttachPick(_)
             | Message::AttachPickResult(_)
             | Message::XrefAttach(_)
             | Message::XrefAttachBrowseResult(_)) => self.update_xref_attach(message),

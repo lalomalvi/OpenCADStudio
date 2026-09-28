@@ -850,6 +850,8 @@ impl OpenCADStudio {
         self.tabs[i].scene.update(t - self.start);
         // Dynamic dimensions keep their screen size across zoom bands.
         self.tabs[i].scene.refresh_dynamic_dimension_scales(false);
+        // Underlays are rasterised again for the zoom once it settles.
+        self.tabs[i].scene.refresh_underlay_resolution(t);
 
         // If the camera moved since we last synced, write it back to
         // the document and mark the file dirty.
@@ -1415,7 +1417,7 @@ impl OpenCADStudio {
             // The engaged grip is the rubber-band origin. Perpendicular
             // snapping must drop its foot from this point, including when a
             // hot-grip set is moved by the same drag vector.
-            self.snapper.from_point = Some(grip.origin_world.as_vec3());
+            self.snapper.from_point = Some(grip.origin_world);
             let (go, gr) = self.drafting_grid_basis(i);
             let base = grip.origin_world;
             let construction_ray =
@@ -2135,10 +2137,9 @@ impl OpenCADStudio {
                 )
             } else {
                 let (go, gr) = self.drafting_grid_basis(i);
-                // The snapper is a screen-space (f32) engine; the f64
-                // base only matters for typed-input precision, so hand it
-                // the downcast point here.
-                self.snapper.from_point = self.last_point.map(|p| p.as_vec3());
+                // Construction anchor for perpendicular and tangent snaps
+                // in full f64 precision.
+                self.snapper.from_point = self.last_point;
 
                 let construction_ray = if is_window_corner {
                     None
@@ -2292,7 +2293,7 @@ impl OpenCADStudio {
                 Instant::now(),
             );
             self.snapper.update_parallel(
-                cursor_world.as_vec3(),
+                cursor_world,
                 &snap_candidates,
                 view_rot,
                 eye,
@@ -2323,8 +2324,8 @@ impl OpenCADStudio {
             // (#277)
             if axis_lock.is_none() && self.tabs[i].snap_result.is_none() && otrack_hit.is_none() {
                 if let Some(par) = self.snapper.parallel_snap(
-                    cursor_world.as_vec3(),
-                    self.last_point.map(|p| p.as_vec3()),
+                    cursor_world,
+                    self.last_point,
                     view_rot,
                     eye,
                     bounds,
@@ -2332,7 +2333,7 @@ impl OpenCADStudio {
                     if let (Some(base), Some((dir, _))) =
                         (self.last_point, self.snapper.parallel_ref)
                     {
-                        self.otrack_active = Some((base, dir.as_dvec3()));
+                        self.otrack_active = Some((base, dir));
                         self.otrack_cross = None;
                     }
                     self.tabs[i].snap_result = Some(par);
@@ -2554,8 +2555,15 @@ impl OpenCADStudio {
                     .as_ref()
                     .map(|c| c.object_pick_hover_previews(&self.tabs[i].scene, effective))
                     .unwrap_or_default();
+                let live_tangent = self.tabs[i].snap_result.and_then(|s| {
+                    if s.snap_type == crate::snap::SnapType::Tangent {
+                        s.tangent_obj
+                    } else {
+                        None
+                    }
+                });
                 if let Some(cmd) = self.tabs[i].active_cmd.as_mut() {
-                    p.extend(cmd.on_preview_wires(effective));
+                    p.extend(cmd.on_preview_wires_with_tangent(effective, live_tangent));
                 }
                 p
             } else if needs_entity && deferred_command_hover {
@@ -2583,6 +2591,7 @@ impl OpenCADStudio {
                     bounds,
                     self.tabs[i].scene.document.header.lineweight_display,
                     crate::ui::overlay::pick_box_aperture_px(self.pick_box),
+                    &self.tabs[i].scene.draw_depth_map(),
                 )
                 .and_then(|s| Scene::handle_from_wire_name(s))
                 .or_else(|| {
@@ -2691,10 +2700,17 @@ impl OpenCADStudio {
             } else if let Some(wires) = self.dimension_preview_wires(i, effective) {
                 wires
             } else {
+                let live_tangent = self.tabs[i].snap_result.and_then(|s| {
+                    if s.snap_type == crate::snap::SnapType::Tangent {
+                        s.tangent_obj
+                    } else {
+                        None
+                    }
+                });
                 self.tabs[i]
                     .active_cmd
                     .as_mut()
-                    .map(|c| c.on_preview_wires(effective))
+                    .map(|c| c.on_preview_wires_with_tangent(effective, live_tangent))
                     .unwrap_or_default()
             };
             // Polar tracking guide line: dotted line from last_point along
@@ -2726,6 +2742,7 @@ impl OpenCADStudio {
                             world_width: 0.0,
                             depth_override: None,
                             display_visible: true,
+                            snap_only: false,
                             plot_visible: true,
                             fill_is_3d: false,
                             fill_is_2d_solid: false,
@@ -2940,7 +2957,7 @@ impl OpenCADStudio {
         // Perpendicular and tangent measure from `from`, else the running
         // command's last point; the live cursor's base point is restored.
         let live_from = self.snapper.from_point;
-        self.snapper.from_point = from.or(self.last_point).map(|p| p.as_vec3());
+        self.snapper.from_point = from.or(self.last_point);
         let (go, gr) = self.drafting_grid_basis(i);
         let hit = self
             .snapper
@@ -3565,6 +3582,7 @@ impl OpenCADStudio {
                 bounds,
                 self.tabs[i].scene.document.header.lineweight_display,
                 crate::ui::overlay::pick_box_aperture_px(self.pick_box),
+                &self.tabs[i].scene.draw_depth_map(),
             )
             .and_then(Scene::handle_from_wire_name)
             .and_then(|handle| self.tabs[i].scene.document.get_entity(handle))
@@ -3781,7 +3799,7 @@ impl OpenCADStudio {
                     )
                 } else {
                     let (go, gr) = self.drafting_grid_basis(i);
-                    self.snapper.from_point = self.last_point.map(|p| p.as_vec3());
+                    self.snapper.from_point = self.last_point;
 
                     let construction_ray = if is_window_corner {
                         None
@@ -4094,6 +4112,7 @@ impl OpenCADStudio {
                     bounds,
                     self.tabs[i].scene.document.header.lineweight_display,
                     crate::ui::overlay::pick_box_aperture_px(self.pick_box),
+                    &self.tabs[i].scene.draw_depth_map(),
                 )
                 .and_then(|s| Scene::handle_from_wire_name(s))
                 .or_else(|| {
@@ -4842,6 +4861,7 @@ properties={:.1}ms picked={}",
                                 bounds,
                                 self.tabs[i].scene.document.header.lineweight_display,
                                 crate::ui::overlay::pick_box_aperture_px(self.pick_box),
+                                &self.tabs[i].scene.draw_depth_map(),
                             )
                             .and_then(|s| Scene::handle_from_wire_name(s))
                             .or_else(|| {
@@ -5221,6 +5241,7 @@ properties={:.1}ms picked={}",
                     bounds,
                     self.tabs[i].scene.document.header.lineweight_display,
                     crate::ui::overlay::pick_box_aperture_px(self.pick_box),
+                    &self.tabs[i].scene.draw_depth_map(),
                 )
                 .and_then(|s| Scene::handle_from_wire_name(s))
                 .or_else(|| {
@@ -5366,6 +5387,7 @@ properties={:.1}ms picked={}",
                     bounds,
                     self.tabs[i].scene.document.header.lineweight_display,
                     crate::ui::overlay::pick_box_aperture_px(self.pick_box),
+                    &self.tabs[i].scene.draw_depth_map(),
                 )
                 .and_then(|s| Scene::handle_from_wire_name(s));
 
@@ -5899,6 +5921,7 @@ properties={:.1}ms picked={}",
             bounds,
             self.tabs[i].scene.document.header.lineweight_display,
             crate::ui::overlay::pick_box_aperture_px(self.pick_box),
+            &self.tabs[i].scene.draw_depth_map(),
         )
         .and_then(Scene::handle_from_wire_name);
         let wire_ms = wire_started.elapsed().as_secs_f64() * 1000.0;
