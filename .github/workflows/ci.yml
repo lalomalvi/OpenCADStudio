@@ -1,28 +1,65 @@
 name: Tests
 
-# Until now nothing ran the test suite on a change: the release workflows
-# build the app, web-check.yml type-checks the wasm target, and pull requests
-# reported their own local runs. Run the workspace tests on every push to
-# main, MCP work branches, and on every pull request. A manual trigger makes
-# the gate reproducible when a fork does not enqueue draft PR checks.
-# There is deliberately no formatter check:
-# the tree is not rustfmt-clean and is not going to be reformatted.
+# One selection, one set of required checks, one explicit receipt.
+# Prose never compiles Rust. Python-only automation runs Python tests.
+# Native/infrastructure changes also run workspace + host platform coverage.
 
 on:
   push:
     branches: [main, 'codex/mcp-*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Frozen comparison base (defaults to the event base/main)
+        required: false
+        type: string
+      scope:
+        description: auto selects by paths; full explicitly validates all scopes
+        default: auto
+        type: choice
+        options: [auto, full]
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: tests-${{ github.ref }}
-  cancel-in-progress: true
+  group: tests-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
+  changes:
+    runs-on: ubuntu-22.04
+    outputs:
+      rust_workspace: ${{ steps.scope.outputs.rust_workspace }}
+      python: ${{ steps.scope.outputs.python }}
+      host: ${{ steps.scope.outputs.host }}
+      reuse_run: ${{ steps.scope.outputs.reuse_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Select scope and reuse verified checks
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ inputs.base_ref }}
+          SCOPE: ${{ inputs.scope }}
+        run: python docs/automation/ci_scope.py select --from-event --base "$BASE_REF"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-selection
+          path: target/ci-scope/selection.json
+          if-no-files-found: error
+          retention-days: 7
+
   test:
+    needs: changes
+    if: needs.changes.outputs.rust_workspace == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +84,8 @@ jobs:
         run: cargo test --workspace --locked
 
   masterplan-python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -59,3 +98,35 @@ jobs:
         run: python -m unittest discover -s docs/automation/masterplan -p 'test_*.py' -q
       - name: Automation tests
         run: python -m unittest discover -s docs/automation -p 'test_*.py' -q
+
+  host:
+    needs: changes
+    if: needs.changes.outputs.host == 'true'
+    uses: ./.github/workflows/python-host-check.yml
+
+  sync-verification:
+    needs: [changes, test, masterplan-python, host]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-selection
+          path: target/ci-scope
+      - name: Verify required results (skipped jobs are not test passes)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python docs/automation/ci_scope.py finalize
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sync-evidence
+          path: target/ci-scope/verification.json
+          if-no-files-found: error
+          retention-days: 30

@@ -17,6 +17,13 @@ For synchronizing upstream or publishing this fork, follow
   that must report its revision. Preserve the worktree cache and historical runs.
 - Observe existing run/process IDs; do not restart because observation timed out.
   Report progress when the phase changes; avoid minute-by-minute repetitions.
+- Use `python docs/automation/fork_sync_ci.py --start --base <frozen-fork-sha>`
+  after publishing the candidate branch. It observes an existing unified Tests
+  run before dispatching. Do not separately dispatch Python host check: Tests
+  calls it when required. A failed/uncertain dispatch claim is preserved.
+- Reuse the successful Windows runner with `fork_sync_ci.py --artifact --reuse-ref
+  <tested-sha>`; keep its producer SHA/version. Verify hashes before executing it.
+  The receipt must cover the required scope; omitted jobs are not passed tests.
 - Existing user authorization for merging/pushing the fork remains valid. Ask only
   for missing information or permissions actually required by the environment.
 - Preserve private drawings/images and historical evidence; never stage them.

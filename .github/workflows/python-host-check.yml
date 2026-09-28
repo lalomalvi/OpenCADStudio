@@ -7,20 +7,13 @@ name: Python host check
 # so this workflow sets both to the freshly built plugin and executable.
 
 on:
-  pull_request:
-    paths:
-      - 'crates/ocs_plugin_api/**'
-      - 'plugins/opencad-python/**'
-      - 'src/app/plugin_host.rs'
-      - 'src/app/control/**'
-      - 'src/app/commands/**'
-      - 'src/app/settings.rs'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/python-host-check.yml'
-  push:
-    tags: ['pr-check-*']
+  workflow_call:
+  # Explicit standalone invocation is retained for troubleshooting only.
   workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -91,3 +84,16 @@ jobs:
           test -f "$OCS_TEST_PYTHON_PLUGIN" || { echo "staged plugin missing: $OCS_TEST_PYTHON_PLUGIN"; exit 1; }
           test -f "$OCS_PLUGIN_RUNNER_EXE" || { echo "runner missing: $OCS_PLUGIN_RUNNER_EXE"; exit 1; }
           cargo test --locked --lib -- --test-threads=1 python
+
+      - name: Package the tested Windows runner (no rebuild)
+        if: runner.os == 'Windows'
+        run: python3 docs/automation/ci_runtime.py --out work/runner-windows
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: runner-windows
+          path: work/runner-windows/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

@@ -113,10 +113,49 @@ comando/features/toolchain, conclusión y log. Coincidencia de fuentes + misma
 configuración permite reutilizar su resultado documentado. Ni el nombre del run,
 ni un check verde de otro SHA, ni un test omitido acreditan ese gate.
 
-El workflow actual de Tests ejecuta Rust también en pushes de Markdown/Python.
-El host tiene sus propios filtros y dispatch manual. Por ahora se documenta ese
-coste y se consulta lo que ya arrancó: **no lanzar otro run manual duplicado**.
-No se cambia apresuradamente el workflow para saltar checks obligatorios.
+El workflow Tests usa ahora `ci_scope.py` para seleccionar jobs: prosa ejecuta
+solo selección/diff-check y cierre; Python de automatización ejecuta sus suites;
+Rust, manifest, assets, workflows o rutas desconocidas ejecutan workspace, Python
+y host Linux/Windows. Cambios del propio selector/empaquetador requieren alcance
+completo. El host es reusable y Tests lo invoca; su antiguo disparo automático por
+PR/tag se retiró para no iniciar dos verificaciones. El dispatch independiente
+permanece solo para diagnóstico explícito.
+
+El check estable `sync-verification` siempre debe terminar: exige `success` de
+cada job requerido y genera `sync-evidence/verification.json`. Un `skipped`,
+cancelado o fallo no acredita un gate requerido. Las omisiones justificadas por
+el alcance se enumeran sin llamarlas tests aprobados. Debe ser el check requerido
+si se configura protección de rama; no se cambia esa protección automáticamente.
+
+En el mismo SHA, Tests puede reutilizar un recibo completo de un run previo que
+GitHub confirma `completed/success`, con política y cobertura coincidentes. Un
+recibo solo Python no habilita omitir host/Rust. La API debe poder leerlo; si no
+puede, CI realiza la verificación solicitada en vez de asumir que pasó.
+
+```powershell
+# Después de publicar la rama candidata; observar lo existente antes de iniciar:
+python docs/automation/fork_sync_ci.py --start --base <SHA-fork-congelado>
+# Consultar el mismo candidato sin iniciar ni reintentar nada:
+python docs/automation/fork_sync_ci.py --base <SHA-fork-congelado>
+# Obtener el runner probado. Para un cierre solo Markdown usar su SHA productor:
+python docs/automation/fork_sync_ci.py --artifact --reuse-ref <SHA-probado>
+```
+
+El coordinador valida URLs y revisión de la rama remota. Antes de dispatch usa
+un claim atómico por SHA bajo `target/fork-sync-ci`; un timeout conserva el claim
+y no reenvía la mutación. Es exclusión local del worktree, no un lock distribuido
+entre equipos. Si hay fallo o evidencia insuficiente, informa los IDs y requiere
+resolver la causa; no relanza automáticamente. Si el dispatch quedó incierto,
+consultar GitHub y resolver ese claim explícitamente, nunca borrarlo por timeout.
+
+El host Windows empaqueta el EXE y plugin que ya construyó y probó, sin recompilar.
+Incluye `runtime.json` con SHA/fingerprint, `rustc -Vv`, comando/features, versión,
+tamaños y hashes. El coordinador descarga a un directorio nuevo y verifica esas
+propiedades antes de devolver la ruta. Un cierre Markdown puede usarlo si la
+fuente no documental es idéntica; sigue declarando la revisión original del EXE.
+No se ejecuta al descargarlo y no se presenta como release/instalador. Artefactos
+expirados, ausentes o alterados no se reutilizan. No atribuir al runner pruebas IO
+Windows que el host Python no ejecuta: una regresión IO exige su test específico.
 
 ## Ritmo, presupuesto y eliminación del trabajo repetido
 
@@ -143,13 +182,14 @@ No se cambia apresuradamente el workflow para saltar checks obligatorios.
 | Diagnóstico y procedimiento único | Implementado en este documento | Logs y duraciones de arriba |
 | Preflight, snapshot, destinos y selección conservadora | Implementado en fork_sync.py | Tests con repos sintéticos + ejecución real |
 | Aprendizaje persistente para futuros agentes | AGENTS.md raíz y enlace en README/índice | Archivo versionado, no memoria informal |
-| Separar jobs CI por rutas y reutilizar binario Windows del host | Siguiente optimización acotada | Casos docs/Python/native/manifest; checks requeridos presentes, artefacto con SHA/hash; no skips falsamente verdes |
-| Evitar doble compilación por features y reducir post-cache | Siguiente optimización medida | Comparar mismo SHA/configuración, tiempos Cargo y CI; no prometer ahorro antes de medir |
+| Separar jobs CI por rutas, host reusable, recibo y coordinador | Implementado; verificar el run de aceptación vigente | Matriz de rutas, casos omitido/fallo, timeout sin redispatch y check estable |
+| Reutilizar runner Windows con hashes | Implementado; verificar artefacto del run completo vigente | Descarga + SHA/configuración/hash, sonda sintética nueva sin build local |
+| Evitar segundo build local | Usar el artefacto probado de host CI | No atribuirle una revisión de commit documental posterior |
+| Reducir post-cache o unificar features Cargo | Pendiente de medición posterior | No cambiar caches/features para ganar una cifra sin evidencia |
 | Reducir conflictos recurrentes | En cada integración | Inventario corto de parches propios: MCP/IO/captura/QA; retirar duplicados ya absorbidos solo con revisión y pruebas |
 
-Las dos optimizaciones CI no bloquean el procedimiento operativo. Se deben medir
-en una tarea acotada con un único candidato; no abrir ahora otro ciclo de build
-del CAD para demostrar que un documento o el planner funcionan. No es posible
+El workflow cambiado requiere una aceptación completa de su candidato, una sola
+vez. Luego los ejemplos de prosa/Python usan únicamente sus gates. No es posible
 garantizar que una futura integración con regresiones dure pocos minutos. Sí se
 puede evitar repetir trabajo sin una razón y dejar visible por qué cada gate se
 ejecuta. El próximo ciclo medirá si se cumplen esos objetivos.
