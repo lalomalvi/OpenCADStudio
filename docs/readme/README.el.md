@@ -9,19 +9,23 @@
 <p align="center">Εφαρμογή ανοιχτού κώδικα για δισδιάστατη σχεδίαση και τρισδιάστατη μοντελοποίηση, για υπολογιστές και τον ιστό, γραμμένη σε Rust.</p>
 
 <p align="center">
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><img alt="Τελευταία έκδοση" src="https://img.shields.io/github/v/release/HakanSeven12/OpenCADStudio"></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases"><img alt="Λήψεις εκδόσεων" src="https://img.shields.io/github/downloads/HakanSeven12/OpenCADStudio/total"></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
   <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="Αστέρια στο GitHub" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
   <a href="../../LICENSE"><img alt="Άδεια GPL-3.0" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
 </p>
 
 <p align="center">
   <a href="https://www.opencadstudio.com"><strong>Άνοιγμα της διαδικτυακής εφαρμογής</strong></a> ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><strong>Λήψη της εφαρμογής για υπολογιστές</strong></a> ·
+  <a href="../../README.md#install-and-open-this-fork"><strong>Λήψη της εφαρμογής για υπολογιστές</strong></a> ·
   <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>Συμμετοχή στη συζήτηση</strong></a>
 </p>
 
 <p align="center"><img src="../../site/workspace.png" alt="Χώρος εργασίας του Open CAD Studio" width="100%"></p>
+
+
+> **Fork installation:** [Windows](../install/windows.md) · [macOS](../install/macos.md). This translated upstream overview does not establish this fork's published packages, signing or MCP. Use the fork guides.
+
 
 ## Επισκόπηση
 
@@ -63,33 +67,15 @@
 
 ## Εγκατάσταση
 
-Κατεβάστε όλα τα τρέχοντα πακέτα από την [τελευταία έκδοση](https://github.com/HakanSeven12/OpenCADStudio/releases/latest).
+This is the **lalomalvi/OpenCADStudio fork**. The fork had no published releases
+on 2026-09-28. A source clone is not an installed/open desktop application.
+Use the complete fork guides: [Windows](../install/windows.md),
+[macOS Apple Silicon/Intel](../install/macos.md), and
+[agent installation contract](../install/agents.md). They provide diagnosis,
+locked source build, verified per-user packages, GUI opening and installed MCP
+paths. Upstream distributions and translated upstream build examples below do
+not establish fork installation, signing or MCP support.
 
-### Windows
-
-Επιλέξτε ένα από τα υπογεγραμμένα πακέτα x86-64:
-
-- `OpenCADStudio-*-windows-x86_64-installer.msi` — το προτεινόμενο πρόγραμμα εγκατάστασης, με συντομεύσεις στο μενού Έναρξη, συσχετίσεις αρχείων DWG/DXF και μικρογραφίες σχεδίων.
-- `OpenCADStudio-*-windows-x86_64-portable.exe` — αυτόνομη εφαρμογή που δεν απαιτεί εγκατάσταση.
-
-### Linux
-
-Κατεβάστε το AppImage για x86-64, κάντε το εκτελέσιμο και εκκινήστε το:
-
-```bash
-chmod +x OpenCADStudio-*-linux-x86_64.AppImage
-./OpenCADStudio-*-linux-x86_64.AppImage
-```
-
-### macOS
-
-Το διαθέσιμο πακέτο για macOS υποστηρίζει Apple Silicon:
-
-1. Κατεβάστε το `OpenCADStudio-*-macos-arm64.dmg`.
-2. Ανοίξτε την εικόνα δίσκου και σύρετε το `OpenCADStudio.app` στον φάκελο **Εφαρμογές (Applications)**.
-3. Αν το Gatekeeper εμποδίσει την πρώτη εκκίνηση, εγκρίνετε την εφαρμογή από τις **Ρυθμίσεις συστήματος → Απόρρητο και ασφάλεια (System Settings → Privacy & Security)**.
-
-Η εφαρμογή διαθέτει υπογραφή ad-hoc, αλλά δεν έχει ακόμη επικυρωθεί μέσω της διαδικασίας notarization της Apple.
 
 ## Γλώσσες
 
@@ -121,9 +107,9 @@ sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
 Στη συνέχεια, μεταγλωττίστε την εφαρμογή:
 
 ```bash
-git clone https://github.com/HakanSeven12/OpenCADStudio.git
+git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --release --bin OpenCADStudio
+cargo build --locked --release --bin OpenCADStudio
 ```
 
 Το εκτελέσιμο αρχείο δημιουργείται στη θέση `target/release/OpenCADStudio` (`OpenCADStudio.exe` στα Windows).
@@ -193,7 +179,7 @@ OpenCADStudio --mcp
 
 ### Λήψεις εκδόσεων
 
-<a href="https://github.com/HakanSeven12/OpenCADStudio/releases">
+<a href="https://github.com/lalomalvi/OpenCADStudio/releases">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://www.opencadstudio.com/download-history-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="https://www.opencadstudio.com/download-history-light.svg">

@@ -7,19 +7,23 @@
 <p align="center">Nyílt forráskódú 2D rajzolás és 3D modellezés asztali gépre és webre, Rust nyelven.</p>
 
 <p align="center">
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><img alt="Legújabb kiadás" src="https://img.shields.io/github/v/release/HakanSeven12/OpenCADStudio"></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases"><img alt="Letöltések" src="https://img.shields.io/github/downloads/HakanSeven12/OpenCADStudio/total"></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
   <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="GitHub-csillagok" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
   <a href="../../LICENSE"><img alt="GPL-3.0 licenc" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
 </p>
 
 <p align="center">
   <a href="https://www.opencadstudio.com"><strong>Webalkalmazás indítása</strong></a> ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><strong>Asztali alkalmazás letöltése</strong></a> ·
+  <a href="../../README.md#install-and-open-this-fork"><strong>Asztali alkalmazás letöltése</strong></a> ·
   <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>Csatlakozás a beszélgetéshez</strong></a>
 </p>
 
 <p align="center"><img src="../../site/workspace.png" alt="Open CAD Studio munkaterület" width="100%"></p>
+
+
+> **Fork installation:** [Windows](../install/windows.md) · [macOS](../install/macos.md). This translated upstream overview does not establish this fork's published packages, signing or MCP. Use the fork guides.
+
 
 ## Áttekintés
 
@@ -61,33 +65,15 @@ Az asztali alkalmazást válaszd natív fájltársításokhoz, fájlkezelői bé
 
 ## Telepítés
 
-Minden aktuális csomag a [legújabb kiadásból](https://github.com/HakanSeven12/OpenCADStudio/releases/latest) tölthető le.
+This is the **lalomalvi/OpenCADStudio fork**. The fork had no published releases
+on 2026-09-28. A source clone is not an installed/open desktop application.
+Use the complete fork guides: [Windows](../install/windows.md),
+[macOS Apple Silicon/Intel](../install/macos.md), and
+[agent installation contract](../install/agents.md). They provide diagnosis,
+locked source build, verified per-user packages, GUI opening and installed MCP
+paths. Upstream distributions and translated upstream build examples below do
+not establish fork installation, signing or MCP support.
 
-### Windows
-
-Válassz az aláírt x86-64 csomagok közül:
-
-- `OpenCADStudio-*-windows-x86_64-installer.msi` — ajánlott telepítő Start menü-parancsikonokkal, DWG/DXF-fájltársításokkal és rajzi bélyegképekkel.
-- `OpenCADStudio-*-windows-x86_64-portable.exe` — önálló alkalmazás, telepítés nélkül.
-
-### Linux
-
-Töltsd le az x86-64 AppImage fájlt, tedd futtathatóvá, majd indítsd el:
-
-```bash
-chmod +x OpenCADStudio-*-linux-x86_64.AppImage
-./OpenCADStudio-*-linux-x86_64.AppImage
-```
-
-### macOS
-
-A kiadott macOS-csomag az Apple Silicon rendszereket támogatja:
-
-1. Töltsd le az `OpenCADStudio-*-macos-arm64.dmg` fájlt.
-2. Nyisd meg a lemezképet, és húzd az `OpenCADStudio.app` alkalmazást az **Applications** mappába.
-3. Ha a Gatekeeper blokkolja az első indítást, engedélyezd az alkalmazást a **System Settings → Privacy & Security** alatt.
-
-Az alkalmazás ad hoc aláírással rendelkezik, de az Apple jelenleg nem hitelesítette közjegyzői eljárással.
 
 ## Nyelvek
 
@@ -119,9 +105,9 @@ sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
 Ezután fordítsd le:
 
 ```bash
-git clone https://github.com/HakanSeven12/OpenCADStudio.git
+git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --release --bin OpenCADStudio
+cargo build --locked --release --bin OpenCADStudio
 ```
 
 A létrejövő bináris a `target/release/OpenCADStudio` helyre kerül (Windows alatt `OpenCADStudio.exe`).

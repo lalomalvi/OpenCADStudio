@@ -3,21 +3,40 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import queue
+import threading
+
+TIMEOUT = 15
 
 
 TOOLS = {"ocs_sessions", "ocs_read", "ocs_execute", "ocs_capture"}
 MODERN = "2026-07-28"
 
 
-def start(server: Path) -> subprocess.Popen[str]:
+def start(server: Path, *, env=None, cwd=None, command=None) -> subprocess.Popen[str]:
     process = subprocess.Popen(
-        [str(server), "--mcp"],
+        command or [str(server), "--mcp"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        env=env,
+        cwd=cwd,
     )
     assert process.stdin and process.stdout
+    process.responses = queue.Queue()
+    process.diagnostics = []
+    def read_stdout():
+        for line in process.stdout:
+            process.responses.put(line)
+        process.responses.put(None)
+    def read_stderr():
+        for line in process.stderr:
+            process.diagnostics.append(line)
+    process.readers = [threading.Thread(target=read_stdout, daemon=True), threading.Thread(target=read_stderr, daemon=True)]
+    for reader in process.readers:
+        reader.start()
     return process
 
 
@@ -25,13 +44,57 @@ def request(process: subprocess.Popen[str], payload: dict) -> dict:
     assert process.stdin and process.stdout
     process.stdin.write(json.dumps(payload) + "\n")
     process.stdin.flush()
-    return json.loads(process.stdout.readline())
+    try:
+        line = process.responses.get(timeout=TIMEOUT)
+        if line is None:
+            process.readers[1].join(timeout=0.5)
+            raise RuntimeError("MCP exited before responding: " + "".join(process.diagnostics)[-1200:])
+        result = json.loads(line)
+        assert result.get("jsonrpc") == "2.0" and result.get("id") == payload["id"], result
+        return result
+    except Exception:
+        process.kill()
+        process.wait(timeout=5)
+        for reader in process.readers:
+            reader.join(timeout=2)
+        for stream in (process.stdin, process.stdout, process.stderr):
+            stream.close()
+        raise
 
 
 def close(process: subprocess.Popen[str]) -> None:
     assert process.stdin
+    # request() already tears down all streams on timeout/protocol failure.
+    if process.stdin.closed and process.stdout.closed and process.stderr.closed:
+        return
     process.stdin.close()
-    assert process.wait(timeout=5) == 0
+    try:
+        assert process.wait(timeout=5) == 0
+    except Exception:
+        process.kill()
+        process.wait(timeout=5)
+        raise
+    finally:
+        for reader in process.readers:
+            reader.join(timeout=2)
+        process.stdout.close()
+        process.stderr.close()
+    # EOF must be clean: any extra stdout is a protocol violation.
+    while True:
+        line = process.responses.get(timeout=5)
+        if line is None:
+            break
+        raise AssertionError(f"Unsolicited stdout after final response: {line[:200]}")
+
+
+def negotiation(server: Path) -> None:
+    for version in ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"):
+        process = start(server)
+        result = request(process, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                  "params": {"protocolVersion": version, "capabilities": {},
+                                             "clientInfo": {"name": "distribution-smoke", "version": "1"}}})
+        assert result["result"]["protocolVersion"] == version, result
+        close(process)
 
 
 def legacy(server: Path) -> None:
@@ -108,6 +171,7 @@ def modern(server: Path) -> None:
         "params": {"_meta": meta},
     })
     assert discovered["result"]["resultType"] == "complete"
+    assert set(discovered["result"]["supportedVersions"]) == {MODERN, "2025-11-25"}
     assert discovered["result"]["ttlMs"] >= 0
     assert discovered["result"]["cacheScope"] in {"public", "private"}
     assert "io.modelcontextprotocol/tasks" in discovered["result"]["capabilities"]["extensions"]
@@ -168,6 +232,7 @@ def modern(server: Path) -> None:
 
 def main() -> None:
     server = Path(sys.argv[1] if len(sys.argv) > 1 else "target/debug/OpenCADStudio").resolve()
+    negotiation(server)
     legacy(server)
     modern(server)
 

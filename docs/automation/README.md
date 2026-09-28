@@ -863,3 +863,10 @@ AND and are validated up front (a bad pointer or unknown operator fails the
 query before any entity is inspected). The same filter shape works over the
 REST `GET /entities?where=<json-encoded>` parameter. Hatch queries expose
 their loop definitions under `properties` so boundaries can be read back.
+
+# Install the desktop fork first
+
+MCP uses the installed desktop binary. Complete the [Windows](../install/windows.md)
+or [macOS](../install/macos.md) route and get its absolute executable with
+`scripts/desktop.py path`. GUI launch and `--mcp` are different commands.
+See the [agent installation contract](../install/agents.md) before stopping at a clone.

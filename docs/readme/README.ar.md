@@ -7,19 +7,23 @@
 <p align="center" dir="rtl">تطبيق مفتوح المصدر للرسم ثنائي الأبعاد والنمذجة ثلاثية الأبعاد على سطح المكتب والويب، مبني بلغة Rust.</p>
 
 <p align="center">
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><img alt="أحدث إصدار" src="https://img.shields.io/github/v/release/HakanSeven12/OpenCADStudio"></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases"><img alt="تنزيلات الإصدارات" src="https://img.shields.io/github/downloads/HakanSeven12/OpenCADStudio/total"></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
   <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="نجوم GitHub" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
   <a href="../../LICENSE"><img alt="ترخيص GPL-3.0" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
 </p>
 
 <p align="center" dir="rtl">
   <a href="https://www.opencadstudio.com"><strong>تشغيل تطبيق الويب</strong></a> ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><strong>تنزيل تطبيق سطح المكتب</strong></a> ·
+  <a href="../../README.md#install-and-open-this-fork"><strong>تنزيل تطبيق سطح المكتب</strong></a> ·
   <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>الانضمام إلى النقاش</strong></a>
 </p>
 
 <p align="center"><img src="../../site/workspace.png" alt="مساحة عمل Open CAD Studio" width="100%"></p>
+
+
+> **Fork installation:** [Windows](../install/windows.md) · [macOS](../install/macos.md). This translated upstream overview does not establish this fork's published packages, signing or MCP. Use the fork guides.
+
 
 ## نظرة عامة
 
@@ -61,33 +65,15 @@ Open CAD Studio تطبيق متعدد المنصات للرسم التقني و�
 
 ## التثبيت
 
-نزّل جميع الحزم الحالية من [أحدث إصدار](https://github.com/HakanSeven12/OpenCADStudio/releases/latest).
+This is the **lalomalvi/OpenCADStudio fork**. The fork had no published releases
+on 2026-09-28. A source clone is not an installed/open desktop application.
+Use the complete fork guides: [Windows](../install/windows.md),
+[macOS Apple Silicon/Intel](../install/macos.md), and
+[agent installation contract](../install/agents.md). They provide diagnosis,
+locked source build, verified per-user packages, GUI opening and installed MCP
+paths. Upstream distributions and translated upstream build examples below do
+not establish fork installation, signing or MCP support.
 
-### Windows
-
-اختر إحدى حزم x86-64 الموقّعة:
-
-- `OpenCADStudio-*-windows-x86_64-installer.msi` — برنامج التثبيت الموصى به، ويتضمن اختصارات قائمة ابدأ وارتباطات ملفات DWG/DXF وصوراً مصغرة للرسومات.
-- `OpenCADStudio-*-windows-x86_64-portable.exe` — تطبيق مستقل لا يحتاج إلى تثبيت.
-
-### Linux
-
-نزّل AppImage لمعمارية x86-64 واجعله قابلاً للتنفيذ ثم شغّله:
-
-```bash
-chmod +x OpenCADStudio-*-linux-x86_64.AppImage
-./OpenCADStudio-*-linux-x86_64.AppImage
-```
-
-### macOS
-
-تدعم حزمة macOS المنشورة أجهزة Apple Silicon:
-
-1. نزّل `OpenCADStudio-*-macos-arm64.dmg`.
-2. افتح الصورة واسحب `OpenCADStudio.app` إلى **Applications**.
-3. إذا منع Gatekeeper التشغيل الأول، فاسمح بالتطبيق من **System Settings → Privacy & Security**.
-
-التطبيق موقّع بتوقيع ad hoc، لكنه غير موثّق حالياً لدى Apple.
 
 ## اللغات
 
@@ -119,9 +105,9 @@ sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
 ثم ابنِ التطبيق:
 
 ```bash
-git clone https://github.com/HakanSeven12/OpenCADStudio.git
+git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --release --bin OpenCADStudio
+cargo build --locked --release --bin OpenCADStudio
 ```
 
 يُكتب الملف التنفيذي الناتج في `target/release/OpenCADStudio` (`OpenCADStudio.exe` على Windows).

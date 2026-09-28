@@ -1,0 +1,5 @@
+# actionlint 1.7.7 predates the official Intel label. Confirmed in GitHub's
+# runner-images README; this does not mark the job self-hosted or change runners.
+self-hosted-runner:
+  labels:
+    - macos-15-intel

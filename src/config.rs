@@ -17,6 +17,12 @@ pub fn config_dir() -> Option<PathBuf> {
     if cfg!(test) {
         return Some(std::env::temp_dir().join(format!("ocs-test-config-{}", std::process::id())));
     }
+    // Explicit isolation for portable acceptance and independent installations.
+    // Never interpret a relative override against an unpredictable working dir.
+    if let Some(directory) = std::env::var_os("OCS_CONFIG_DIR") {
+        let path = PathBuf::from(directory);
+        return path.is_absolute().then_some(path);
+    }
     let base: PathBuf = if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA").map(PathBuf::from)?
     } else if cfg!(target_os = "macos") {

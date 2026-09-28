@@ -7,19 +7,23 @@
 <p align="center">Rust로 개발한 데스크톱 및 웹용 오픈 소스 2D 제도·3D 모델링 애플리케이션입니다.</p>
 
 <p align="center">
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><img alt="최신 릴리스" src="https://img.shields.io/github/v/release/HakanSeven12/OpenCADStudio"></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases"><img alt="릴리스 다운로드" src="https://img.shields.io/github/downloads/HakanSeven12/OpenCADStudio/total"></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
   <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="GitHub 스타" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
   <a href="../../LICENSE"><img alt="GPL-3.0 라이선스" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
 </p>
 
 <p align="center">
   <a href="https://www.opencadstudio.com"><strong>웹 앱 실행</strong></a> ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><strong>데스크톱 앱 다운로드</strong></a> ·
+  <a href="../../README.md#install-and-open-this-fork"><strong>데스크톱 앱 다운로드</strong></a> ·
   <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>토론 참여</strong></a>
 </p>
 
 <p align="center"><img src="../../site/workspace.png" alt="Open CAD Studio 작업 공간" width="100%"></p>
+
+
+> **Fork installation:** [Windows](../install/windows.md) · [macOS](../install/macos.md). This translated upstream overview does not establish this fork's published packages, signing or MCP. Use the fork guides.
+
 
 ## 개요
 
@@ -61,33 +65,15 @@ Open CAD Studio는 기술 도면 작성, 배치 작업, 솔리드 모델링을 �
 
 ## 설치
 
-현재 제공되는 모든 패키지는 [최신 릴리스](https://github.com/HakanSeven12/OpenCADStudio/releases/latest)에서 다운로드할 수 있습니다.
+This is the **lalomalvi/OpenCADStudio fork**. The fork had no published releases
+on 2026-09-28. A source clone is not an installed/open desktop application.
+Use the complete fork guides: [Windows](../install/windows.md),
+[macOS Apple Silicon/Intel](../install/macos.md), and
+[agent installation contract](../install/agents.md). They provide diagnosis,
+locked source build, verified per-user packages, GUI opening and installed MCP
+paths. Upstream distributions and translated upstream build examples below do
+not establish fork installation, signing or MCP support.
 
-### Windows
-
-서명된 x86-64 패키지 중 하나를 선택하세요.
-
-- `OpenCADStudio-*-windows-x86_64-installer.msi` — 시작 메뉴 바로 가기, DWG/DXF 파일 연결, 도면 미리보기가 포함된 권장 설치 프로그램입니다.
-- `OpenCADStudio-*-windows-x86_64-portable.exe` — 설치가 필요 없는 독립 실행형 애플리케이션입니다.
-
-### Linux
-
-x86-64 AppImage를 다운로드하고 실행 권한을 부여한 뒤 실행하세요.
-
-```bash
-chmod +x OpenCADStudio-*-linux-x86_64.AppImage
-./OpenCADStudio-*-linux-x86_64.AppImage
-```
-
-### macOS
-
-배포되는 macOS 패키지는 Apple Silicon을 지원합니다.
-
-1. `OpenCADStudio-*-macos-arm64.dmg`를 다운로드합니다.
-2. 이미지를 열고 `OpenCADStudio.app`을 **Applications**로 드래그합니다.
-3. Gatekeeper가 첫 실행을 차단하면 **System Settings → Privacy & Security**에서 앱을 허용합니다.
-
-애플리케이션은 임시 서명되어 있지만 현재 Apple 공증을 받지 않았습니다.
 
 ## 언어
 
@@ -119,9 +105,9 @@ sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
 그런 다음 빌드합니다.
 
 ```bash
-git clone https://github.com/HakanSeven12/OpenCADStudio.git
+git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --release --bin OpenCADStudio
+cargo build --locked --release --bin OpenCADStudio
 ```
 
 생성된 바이너리는 `target/release/OpenCADStudio`에 저장됩니다(Windows에서는 `OpenCADStudio.exe`).

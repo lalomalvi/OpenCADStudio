@@ -29,7 +29,17 @@ env:
   RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
 
 jobs:
+  fork-desktop:
+    if: github.repository == 'lalomalvi/OpenCADStudio'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop-distribution.yml
+    with:
+      ref: ${{ inputs.commit || github.sha }}
+      publish_tag: ${{ inputs.tag || github.event.release.tag_name || '' }}
+
   build-appimage:
+    if: github.repository != 'lalomalvi/OpenCADStudio'
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -190,7 +200,7 @@ jobs:
           release: edge
 
   build-windows:
-    if: github.event_name == 'release' || inputs.tag != '' || inputs.target == 'all'
+    if: github.repository != 'lalomalvi/OpenCADStudio' && (github.event_name == 'release' || inputs.tag != '' || inputs.target == 'all')
     runs-on: windows-latest
     permissions:
       contents: write
@@ -376,7 +386,7 @@ jobs:
             --clobber --repo ${{ github.repository }}
 
   build-macos:
-    if: github.event_name == 'release' || inputs.tag != '' || inputs.target == 'all'
+    if: github.repository != 'lalomalvi/OpenCADStudio' && (github.event_name == 'release' || inputs.tag != '' || inputs.target == 'all')
     runs-on: macos-14    # Apple Silicon (arm64) only
     permissions:
       contents: write
@@ -545,7 +555,7 @@ jobs:
 
   verify:
     needs: [build-appimage, build-snap, build-windows, build-macos]
-    if: github.event_name == 'release' || inputs.tag != ''
+    if: github.repository != 'lalomalvi/OpenCADStudio' && (github.event_name == 'release' || inputs.tag != '')
     runs-on: ubuntu-22.04
     permissions:
       contents: read

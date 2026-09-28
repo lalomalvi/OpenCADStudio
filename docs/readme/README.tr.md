@@ -9,19 +9,23 @@
 <p align="center">Rust ile geliştirilen, masaüstü ve web için açık kaynaklı 2B çizim ve 3B modelleme uygulaması.</p>
 
 <p align="center">
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><img alt="Son sürüm" src="https://img.shields.io/github/v/release/HakanSeven12/OpenCADStudio"></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases"><img alt="Sürüm indirmeleri" src="https://img.shields.io/github/downloads/HakanSeven12/OpenCADStudio/total"></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
   <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="GitHub yıldızları" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
   <a href="../../LICENSE"><img alt="GPL-3.0 lisansı" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
 </p>
 
 <p align="center">
   <a href="https://www.opencadstudio.com"><strong>Web uygulamasını aç</strong></a> ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><strong>Masaüstü uygulamasını indir</strong></a> ·
+  <a href="../../README.md#install-and-open-this-fork"><strong>Masaüstü uygulamasını indir</strong></a> ·
   <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>Tartışmalara katıl</strong></a>
 </p>
 
 <p align="center"><img src="../../site/workspace.png" alt="Open CAD Studio çalışma alanı" width="100%"></p>
+
+
+> **Fork installation:** [Windows](../install/windows.md) · [macOS](../install/macos.md). This translated upstream overview does not establish this fork's published packages, signing or MCP. Use the fork guides.
+
 
 ## Genel bakış
 
@@ -63,33 +67,15 @@ Yerel dosya ilişkilendirmeleri, dosya yöneticisi küçük resimleri, sistem ya
 
 ## Kurulum
 
-Güncel paketlerin tamamını [son sürümden](https://github.com/HakanSeven12/OpenCADStudio/releases/latest) indirin.
+This is the **lalomalvi/OpenCADStudio fork**. The fork had no published releases
+on 2026-09-28. A source clone is not an installed/open desktop application.
+Use the complete fork guides: [Windows](../install/windows.md),
+[macOS Apple Silicon/Intel](../install/macos.md), and
+[agent installation contract](../install/agents.md). They provide diagnosis,
+locked source build, verified per-user packages, GUI opening and installed MCP
+paths. Upstream distributions and translated upstream build examples below do
+not establish fork installation, signing or MCP support.
 
-### Windows
-
-İmzalı x86-64 paketlerinden birini seçin:
-
-- `OpenCADStudio-*-windows-x86_64-installer.msi` — Başlat menüsü kısayolları, DWG/DXF dosya ilişkilendirmeleri ve çizim küçük resimleri içeren önerilen kurucu.
-- `OpenCADStudio-*-windows-x86_64-portable.exe` — kurulum gerektirmeyen bağımsız uygulama.
-
-### Linux
-
-x86-64 AppImage dosyasını indirin, çalıştırılabilir yapın ve başlatın:
-
-```bash
-chmod +x OpenCADStudio-*-linux-x86_64.AppImage
-./OpenCADStudio-*-linux-x86_64.AppImage
-```
-
-### macOS
-
-Yayımlanan macOS paketi Apple Silicon'ı destekler:
-
-1. `OpenCADStudio-*-macos-arm64.dmg` dosyasını indirin.
-2. Disk imajını açın ve `OpenCADStudio.app` uygulamasını **Applications** klasörüne sürükleyin.
-3. Gatekeeper ilk çalıştırmayı engellerse uygulamayı **System Settings → Privacy & Security** bölümünden onaylayın.
-
-Uygulama geçici imzaya sahiptir ancak şu anda Apple tarafından noterlenmemiştir.
 
 ## Diller
 
@@ -121,9 +107,9 @@ sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
 Ardından derleyin:
 
 ```bash
-git clone https://github.com/HakanSeven12/OpenCADStudio.git
+git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --release --bin OpenCADStudio
+cargo build --locked --release --bin OpenCADStudio
 ```
 
 Oluşturulan ikili dosya `target/release/OpenCADStudio` konumuna yazılır (Windows'ta `OpenCADStudio.exe`).

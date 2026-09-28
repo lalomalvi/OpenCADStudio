@@ -7,19 +7,23 @@
 <p align="center">Open-source 2D kreslení a 3D modelování pro počítač i web, vytvořené v Rustu.</p>
 
 <p align="center">
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><img alt="Nejnovější verze" src="https://img.shields.io/github/v/release/HakanSeven12/OpenCADStudio"></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases"><img alt="Stažení" src="https://img.shields.io/github/downloads/HakanSeven12/OpenCADStudio/total"></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
   <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="Hvězdy GitHub" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
   <a href="../../LICENSE"><img alt="Licence GPL-3.0" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
 </p>
 
 <p align="center">
   <a href="https://www.opencadstudio.com"><strong>Spustit webovou aplikaci</strong></a> ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><strong>Stáhnout desktopovou aplikaci</strong></a> ·
+  <a href="../../README.md#install-and-open-this-fork"><strong>Stáhnout desktopovou aplikaci</strong></a> ·
   <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>Zapojit se do diskuse</strong></a>
 </p>
 
 <p align="center"><img src="../../site/workspace.png" alt="Pracovní plocha Open CAD Studio" width="100%"></p>
+
+
+> **Fork installation:** [Windows](../install/windows.md) · [macOS](../install/macos.md). This translated upstream overview does not establish this fork's published packages, signing or MCP. Use the fork guides.
+
 
 ## Přehled
 
@@ -61,33 +65,15 @@ Desktopovou aplikaci použijte pro nativní asociace souborů, náhledy ve sprá
 
 ## Instalace
 
-Všechny aktuální balíčky stáhnete z [nejnovějšího vydání](https://github.com/HakanSeven12/OpenCADStudio/releases/latest).
+This is the **lalomalvi/OpenCADStudio fork**. The fork had no published releases
+on 2026-09-28. A source clone is not an installed/open desktop application.
+Use the complete fork guides: [Windows](../install/windows.md),
+[macOS Apple Silicon/Intel](../install/macos.md), and
+[agent installation contract](../install/agents.md). They provide diagnosis,
+locked source build, verified per-user packages, GUI opening and installed MCP
+paths. Upstream distributions and translated upstream build examples below do
+not establish fork installation, signing or MCP support.
 
-### Windows
-
-Vyberte jeden z podepsaných balíčků x86-64:
-
-- `OpenCADStudio-*-windows-x86_64-installer.msi` — doporučený instalátor se zástupci v nabídce Start, asociacemi DWG/DXF a náhledy výkresů.
-- `OpenCADStudio-*-windows-x86_64-portable.exe` — samostatná aplikace bez instalace.
-
-### Linux
-
-Stáhněte x86-64 AppImage, nastavte jej jako spustitelný a spusťte:
-
-```bash
-chmod +x OpenCADStudio-*-linux-x86_64.AppImage
-./OpenCADStudio-*-linux-x86_64.AppImage
-```
-
-### macOS
-
-Publikovaný balíček pro macOS podporuje Apple Silicon:
-
-1. Stáhněte `OpenCADStudio-*-macos-arm64.dmg`.
-2. Otevřete obraz a přetáhněte `OpenCADStudio.app` do **Applications**.
-3. Pokud Gatekeeper první spuštění zablokuje, povolte aplikaci v **System Settings → Privacy & Security**.
-
-Aplikace je podepsána ad hoc, ale v současnosti není notářsky ověřena společností Apple.
 
 ## Jazyky
 
@@ -119,9 +105,9 @@ sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
 Poté sestavte:
 
 ```bash
-git clone https://github.com/HakanSeven12/OpenCADStudio.git
+git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --release --bin OpenCADStudio
+cargo build --locked --release --bin OpenCADStudio
 ```
 
 Výsledný program bude v `target/release/OpenCADStudio` (ve Windows `OpenCADStudio.exe`).

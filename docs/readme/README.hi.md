@@ -7,19 +7,23 @@
 <p align="center">Rust से निर्मित, डेस्कटॉप और वेब के लिए मुक्त-स्रोत 2D ड्राफ्टिंग और 3D मॉडलिंग अनुप्रयोग।</p>
 
 <p align="center">
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><img alt="नवीनतम रिलीज़" src="https://img.shields.io/github/v/release/HakanSeven12/OpenCADStudio"></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases"><img alt="रिलीज़ डाउनलोड" src="https://img.shields.io/github/downloads/HakanSeven12/OpenCADStudio/total"></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
   <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="GitHub स्टार" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
   <a href="../../LICENSE"><img alt="GPL-3.0 लाइसेंस" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
 </p>
 
 <p align="center">
   <a href="https://www.opencadstudio.com"><strong>वेब ऐप खोलें</strong></a> ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><strong>डेस्कटॉप ऐप डाउनलोड करें</strong></a> ·
+  <a href="../../README.md#install-and-open-this-fork"><strong>डेस्कटॉप ऐप डाउनलोड करें</strong></a> ·
   <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>चर्चा में शामिल हों</strong></a>
 </p>
 
 <p align="center"><img src="../../site/workspace.png" alt="Open CAD Studio कार्यक्षेत्र" width="100%"></p>
+
+
+> **Fork installation:** [Windows](../install/windows.md) · [macOS](../install/macos.md). This translated upstream overview does not establish this fork's published packages, signing or MCP. Use the fork guides.
+
 
 ## परिचय
 
@@ -61,33 +65,15 @@ Open CAD Studio तकनीकी ड्राइंग, लेआउट का
 
 ## स्थापना
 
-सभी मौजूदा पैकेज [नवीनतम रिलीज़](https://github.com/HakanSeven12/OpenCADStudio/releases/latest) से डाउनलोड करें।
+This is the **lalomalvi/OpenCADStudio fork**. The fork had no published releases
+on 2026-09-28. A source clone is not an installed/open desktop application.
+Use the complete fork guides: [Windows](../install/windows.md),
+[macOS Apple Silicon/Intel](../install/macos.md), and
+[agent installation contract](../install/agents.md). They provide diagnosis,
+locked source build, verified per-user packages, GUI opening and installed MCP
+paths. Upstream distributions and translated upstream build examples below do
+not establish fork installation, signing or MCP support.
 
-### Windows
-
-इन हस्ताक्षरित x86-64 पैकेजों में से एक चुनें:
-
-- `OpenCADStudio-*-windows-x86_64-installer.msi` — Start Menu शॉर्टकट, DWG/DXF फ़ाइल संबद्धता और ड्राइंग थंबनेल वाला अनुशंसित इंस्टॉलर।
-- `OpenCADStudio-*-windows-x86_64-portable.exe` — स्वतंत्र अनुप्रयोग; स्थापना आवश्यक नहीं।
-
-### Linux
-
-x86-64 AppImage डाउनलोड करें, उसे निष्पादन योग्य बनाएँ और चलाएँ:
-
-```bash
-chmod +x OpenCADStudio-*-linux-x86_64.AppImage
-./OpenCADStudio-*-linux-x86_64.AppImage
-```
-
-### macOS
-
-प्रकाशित macOS पैकेज Apple Silicon का समर्थन करता है:
-
-1. `OpenCADStudio-*-macos-arm64.dmg` डाउनलोड करें।
-2. इमेज खोलें और `OpenCADStudio.app` को **Applications** में खींचें।
-3. यदि Gatekeeper पहली बार चलाने से रोके, तो **System Settings → Privacy & Security** में ऐप को अनुमति दें।
-
-अनुप्रयोग पर ad hoc हस्ताक्षर हैं, लेकिन वर्तमान में Apple ने इसे नोटराइज़ नहीं किया है।
 
 ## भाषाएँ
 
@@ -119,9 +105,9 @@ sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
 फिर निर्माण करें:
 
 ```bash
-git clone https://github.com/HakanSeven12/OpenCADStudio.git
+git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --release --bin OpenCADStudio
+cargo build --locked --release --bin OpenCADStudio
 ```
 
 तैयार बाइनरी `target/release/OpenCADStudio` में लिखी जाती है (Windows पर `OpenCADStudio.exe`)।

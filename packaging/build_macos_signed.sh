@@ -19,9 +19,20 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-TARGET=aarch64-apple-darwin
-DIST=dist
+TARGET="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+case "$TARGET" in
+    aarch64-apple-darwin) ARCH=arm64; SWIFT_TARGET=arm64-apple-macos11 ;;
+    x86_64-apple-darwin) ARCH=x86_64; SWIFT_TARGET=x86_64-apple-macos11 ;;
+    *) echo "Unsupported native macOS target: $TARGET" >&2; exit 2 ;;
+esac
+# Each invocation owns a fresh output folder; never wipe a user's dist directory.
+DIST="${DIST:-$(mktemp -d "${TMPDIR:-/tmp}/ocs-macos-package.XXXXXX")}"
+mkdir -p "$DIST"
+for owned in OpenCADStudio.app DWGThumbnail.appex dmg-staging OpenCADStudio.iconset dwg.iconset dxf.iconset; do
+    [ ! -e "$DIST/$owned" ] || { echo "Output exists: $DIST/$owned; choose a new DIST (no work is overwritten)." >&2; exit 2; }
+done
 VERSION="${VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)}"
+BUILD_ROOT="${CARGO_TARGET_DIR:-target}"
 
 if [ -z "${DEVELOPER_ID:-}" ]; then
     DEVELOPER_ID="$(security find-identity -v -p codesigning \
@@ -31,15 +42,14 @@ fi
 echo "==> Version $VERSION, signing as: $DEVELOPER_ID"
 
 echo "==> cargo build (app + thumbnailer staticlib + launcher)"
-cargo build --release --target "$TARGET"
+cargo build --locked --release --target "$TARGET" --bin OpenCADStudio -j 2
 # The staticlib crate-type is only emitted when the crate is built as a
 # target (as a plain dependency cargo produces just the rlib).
-cargo build --release --target "$TARGET" -p dwg-thumbnailer
+cargo build --locked --release --target "$TARGET" -p dwg-thumbnailer -j 2
 # CFBundleExecutable (#1039) — see src/bin/ocs_launcher.rs.
-cargo build --release --target "$TARGET" --bin ocs_launcher
+cargo build --locked --release --target "$TARGET" --bin ocs_launcher -j 2
 
 echo "==> icons"
-rm -rf "$DIST" && mkdir -p "$DIST"
 ICONSET="$DIST/OpenCADStudio.iconset"
 mkdir -p "$ICONSET"
 for SIZE in 16 32 64 128 256 512 1024; do
@@ -64,15 +74,15 @@ done
 
 echo "==> QuickLook thumbnail extension (.appex)"
 EXT="$DIST/DWGThumbnail.appex"
-rm -rf "$EXT" && mkdir -p "$EXT/Contents/MacOS"
+mkdir -p "$EXT/Contents/MacOS"
 swiftc \
     -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
-    -target arm64-apple-macos11 \
+    -target "$SWIFT_TARGET" \
     -O -parse-as-library -application-extension \
     -module-name DWGThumbnail \
     -import-objc-header crates/dwg-thumbnailer/macos/dwg_thumbnailer.h \
     crates/dwg-thumbnailer/macos/ThumbnailProvider.swift \
-    -L "target/$TARGET/release" -ldwg_thumbnailer \
+    -L "$BUILD_ROOT/$TARGET/release" -ldwg_thumbnailer \
     -framework QuickLookThumbnailing -framework CoreGraphics \
     -framework ImageIO -framework Foundation -framework Security \
     -framework SystemConfiguration -liconv \
@@ -82,10 +92,9 @@ sed "s/__VERSION__/$VERSION/g" crates/dwg-thumbnailer/macos/Info.plist > "$EXT/C
 
 echo "==> assemble .app"
 APP="$DIST/OpenCADStudio.app"
-rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/PlugIns"
-cp "target/$TARGET/release/ocs_launcher" "$APP/Contents/MacOS/OpenCADStudio"
-cp "target/$TARGET/release/OpenCADStudio" "$APP/Contents/MacOS/OpenCADStudio-App"
+cp "$BUILD_ROOT/$TARGET/release/ocs_launcher" "$APP/Contents/MacOS/OpenCADStudio"
+cp "$BUILD_ROOT/$TARGET/release/OpenCADStudio" "$APP/Contents/MacOS/OpenCADStudio-App"
 chmod +x "$APP/Contents/MacOS/OpenCADStudio" "$APP/Contents/MacOS/OpenCADStudio-App"
 cp "$DIST/AppIcon.icns" "$DIST/DWG.icns" "$DIST/DXF.icns" "$APP/Contents/Resources/"
 cp -R "$EXT" "$APP/Contents/PlugIns/"
@@ -121,16 +130,15 @@ else
         -s "$DEVELOPER_ID" "$APP"
 fi
 codesign --verify --deep --strict --verbose=2 "$APP"
-codesign -d --entitlements - "$APP/Contents/PlugIns/DWGThumbnail.appex" \
+codesign -d --entitlements - --xml "$APP/Contents/PlugIns/DWGThumbnail.appex" \
     | python3 -c 'import plistlib, sys; assert plistlib.load(sys.stdin.buffer).get("com.apple.security.app-sandbox") is True'
 
 echo "==> dmg"
-DMG="$DIST/OpenCADStudio-v$VERSION-macos-arm64.dmg"
+DMG="$DIST/OpenCADStudio-v$VERSION-macos-$ARCH.dmg"
 rm -f "$DMG"
 
 # Stage the app next to the install-location shortcut (#769).
 STAGING="$DIST/dmg-staging"
-rm -rf "$STAGING"
 mkdir -p "$STAGING"
 cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
@@ -149,7 +157,7 @@ rm -rf "$STAGING"
 if [ -n "${NOTARY_PROFILE:-}" ] && [ "$DEVELOPER_ID" != "-" ]; then
     echo "==> notarize (this can take a while; a first submission from a new"
     echo "    Developer ID can be held for hours — that is normal)"
-    SUBMIT_OUT="$(xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1 | tee /dev/stderr)"
+    SUBMIT_OUT="$(xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m 2>&1 | tee /dev/stderr)"
     SUBMISSION_ID="$(echo "$SUBMIT_OUT" | sed -n 's/^[[:space:]]*id: \([0-9a-f-]*\)$/\1/p' | head -1)"
     # Always pull the log — it names the exact per-file cause on Invalid.
     [ -n "$SUBMISSION_ID" ] && xcrun notarytool log "$SUBMISSION_ID" \
@@ -162,5 +170,5 @@ else
     echo "==> NOTARY_PROFILE unset (or ad-hoc build): skipping notarization"
 fi
 
-shasum -a 256 "$DMG" > "$DMG.sha256"
+(cd "$DIST" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
 echo "==> done: $DMG"

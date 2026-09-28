@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish this week's release (otherwise preview notes only)
+        description: Authorize this week's release (fork stays draft until native gates pass)
         type: boolean
         default: false
 
@@ -23,7 +23,8 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/main'
+    # Fork publication is an explicit operator action, never inherited cron.
+    if: github.ref == 'refs/heads/main' && (github.repository != 'lalomalvi/OpenCADStudio' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-22.04
     outputs:
       ready: ${{ steps.release.outputs.ready }}
@@ -36,7 +37,7 @@ jobs:
           fetch-depth: 0
       - name: Validate release automation
         run: python3 scripts/test_release.py
-      - name: Prepare release and verify published notes
+      - name: Prepare release metadata (fork draft until verified)
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,7 +52,7 @@ jobs:
   # GITHUB_TOKEN releases do not trigger release events, so call both builds.
   web:
     needs: prepare
-    if: needs.prepare.outputs.ready == 'true'
+    if: needs.prepare.outputs.ready == 'true' && github.repository != 'lalomalvi/OpenCADStudio'
     uses: ./.github/workflows/pages.yml
     with:
       tag: ${{ needs.prepare.outputs.tag }}

@@ -7,19 +7,23 @@
 <p align="center">使用 Rust 建構、適用於桌面與網頁的開放原始碼二維繪圖和三維建模應用程式。</p>
 
 <p align="center">
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/HakanSeven12/OpenCADStudio"></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases"><img alt="版本下載量" src="https://img.shields.io/github/downloads/HakanSeven12/OpenCADStudio/total"></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
+  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
   <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="GitHub 星號" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
   <a href="../../LICENSE"><img alt="GPL-3.0 授權" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
 </p>
 
 <p align="center">
   <a href="https://www.opencadstudio.com"><strong>啟動網頁應用程式</strong></a> ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><strong>下載桌面應用程式</strong></a> ·
+  <a href="../../README.md#install-and-open-this-fork"><strong>下載桌面應用程式</strong></a> ·
   <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>參與討論</strong></a>
 </p>
 
 <p align="center"><img src="../../site/workspace.png" alt="Open CAD Studio 工作區" width="100%"></p>
+
+
+> **Fork installation:** [Windows](../install/windows.md) · [macOS](../install/macos.md). This translated upstream overview does not establish this fork's published packages, signing or MCP. Use the fork guides.
+
 
 ## 概覽
 
@@ -61,33 +65,15 @@ Open CAD Studio 是用於技術繪圖、配置作業和實體建模的跨平台�
 
 ## 安裝
 
-請從[最新版本](https://github.com/HakanSeven12/OpenCADStudio/releases/latest)下載所有目前的套件。
+This is the **lalomalvi/OpenCADStudio fork**. The fork had no published releases
+on 2026-09-28. A source clone is not an installed/open desktop application.
+Use the complete fork guides: [Windows](../install/windows.md),
+[macOS Apple Silicon/Intel](../install/macos.md), and
+[agent installation contract](../install/agents.md). They provide diagnosis,
+locked source build, verified per-user packages, GUI opening and installed MCP
+paths. Upstream distributions and translated upstream build examples below do
+not establish fork installation, signing or MCP support.
 
-### Windows
-
-請選擇一個已簽署的 x86-64 套件：
-
-- `OpenCADStudio-*-windows-x86_64-installer.msi` — 建議的安裝程式，包含開始功能表捷徑、DWG/DXF 檔案關聯和圖面縮圖。
-- `OpenCADStudio-*-windows-x86_64-portable.exe` — 不需安裝的獨立應用程式。
-
-### Linux
-
-下載 x86-64 AppImage，加入執行權限並執行：
-
-```bash
-chmod +x OpenCADStudio-*-linux-x86_64.AppImage
-./OpenCADStudio-*-linux-x86_64.AppImage
-```
-
-### macOS
-
-發佈的 macOS 套件支援 Apple Silicon：
-
-1. 下載 `OpenCADStudio-*-macos-arm64.dmg`。
-2. 開啟映像檔，將 `OpenCADStudio.app` 拖入 **Applications**。
-3. 如果 Gatekeeper 阻止首次啟動，請在 **System Settings → Privacy & Security** 中允許此應用程式。
-
-應用程式採用臨時簽章，但目前尚未通過 Apple 公證。
 
 ## 語言
 
@@ -119,9 +105,9 @@ sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
 接著建構：
 
 ```bash
-git clone https://github.com/HakanSeven12/OpenCADStudio.git
+git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --release --bin OpenCADStudio
+cargo build --locked --release --bin OpenCADStudio
 ```
 
 產生的二進位檔位於 `target/release/OpenCADStudio`（Windows 上為 `OpenCADStudio.exe`）。

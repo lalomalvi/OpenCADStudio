@@ -33,8 +33,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/HakanSeven12/OpenCADStudio"></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases"><img alt="Release downloads" src="https://img.shields.io/github/downloads/HakanSeven12/OpenCADStudio/total"></a>
+  <a href="https://github.com/lalomalvi/OpenCADStudio/releases"><strong>Fork releases and verified packages</strong></a>
   <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
   <a href="LICENSE"><img alt="GPL-3.0 license" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
 </p>
@@ -42,7 +41,9 @@
 <p align="center">
   <a href="https://www.opencadstudio.com"><strong>Launch the web app</strong></a>
   ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/releases/latest"><strong>Download the desktop app</strong></a>
+  <a href="docs/install/windows.md"><strong>Install on Windows</strong></a>
+  ·
+  <a href="docs/install/macos.md"><strong>Install on macOS</strong></a>
   ·
   <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>Join the discussion</strong></a>
 </p>
@@ -50,6 +51,49 @@
 <p align="center">
   <img src="site/workspace.png" alt="Open CAD Studio workspace" width="100%">
 </p>
+
+## Install and open this fork
+
+This repository is **lalomalvi/OpenCADStudio**, a desktop CAD fork with a native
+`--mcp` entry point. Cloning downloads source code; it does **not** install or
+open the application. Upstream downloads are separate products/revisions.
+
+| Platform | Complete installation and opening guide | Automated entry point |
+| --- | --- | --- |
+| Windows x64/MSVC | [Windows: package or source → verified GUI](docs/install/windows.md) | `& '.\scripts\desktop.ps1' diagnose` |
+| macOS Apple Silicon | [macOS: bundle or source → verified GUI](docs/install/macos.md) | `bash scripts/desktop-macos.sh diagnose` |
+| macOS Intel | [Separate native package; CI acceptance pending](docs/install/macos.md) | `bash scripts/desktop-macos.sh diagnose` |
+
+**Availability audited 2026-09-28:** the [fork release API](https://github.com/lalomalvi/OpenCADStudio/releases)
+returned no releases. Until a verified fork distribution is published, follow
+the source route in your platform guide. The new native CI produces ZIPs,
+version/source manifests and SHA-256 checksums, and tests installed payloads
+outside the checkout. Preparing CI does not establish a passed native run.
+
+The helpers need Python 3.11+; the packaged CAD application does not. With the
+listed native build prerequisites ready:
+
+```powershell
+# Windows (PowerShell), from this checkout
+& '.\scripts\desktop.ps1' build
+& '.\scripts\desktop.ps1' install --package 'ABSOLUTE_PRINTED_PACKAGE.zip'
+& '.\scripts\desktop.ps1' open
+& '.\scripts\desktop.ps1' path
+```
+
+```bash
+# macOS, from this checkout
+bash scripts/desktop-macos.sh build
+bash scripts/desktop-macos.sh install --package '/absolute/printed/package.zip'
+bash scripts/desktop-macos.sh open
+bash scripts/desktop-macos.sh path
+```
+
+`open` verifies an isolated new GUI and leaves it open. `path` prints its absolute
+MCP executable. `mcp` starts **stdio --mcp**, while `verify --gui` checks an owned
+GUI and closes it. Each summary reports the actual stage; package preparation
+alone never claims installation/opening. See the [agent contract](docs/install/agents.md)
+and [dated audit/verification](docs/install/audit-20260928.md). That native Windows evidence belongs to the older 2026.38 development binary; the main-based 2026.39 distribution candidate still requires a clean build and native package checks. See the [current distribution audit](docs/install/public-distribution-audit-20260928.md).
 
 ## Overview
 
@@ -89,50 +133,16 @@ The project is under active development. Keep backups of important production dr
 
 Use the [web app](https://www.opencadstudio.com) for immediate access with no installation. Drawings are selected through the browser and saved as local downloads.
 
-Use the desktop application for native file associations, file-manager thumbnails, system printing, PDF output, external plugins, command scripts, and headless automation. Release builds are available for Windows, Linux, and Apple Silicon macOS.
+Use the desktop application for system printing, PDF output, external plugins,
+command scripts and headless automation. File associations and file-manager
+thumbnails depend on packaging; the fork Windows ZIP does not register them.
 
-## Install
+## Other distributions
 
-Download all current packages from the [latest release](https://github.com/HakanSeven12/OpenCADStudio/releases/latest).
-
-### Windows
-
-Choose one of these signed x86-64 packages:
-
-- `OpenCADStudio-*-windows-x86_64-installer.msi` — recommended installer with Start Menu shortcuts, DWG/DXF file associations, and drawing thumbnails.
-- `OpenCADStudio-*-windows-x86_64-portable.exe` — standalone application; no installation required.
-
-### Linux
-
-Download the x86-64 AppImage, make it executable, and run it:
-
-```bash
-chmod +x OpenCADStudio-*-linux-x86_64.AppImage
-./OpenCADStudio-*-linux-x86_64.AppImage
-```
-
-Or install it as a Flatpak from [FlatPark](https://flatpark.org/apps/io.github.HakanSeven12.OpenCadStudio), which installs the official AppImage and follows new releases:
-
-```bash
-flatpak remote-add --if-not-exists flatpark https://dl.flatpark.org/flatpark.flatpakrepo
-flatpak install flatpark io.github.HakanSeven12.OpenCadStudio
-```
-
-The Flatpak opens and saves drawings through the file chooser. External references and underlays that point at other files need home access:
-
-```bash
-flatpak override --user --filesystem=home io.github.HakanSeven12.OpenCadStudio
-```
-
-### macOS
-
-The published macOS package supports Apple Silicon:
-
-1. Download `OpenCADStudio-*-macos-arm64.dmg`.
-2. Open the image and drag `OpenCADStudio.app` into **Applications**.
-3. If Gatekeeper blocks the first launch, approve the app from **System Settings → Privacy & Security**.
-
-The application is ad-hoc signed but is not currently notarized by Apple.
+Upstream maintains its own Windows/Linux/macOS release mechanism. These are not
+published packages of this fork and do not establish its MCP behavior. Linux
+source/build instructions below remain available; the new fork installation
+acceptance campaign covers Windows x64 and separate macOS architectures only.
 
 ## Languages
 
@@ -149,7 +159,7 @@ Change the language from the application settings. The browser version also uses
 Requirements:
 
 - Git
-- Current stable Rust toolchain
+- Rust 1.98.1 for the fork distribution route (lower MSRV not validated)
 - Platform graphics and font development libraries
 
 On Ubuntu or Debian, install the native dependencies with:
@@ -164,9 +174,9 @@ sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
 Then build and run:
 
 ```bash
-git clone https://github.com/HakanSeven12/OpenCADStudio.git
+git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --release --bin OpenCADStudio
+cargo build --locked --release --bin OpenCADStudio
 ```
 
 The resulting binary is written to `target/release/OpenCADStudio` (`OpenCADStudio.exe` on Windows).

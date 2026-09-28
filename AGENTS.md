@@ -30,3 +30,14 @@ For synchronizing upstream or publishing this fork, follow
   Use explicit paths when staging. No force push or reset to discard user work.
 - Keep routine sync acceptance independent from the M7/M8 product evaluation.
   Close a sync with SHAs, required results and one short continuation record.
+
+## Desktop installation
+
+- For desktop download/install/open requests, complete the operational contract
+  in [docs/install/agents.md](docs/install/agents.md) and the platform guide.
+- This fork is `lalomalvi/OpenCADStudio`; do not substitute upstream releases.
+- Preserve user DWG/DXF files, sessions and historical evidence. Use isolated
+  synthetic fixtures and a private configuration for GUI acceptance.
+- Use Cargo.lock (`--locked`). Keep protocol, GUI, CAD and publication results
+  distinct. Do not declare native compatibility from script syntax checks.
+- No release publication or global tool installation is implied by offline tests.

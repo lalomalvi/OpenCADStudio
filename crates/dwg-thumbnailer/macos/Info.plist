@@ -11,7 +11,7 @@
     <string>DWGThumbnail</string>
     <!-- Must be prefixed with the host app id so it registers as its extension. -->
     <key>CFBundleIdentifier</key>
-    <string>io.github.HakanSeven12.OpenCadStudio.DWGThumbnail</string>
+    <string>io.github.lalomalvi.OpenCADStudioFork.DWGThumbnail</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

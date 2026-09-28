@@ -16,6 +16,31 @@ import release
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_empty_fork_can_prepare_first_release_without_publishing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            previous = Path.cwd()
+            try:
+                os.chdir(temp)
+                subprocess.run(["git", "init", "-b", "main"], check=True, capture_output=True)
+                subprocess.run(["git", "config", "user.name", "Fixture"], check=True)
+                subprocess.run(["git", "config", "user.email", "fixture@example.invalid"], check=True)
+                Path("Cargo.toml").write_text('[package]\nname = "fixture"\nversion = "0.9.8"\n')
+                subprocess.run(["git", "add", "Cargo.toml"], check=True)
+                subprocess.run(["git", "commit", "-m", "Initial source"], check=True, capture_output=True)
+                def empty_releases(*args):
+                    if args[:2] == ("release", "view"):
+                        raise subprocess.CalledProcessError(1, ["gh", *args])
+                    self.assertEqual(args[:2], ("release", "list"))
+                    return []
+                output = io.StringIO()
+                with patch.dict(os.environ, {"GITHUB_REPOSITORY": "lalomalvi/OpenCADStudio"}), patch.object(release, "gh", side_effect=empty_releases), redirect_stdout(output):
+                    release.prepare(False)
+                self.assertIn("ready=false", output.getvalue())
+                self.assertEqual(release.run("git", "tag", "--list"), "")
+                self.assertEqual(release.run("git", "status", "--porcelain"), "")
+            finally:
+                os.chdir(previous)
+
     def test_web_source_selection(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/pages.yml").read_text()
         source = workflow.split("      - name: Resolve release source\n", 1)[1]
@@ -67,6 +92,28 @@ class ReleaseTests(unittest.TestCase):
                 release.versions(value)
 
     def test_release_commit_push_and_retry(self):
+        self._exercise_release_commit_push_and_retry(fork=False)
+
+    def test_fork_release_stays_draft_through_prepare_and_retry(self):
+        self._exercise_release_commit_push_and_retry(fork=True)
+
+    def test_fork_refuses_inherited_tag_without_distribution(self):
+        def run(*args):
+            if args[1:3] == ("status", "--porcelain"):
+                return ""
+            if args[1:3] == ("tag", "--list"):
+                return "v2026.40"
+            if args[1:2] == ("rev-parse",):
+                return "upstream-only-sha"
+            if args[1:3] == ("cat-file", "-e"):
+                raise subprocess.CalledProcessError(1, args)
+            self.fail(f"Unexpected operation: {args}")
+        with patch.object(release, "run", run), patch.object(release, "gh", return_value={"tagName": "v2026.39"}), patch.dict(os.environ, {"GITHUB_REPOSITORY": "lalomalvi/OpenCADStudio", "GITHUB_REF": "refs/heads/main"}), patch.object(release, "datetime") as clock:
+            clock.now.return_value = datetime(2026, 9, 28, tzinfo=timezone.utc)
+            with self.assertRaisesRegex(ValueError, "lacks the fork distribution"):
+                release.prepare(True)
+
+    def _exercise_release_commit_push_and_retry(self, fork):
         original_run = release.run
         releases = {"v0.9.8": {"name": "v0.9.8", "body": "Previous notes", "isDraft": False}}
         latest = "v0.9.8"
@@ -86,8 +133,11 @@ class ReleaseTests(unittest.TestCase):
                 releases[latest] = {
                     "name": args[args.index("--title") + 1],
                     "body": Path(args[args.index("--notes-file") + 1]).read_text(encoding="utf-8"),
-                    "isDraft": False,
+                    "isDraft": "--draft" in args,
                 }
+                self.assertEqual(releases[latest]["isDraft"], fork)
+                if fork:
+                    self.assertNotIn("--latest", args)
                 return ""
             self.assertEqual(args[1:3], ("release", "view"))
             if args[3] == "--json":
@@ -108,13 +158,16 @@ class ReleaseTests(unittest.TestCase):
                 original_run("git", "remote", "add", "origin", str(temp / "origin.git"))
                 Path("Cargo.toml").write_text('[package]\nname = "OpenCADStudio"\nversion = "0.9.8"\n')
                 Path("Cargo.lock").write_text('version = 4\n[[package]]\nname = "OpenCADStudio"\nversion = "0.9.8"\n')
+                if fork:
+                    Path("scripts").mkdir()
+                    Path("scripts/desktop.py").write_text("# fork distribution entrypoint\n")
                 original_run("git", "add", ".")
                 original_run("git", "commit", "-m", "Initial release")
                 original_run("git", "tag", "v0.9.8")
                 original_run("git", "push", "origin", "main", "--tags")
 
                 with patch.object(release, "run", run), patch.object(release, "datetime") as clock, patch.dict(os.environ, {
-                    "GITHUB_REPOSITORY": "owner/repo", "GITHUB_REF": "refs/heads/main", "GITHUB_OUTPUT": str(temp / "output"),
+                    "GITHUB_REPOSITORY": "lalomalvi/OpenCADStudio" if fork else "owner/repo", "GITHUB_REF": "refs/heads/main", "GITHUB_OUTPUT": str(temp / "output"),
                 }):
                     clock.now.return_value = datetime(2026, 8, 30, 12, tzinfo=timezone.utc)
 

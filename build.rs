@@ -4,6 +4,23 @@
 use std::path::Path;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=OCS_DISTRIBUTION_BUILD");
+    let source_commit = git_output(&["rev-parse", "HEAD"])
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=OCS_SOURCE_COMMIT={source_commit}");
+    let source_repository = git_output(&["remote", "get-url", "origin"])
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=OCS_SOURCE_REPOSITORY={source_repository}");
+    let target = std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
+    println!("cargo:rustc-env=OCS_BUILD_TARGET={target}");
+    let rustc_version = std::process::Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()))
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .unwrap_or_else(|| "unknown".into());
+    println!("cargo:rustc-env=OCS_RUSTC_VERSION={}", rustc_version.trim());
     let version = std::env::var("CARGO_PKG_VERSION").expect("Cargo package version");
     let parts: Vec<&str> = version.split('.').collect();
     let app_version = if parts.len() == 3 && parts[0].len() == 4

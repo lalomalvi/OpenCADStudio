@@ -84,7 +84,10 @@ def release_notes(previous, tag, repo, head="HEAD"):
             section = "Maintenance"
         if subject not in sections[section]:
             sections[section].append(subject)
-    lines = ["## Highlights", "", f"- Weekly {tag.removeprefix('v')} release for web and desktop from the same source revision.", ""]
+    summary = (f"- {tag.removeprefix('v')} desktop distribution of the lalomalvi fork, including its native MCP."
+               if repo == "lalomalvi/OpenCADStudio" else
+               f"- Weekly {tag.removeprefix('v')} release for web and desktop from the same source revision.")
+    lines = ["## Highlights", "", summary, ""]
     for title, subjects in sections.items():
         if subjects:
             lines += [f"## {title}", ""]
@@ -99,24 +102,39 @@ def prepare(publish):
     if run("git", "status", "--porcelain"):
         raise ValueError("Release preparation requires a clean working tree")
     repo = os.environ["GITHUB_REPOSITORY"]
+    fork = repo == "lalomalvi/OpenCADStudio"
     current = datetime.now(timezone.utc)
     tag = current.strftime("v%G.%V")
     version = versions(tag)
-    latest = gh("release", "view", "--json", "tagName")["tagName"]
+    try:
+        latest = gh("release", "view", "--json", "tagName")["tagName"]
+        first_release = False
+    except subprocess.CalledProcessError:
+        # An empty fork must be able to prepare its first release. Do not treat
+        # an auth/network failure as empty: confirm the release list first.
+        if gh("release", "list", "--limit", "1", "--json", "tagName"):
+            raise
+        latest = run("git", "rev-list", "--max-parents=0", "HEAD").splitlines()[0]
+        first_release = True
     if publish and os.environ.get("GITHUB_REF") != "refs/heads/main":
         raise ValueError("Weekly releases must run on main")
     existing = run("git", "tag", "--list", tag)
     if existing:
         # A retry always uses the original tag, even when main has advanced.
         sha = run("git", "rev-parse", f"{tag}^{{commit}}")
+        if fork:
+            try:
+                run("git", "cat-file", "-e", f"{sha}:scripts/desktop.py")
+            except subprocess.CalledProcessError as error:
+                raise ValueError("Existing tag lacks the fork distribution entrypoint; choose a new reviewed fork version") from error
         releases = gh("release", "list", "--limit", "100", "--json", "tagName,isDraft")
         if any(release["tagName"] == tag for release in releases):
             published = gh("release", "view", tag, "--json", "name,isDraft,body")
-            if published["isDraft"] or not published["body"].strip() or published["name"] != version["version"]:
+            if (published["isDraft"] and not fork) or not published["body"].strip() or published["name"] != version["version"]:
                 raise ValueError("Existing weekly release metadata is invalid")
             output({"ready": str(publish).lower(), "tag": tag, "commit": sha})
             return
-    elif run("git", "rev-list", "--count", f"{latest}..HEAD") == "0":
+    elif not first_release and run("git", "rev-list", "--count", f"{latest}..HEAD") == "0":
         output({"ready": "false"})
         return
     notes = release_notes(latest, tag, repo, tag if existing else "HEAD")
@@ -142,17 +160,24 @@ def prepare(publish):
         run("git", "tag", "-a", tag, "-m", f"Release {tag}")
         run("git", "push", "--atomic", "origin", "HEAD:main", f"refs/tags/{tag}")
         sha = run("git", "rev-parse", "HEAD")
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", encoding="utf-8") as notes_file:
-        notes_file.write(notes)
-        notes_file.flush()
-        run("gh", "release", "create", tag, "--verify-tag", "--title", version["version"], "--notes-file", notes_file.name, "--latest")
+    # Close before gh reads: NamedTemporaryFile's open Windows handle denies
+    # the second reader, which previously broke release preparation on Windows.
+    with tempfile.TemporaryDirectory(prefix="ocs-release-notes-") as notes_dir:
+        notes_file = Path(notes_dir) / "notes.md"
+        notes_file.write_text(notes, encoding="utf-8")
+        # Fork assets must pass native gates before becoming publicly visible.
+        run("gh", "release", "create", tag, "--verify-tag", "--title", version["version"], "--notes-file", str(notes_file),
+            *( ["--draft"] if fork else ["--latest"] ))
     published = gh("release", "view", tag, "--json", "name,body,isDraft")
-    if published != {"name": version["version"], "body": notes, "isDraft": False}:
+    if published != {"name": version["version"], "body": notes, "isDraft": fork}:
         raise ValueError("Published release notes do not match the prepared release")
     output({"ready": "true", "tag": tag, "commit": sha})
 
 
-def verify_native(tag):
+def verify_native(tag, allow_draft=False):
+    if os.environ.get("GITHUB_REPOSITORY") == "lalomalvi/OpenCADStudio":
+        verify_fork_native(tag, allow_draft=allow_draft)
+        return
     release = gh("release", "view", tag, "--json", "assets,body,isDraft")
     expected = {
         f"OpenCADStudio-{tag}-{suffix}"
@@ -165,6 +190,54 @@ def verify_native(tag):
     print(f"Verified native release {tag}")
 
 
+def verify_fork_native(tag, allow_draft=False):
+    """Read-only verification of actual fork packages, never upstream asset names."""
+    import hashlib
+    import zipfile
+    repo = "lalomalvi/OpenCADStudio"
+    published = gh("release", "view", tag, "--repo", repo, "--json", "assets,body,isDraft")
+    if (published["isDraft"] and not allow_draft) or not published["body"].strip():
+        raise ValueError("Fork release is draft or has no reviewable notes")
+    names = {a["name"] for a in published["assets"] if a["size"] > 0 and a["state"] == "uploaded"}
+    expected = {"x86_64-pc-windows-msvc", "aarch64-apple-darwin", "x86_64-apple-darwin"}
+    source_commit = run("git", "rev-parse", f"{tag}^{{commit}}")
+    with tempfile.TemporaryDirectory(prefix="ocs-release-verification-") as temp:
+        run("gh", "release", "download", tag, "--repo", repo, "--dir", temp, "--pattern", "OpenCADStudio-fork-*.zip*")
+        targets = set()
+        for archive in Path(temp).glob("*.zip"):
+            if "-dirty-" in archive.name:
+                raise ValueError("A dirty development package cannot establish a published release")
+            for suffix in (".sha256", ".json"):
+                if archive.name + suffix not in names:
+                    raise ValueError(f"Missing fork asset: {archive.name + suffix}")
+            manifest = json.loads(archive.with_suffix(".zip.json").read_text())
+            checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+            expected_checksum = archive.with_suffix(".zip.sha256").read_text().split()[0]
+            if checksum != expected_checksum or checksum != manifest["package_sha256"]:
+                raise ValueError(f"Fork package checksum mismatch: {archive.name}")
+            if manifest["repository"] != repo or manifest["build"]["source commit"] != source_commit or manifest["source_state"] != "clean":
+                raise ValueError(f"Fork source/tag mismatch: {archive.name}")
+            if set(manifest["mcp"]["tools"]) != {"ocs_sessions", "ocs_read", "ocs_execute", "ocs_capture"}:
+                raise ValueError("Required MCP surface missing from manifest")
+            with zipfile.ZipFile(archive) as payload:
+                roots = [n for n in payload.namelist() if n.endswith("/distribution.json") and n.count("/") == 1]
+                if len(roots) != 1:
+                    raise ValueError("Ambiguous distribution manifest")
+                internal = json.loads(payload.read(roots[0]))
+                if any(internal[k] != manifest[k] for k in internal):
+                    raise ValueError("Sidecar differs from internal manifest")
+                prefix = roots[0].removesuffix("distribution.json")
+                for name, hash_value in internal["files"].items():
+                    if hashlib.sha256(payload.read(prefix + name)).hexdigest() != hash_value:
+                        raise ValueError(f"Fork payload hash mismatch: {name}")
+            if manifest["target"] in targets:
+                raise ValueError("Duplicate fork target")
+            targets.add(manifest["target"])
+        if targets != expected:
+            raise ValueError(f"Incomplete fork targets: {expected - targets}")
+    print(f"Verified fork assets, hashes and tag provenance for {tag}; native runtime evidence is in the distribution workflow.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -174,11 +247,12 @@ def main():
     version_parser.add_argument("--tag", default="")
     verify_parser = commands.add_parser("verify-native")
     verify_parser.add_argument("--tag", required=True)
+    verify_parser.add_argument("--allow-draft", action="store_true", help="Check fork draft assets before promotion; does not publish")
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args.publish)
     elif args.command == "verify-native":
-        verify_native(args.tag)
+        verify_native(args.tag, allow_draft=args.allow_draft)
     else:
         version = versions(args.tag or display_version(cargo_version()))
         if args.tag and version["cargo"] != cargo_version():

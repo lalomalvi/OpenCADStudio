@@ -39,7 +39,8 @@ case "$(uname -s)" in
   *) echo "unsupported platform" >&2; exit 2 ;;
 esac
 
-target_dir="$plugin_dir/target"
+target_dir="${CARGO_TARGET_DIR:-$plugin_dir/target}"
+target_dir=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$target_dir")
 [[ -n $target ]] && target_dir="$target_dir/$target"
 source_library="$target_dir/$profile/$library"
 [[ -f $source_library ]] || { echo "build did not produce $source_library" >&2; exit 1; }
