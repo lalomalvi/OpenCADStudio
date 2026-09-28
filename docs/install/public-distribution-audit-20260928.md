@@ -50,15 +50,18 @@ textuales**, árbol `a8274493d5b2cf763a9612b3d2ee8f84976f3d16`. No se ejecutó e
   éxito. [CI de 06d424a1](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36387848305)
   aprobó selección/cierre, omitiendo Rust/Python/host por alcance documental.
   No son ejecuciones nuevas de esas suites en 06d424a1 ni checks de distribución.
-- La API de releases del fork devuelve `[]`. REST pública funciona; GraphQL de
-  `gh pr list` devolvió 401. Antes de un dispatch/publicación se debe comprobar
-  acceso autenticado para esa operación; este error no prueba que falten las
-  credenciales Git de push.
+- La API de releases del fork devuelve `[]`. La consulta ordinaria de cuenta y
+  GraphQL devolvió 401, pero `gh api user --jq .login`, ejecutado con el permiso
+  correspondiente, confirmó **lalomalvi**. El acceso autenticado está disponible;
+  no hace falta pedir otro login por aquel 401. No se imprimieron credenciales ni
+  se cambió autenticación. Las credenciales Git de push no se probaron con una
+  escritura remota durante esta auditoría.
 
 ## Preparación realizada
 
 Candidato aislado: rama **codex/desktop-distribution**, base 06d424a1, en
 `C:/Users/Luis Martinez/.codex/worktrees/desktop-distribution/OPEN CAD`.
+Commit de implementación local: **b8268a9c4922052aac114e7485449d0a5c6b6072**.
 Se trasladaron únicamente las fuentes de distribución mediante una lista
 explícita; no se incluyeron dibujos privados, perfiles ni informes ajenos.
 
