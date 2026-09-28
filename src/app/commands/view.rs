@@ -288,7 +288,7 @@ impl OpenCADStudio {
             "CHANGELOG" => {
                 self.command_line.push_info(crate::t!("Opening release notes...").as_ref());
                 return Some(crate::sys::open_url(
-                    "https://github.com/HakanSeven12/OpenCADStudio/releases",
+                    crate::io::update_check::RELEASES_HISTORY,
                     self.main_window,
                 ));
             }

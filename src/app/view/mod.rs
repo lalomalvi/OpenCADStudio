@@ -3544,7 +3544,7 @@ fn start_page_content<'a>(
     secondary_items.push(
         button(text(crate::t!("OCS Desktop")).size(14))
             .on_press(Message::OpenUrl(
-                "https://github.com/HakanSeven12/OpenCADStudio/releases/latest".to_string(),
+                crate::io::update_check::RELEASES_PAGE.to_string(),
             ))
             .padding([10, 22])
             .style(|theme: &Theme, status| start_action_shape(button::primary(theme, status)))

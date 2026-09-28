@@ -2,9 +2,10 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 const RELEASES_API: &str =
-    "https://api.github.com/repos/HakanSeven12/OpenCADStudio/releases/latest";
+    "https://api.github.com/repos/lalomalvi/OpenCADStudio/releases/latest";
+pub const RELEASES_HISTORY: &str = "https://github.com/lalomalvi/OpenCADStudio/releases";
 pub const RELEASES_PAGE: &str =
-    "https://github.com/HakanSeven12/OpenCADStudio/releases/latest";
+    "https://github.com/lalomalvi/OpenCADStudio/releases/latest";
 
 /// Give release assets time to propagate before offering an update.
 #[cfg(not(target_arch = "wasm32"))]
@@ -49,17 +50,16 @@ fn fetch_latest_if_outdated() -> Option<UpdateInfo> {
         .read_to_string()
         .ok()?;
     let metadata: serde_json::Value = serde_json::from_str(&body).ok()?;
-    let suffix = if cfg!(target_os = "windows") {
-        "-windows-x86_64-portable.exe"
-    } else if cfg!(target_os = "macos") {
-        "-macos-arm64.dmg"
+    let platform = if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        "windows-x86_64"
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "macos-arm64"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        "macos-x86_64"
     } else {
-        "-linux-x86_64.AppImage"
+        return None; // No verified fork distribution for this target yet.
     };
-    if !metadata.get("assets")?.as_array()?.iter().any(|asset| {
-        asset.get("name").and_then(|name| name.as_str()).is_some_and(|name| name.ends_with(suffix))
-            && asset.get("size").and_then(|size| size.as_u64()).unwrap_or(0) > 0
-    }) {
+    if !has_ready_fork_package(&metadata, platform) {
         return None;
     }
     let latest = metadata.get("tag_name")?.as_str()?
@@ -85,6 +85,45 @@ fn fetch_latest_if_outdated() -> Option<UpdateInfo> {
     // Release notes are optional; treat missing as empty.
     let notes = metadata.get("body").and_then(|value| value.as_str()).unwrap_or_default().to_string();
     Some(UpdateInfo { version: latest, body: notes })
+}
+
+/// Offer only the fork's complete ZIP set for the running architecture.
+/// Download/install still verifies the actual hashes and manifest; this check
+/// prevents an incomplete release or an upstream asset from triggering a notice.
+#[cfg(not(target_arch = "wasm32"))]
+fn has_ready_fork_package(metadata: &serde_json::Value, platform: &str) -> bool {
+    if metadata.get("draft").and_then(|v| v.as_bool()) != Some(false)
+        || metadata.get("prerelease").and_then(|v| v.as_bool()) != Some(false)
+    {
+        return false;
+    }
+    let Some(assets) = metadata.get("assets").and_then(|v| v.as_array()) else {
+        return false;
+    };
+    let tag = metadata.get("tag_name").and_then(|v| v.as_str()).unwrap_or_default();
+    let origin = format!("https://github.com/lalomalvi/OpenCADStudio/releases/download/{tag}/");
+    let ready_asset = |name: &str| {
+        assets.iter().any(|asset| {
+            asset.get("name").and_then(|v| v.as_str()) == Some(name)
+                && asset.get("size").and_then(|v| v.as_u64()).unwrap_or(0) > 0
+                && asset.get("state").and_then(|v| v.as_str()) == Some("uploaded")
+                && asset.get("browser_download_url").and_then(|v| v.as_str())
+                    == Some(format!("{origin}{name}").as_str())
+        })
+    };
+    let marker = format!("-{platform}-");
+    let packages: Vec<_> = assets.iter().filter_map(|asset| {
+        let name = asset.get("name")?.as_str()?;
+        let stem = name.strip_suffix(".zip")?;
+        let (prefix, checksum) = stem.rsplit_once(marker.as_str())?;
+        (prefix.starts_with("OpenCADStudio-fork-") && !prefix.contains("-dirty")
+            && checksum.len() == 12
+            && checksum.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+            .then_some(name)
+    }).collect();
+    packages.len() == 1 && ready_asset(packages[0])
+        && ready_asset(&format!("{}.sha256", packages[0]))
+        && ready_asset(&format!("{}.json", packages[0]))
 }
 
 /// Parse a GitHub timestamp like `2026-05-29T12:34:56Z` into UNIX seconds.
@@ -150,6 +189,60 @@ fn is_newer(latest: &str, installed: &str) -> bool {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+
+    fn release_fixture(platform: &str) -> serde_json::Value {
+        let name = format!("OpenCADStudio-fork-2026.40.0-012345abcdef-{platform}-012345abcdef.zip");
+        let assets: Vec<_> = ["", ".sha256", ".json"].iter().map(|suffix| {
+            let name = format!("{name}{suffix}");
+            serde_json::json!({"name": name, "size": 100, "state": "uploaded",
+                "browser_download_url": format!("https://github.com/lalomalvi/OpenCADStudio/releases/download/v2026.40/{name}")})
+        }).collect();
+        serde_json::json!({"tag_name": "v2026.40", "draft": false, "prerelease": false, "assets": assets})
+    }
+
+    #[test]
+    fn fork_update_requires_matching_native_architecture() {
+        let platforms = ["windows-x86_64", "macos-arm64", "macos-x86_64"];
+        for actual in platforms {
+            for running in platforms {
+                assert_eq!(has_ready_fork_package(&release_fixture(actual), running), actual == running);
+            }
+        }
+    }
+
+    #[test]
+    fn fork_update_rejects_incomplete_or_untrusted_release() {
+        let valid = release_fixture("windows-x86_64");
+        for field in ["draft", "prerelease"] {
+            let mut release = valid.clone();
+            release[field] = serde_json::json!(true);
+            assert!(!has_ready_fork_package(&release, "windows-x86_64"));
+        }
+        for index in 0..3 {
+            for field in ["size", "state", "browser_download_url"] {
+                let mut release = valid.clone();
+                release["assets"][index][field] = match field {
+                    "size" => serde_json::json!(0),
+                    "state" => serde_json::json!("new"),
+                    _ => serde_json::json!("https://github.com/HakanSeven12/OpenCADStudio/releases/download/v2026.40/upstream.zip"),
+                };
+                assert!(!has_ready_fork_package(&release, "windows-x86_64"));
+            }
+            let mut release = valid.clone();
+            release["assets"].as_array_mut().unwrap().remove(index);
+            assert!(!has_ready_fork_package(&release, "windows-x86_64"));
+        }
+        for replacement in ["OpenCADStudio-upstream-", "OpenCADStudio-fork-dirty-"] {
+            let mut release = valid.clone();
+            let name = release["assets"][0]["name"].as_str().unwrap().replace("OpenCADStudio-fork-", replacement);
+            release["assets"][0]["name"] = serde_json::json!(name);
+            assert!(!has_ready_fork_package(&release, "windows-x86_64"));
+        }
+        let mut release = valid;
+        let duplicate = release["assets"][0].clone();
+        release["assets"].as_array_mut().unwrap().push(duplicate);
+        assert!(!has_ready_fork_package(&release, "windows-x86_64"));
+    }
 
     #[test]
     fn calendar_releases_compare_numerically() {

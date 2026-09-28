@@ -236,3 +236,53 @@ Esto es una limitación externa preexistente de ese caso DXF, no se atribuye a
 la integración actual. No se declara auditoría externa DXF limpia, reparación,
 ni fidelidad CAD global. Ambos procesos alcanzaron el límite y se terminaron.
 Evidencia de comparación: `target/distribution-port/baseline-dxf-0fa/report.json`.
+
+
+### Windows release 5d60eff1: instalación y aceptación nativa
+
+El job Windows **109082774535** del [run nativo 36467983856](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36467983856)
+terminó **success**, incluyendo empaquetado, instalación fuera del checkout,
+stdio PowerShell 5.1 con UTF-8, GUI y CAD sintético. Su ZIP clean/release es
+`OpenCADStudio-fork-2026.39.0-5d60eff15b5e-windows-x86_64-88c04dcb8cb2.zip`,
+36,956,267 bytes, SHA-256
+`88c04dcb8cb2da990d467bd4e0fe573f4d9ca92fae9e445f60f7fe7e59d47e74`.
+Se verificaron manifest y sidecars; productor completo
+`5d60eff15b5ed45e15d2b70d4ccc64688db626dd`, Rust 1.98.1,
+Cargo.lock SHA-256 `efad57764dcdb1341518c2947862411cd01eda41af1d96600f2f7d0c64dc975c`.
+No tiene firma Authenticode (NotSigned).
+
+Se instaló y verificó el mismo release aquí, en un directorio separado:
+`C:/Users/Luis Martinez/AppData/Local/Programs/OpenCADStudio Fork Public Candidate/88c04dcb8cb2da99/application/OpenCADStudio.exe`.
+Reporta `OpenCADStudio 2026.39+g5d60eff1`, sin dirty. GUI renderizada inspeccionada,
+MCP en ese EXE y save/reopen/audit sintético pasaron. El PID propio 11336 se cerró;
+la instalación/sesión histórica del usuario permanece independiente.
+Evidencia: `target/distribution-port/verify-windows-5d60/summary.json` y `gui.png`.
+
+AutoCAD 2025, en read-only y perfiles separados, abrió los DWG 2000/2013/2018
+producidos por ese release: cinco entidades Model por archivo, **0 errores**,
+**exit 0 y ForcedTermination=false** en los tres. Los hashes antes/después coinciden.
+Este nuevo resultado no reescribe las terminaciones de la sonda debug histórica.
+El DXF 2000 vuelve a dar cinco entidades y los **dos errores PLANT** conocidos,
+exit -1/terminación al límite, sin cambio de hash. No se declara paridad global.
+Evidencia: `target/distribution-port/verify-windows-5d60/synthetic-cad/20260928-132023/external-audit.json`.
+
+El job ARM64 **109082774946** del mismo run también falló en la lectura de
+entitlements por pipe, después de compilar y verificar codesign. Su bundle.log
+se conservó en `target/distribution-port/evidence-macos-arm64-5d60/`;
+su caché nativa se guardó al terminar. La corrección 034aff93 todavía requiere
+el siguiente productor; no se presenta como aceptación Mac.
+
+### Enlaces de distribución y aviso de actualización del fork
+
+La revisión encontró rutas runtime de descarga/actualización todavía dirigidas
+al original. Se cambian el API de latest, el aviso de actualización, CHANGELOG,
+el botón web OCS Desktop y la descarga del aviso de plugins a las releases del
+fork. No se cambian créditos, registro de plugins ni fuentes del original.
+El detector usa nuestros ZIP, checksum y manifest, con URLs del fork y estado
+uploaded, distingue Windows x64/Mac ARM64/Mac Intel y rechaza drafts, prereleases,
+paquetes incompletos, dirty o ambiguos. No anuncia una distribución Linux que
+este flujo no entrega. La comprobación solo habilita un aviso; la instalación
+sigue verificando los hashes/procedencia reales.
+Dos regresiones Rust cubren selección por arquitectura, sidecars ausentes,
+assets vacíos/no subidos, origen upstream, dirty y duplicados. Su ejecución
+queda en el siguiente CI; no se atribuyen al Windows 5d60 ya aceptado.
