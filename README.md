@@ -62,13 +62,16 @@ open the application. Upstream downloads are separate products/revisions.
 | --- | --- | --- |
 | Windows x64/MSVC | [Windows: package or source → verified GUI](docs/install/windows.md) | `& '.\scripts\desktop.ps1' diagnose` |
 | macOS Apple Silicon | [macOS: bundle or source → verified GUI](docs/install/macos.md) | `bash scripts/desktop-macos.sh diagnose` |
-| macOS Intel | [Separate native package; CI acceptance pending](docs/install/macos.md) | `bash scripts/desktop-macos.sh diagnose` |
+| macOS Intel | [Separate native Intel package and Finder verification](docs/install/macos.md) | `bash scripts/desktop-macos.sh diagnose` |
 
 **Availability audited 2026-09-28:** the [fork release API](https://github.com/lalomalvi/OpenCADStudio/releases)
 returned no releases. Until a verified fork distribution is published, follow
 the source route in your platform guide. The new native CI produces ZIPs,
 version/source manifests and SHA-256 checksums, and tests installed payloads
-outside the checkout. Preparing CI does not establish a passed native run.
+outside the checkout. The clean 2026.40 producer af002fa1 passed all three native
+jobs, including GUI/MCP/CAD and Finder on both Mac architectures. Its packages
+remain reviewed CI artifacts until release publication is authorized. See the
+[current distribution audit](docs/install/public-distribution-audit-20260928.md).
 
 The helpers need Python 3.11+; the packaged CAD application does not. With the
 listed native build prerequisites ready:
@@ -93,7 +96,7 @@ bash scripts/desktop-macos.sh path
 MCP executable. `mcp` starts **stdio --mcp**, while `verify --gui` checks an owned
 GUI and closes it. Each summary reports the actual stage; package preparation
 alone never claims installation/opening. See the [agent contract](docs/install/agents.md)
-and [dated audit/verification](docs/install/audit-20260928.md). That native Windows evidence belongs to the older 2026.38 development binary; the main-based 2026.39 distribution candidate still requires a clean build and native package checks. See the [current distribution audit](docs/install/public-distribution-audit-20260928.md).
+and [dated audit/verification](docs/install/audit-20260928.md). The original installation audit belongs to the older 2026.38 development binary; the current distribution audit records clean 2026.40 Windows/Mac acceptance, hashes and release preparation. See the [current distribution audit](docs/install/public-distribution-audit-20260928.md).
 
 ## Overview
 

@@ -374,3 +374,69 @@ read-only; no recompila ni vuelve a subir paquetes ya aceptados. Actionlint
 aprobó los workflows afectados. Esta revisión requiere sus propios paquetes
 2026.40 y CI sobre su SHA antes de integración/publicación. No se creó tag,
 release ni se ejecutó prepare --publish sobre el fork real.
+
+
+### Cierre del candidato público 2026.40, productor af002fa1
+
+Fuente exacta **af002fa17a795892792ecae26e87cfb5886047b9**, Cargo 2026.40.0,
+Rust 1.98.1, release clean, Cargo.lock SHA-256
+5d6fea0a4d311b1f21bd613f3e5c70b3b687a58975cd730f092c4f8dda9a9f98.
+[Tests 36484188997](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36484188997)
+y Web 36484188602 terminaron success. Receipt descargado y validado por SHA,
+estado real del run y cobertura completa Rust workspace/Python/host. Fingerprint
+c51431bc23c5727951e0e3cc8d104df686b5ba04ff499762e041914db159253c.
+
+[Distribución 36484188603](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36484188603)
+terminó success: Windows **109136935476**, ARM64 **109136935339** e Intel
+**109136935042**. Los tres completaron todos los gates nativos y las siete
+pruebas de preparación de release sin publicación externa. Ambos Mac pasaron
+Finder/LaunchServices; sus capturas GUI/Finder/CAD se inspeccionaron. Publish
+**109149609493 skipped**, intencional y sin tag/input de publicación.
+
+| Paquete ZIP: prefijo OpenCADStudio-fork-2026.40.0-af002fa17a79- | Bytes | SHA-256 |
+|---|---:|---|
+| windows-x86_64-69be418ef7ba.zip | 36,952,066 | 69be418ef7ba23ed43f028fb25adcf279cd02b69306b4291139c0ba092cd3588 |
+| macos-arm64-d0c5afe63aed.zip | 44,136,604 | d0c5afe63aed22c8ea5800ef77fd15796b6228481d9ec70e0b747c4cd79b3477 |
+| macos-x86_64-d7a417f444f2.zip | 47,716,620 | d7a417f444f2ce38d063046c312e06a87ab7e363601c43d9a058d88ede46a91d |
+
+Se verificó cada ZIP contra .zip.sha256 y .zip.json, manifest interno y cada
+archivo del payload: Windows 3, ARM64 13, Intel 13. Todas las fuentes coinciden
+con af002fa1; no se usa ningún paquete previo como si fuera 2026.40. Informes y
+paquetes locales: target/distribution-port/release-2026.40-package-verification.json,
+receipt-af002fa1.json y package-{windows,macos-arm64,macos-intel}-af002/.
+La evidencia seleccionada de ambos Mac y Windows se conserva en evidence-*-af002/;
+no incluye perfiles ni descriptores privados.
+
+El Windows exacto se instaló y verificó también aquí:
+C:/Users/Luis Martinez/AppData/Local/Programs/OpenCADStudio Fork Public Candidate/69be418ef7ba23ed/application/OpenCADStudio.exe.
+Versión OpenCADStudio 2026.40+gaf002fa1, fuente limpia. MCP stdio/EOF y las cinco
+versiones negociadas aprobaron; GUI Drawing1 inspeccionada y CAD sintético pasó.
+El PID propio **3572** se cerró. Evidencia: verify-windows-af002/summary.json,
+gui.png y synthetic-cad/20260928-152520/viewport.png.
+No se repitió AutoCAD: no hay cambios CAD entre el productor externo 5d60eff1 y
+este cierre; su resultado DWG acotado y la limitación DXF PLANT siguen separados.
+
+En ARM64, GUI PID 24855 y Finder relay 25346 / GUI 25353. En Intel, GUI 60163 y
+Finder relay 61026 / GUI 61033. Las aplicaciones verificadas estaban fuera del
+checkout, bajo /Users/runner/work/_temp/OCS per user application with spaces/,
+en slots d0c5afe63aed22c8 y d7a417f444f2ce38 respectivamente. La aceptación
+manual del Mac del operador, mínimo macOS 11 y confianza de descarga pública
+no quedan acreditados por estas pruebas macOS 15.
+
+Windows permanece NotSigned; ambos Mac ad-hoc sin Developer ID ni notarización
+acreditados. Las notas revisables y los nueve assets ZIP/checksum/manifest están
+preparados; no se creó tag ni release. v2026.40 debe apuntar a af002fa1, fuente de
+estos paquetes. Primero verificar assets reales del draft y luego confirmar la
+release pública, únicamente con la autorización pendiente de publicación.
+
+El snapshot original 37544263 es ancestro del productor y del cierre; main
+06d424a1 también es ancestro, por lo que la integración puede hacerse por
+fast-forward sin sustituir las revisiones probadas. El avance documental fdfe2429
+observado después del snapshot permanece para el siguiente ciclo. El checkout
+histórico y sus archivos privados se preservan.
+
+Este cierre cambia exclusivamente Markdown. Se conserva el productor af002fa1
+junto con sus resultados nativos, toolchain y receipt completos. El fingerprint
+no documental debe coincidir antes del push. [skip ci] en el commit documental
+evita repetir los mismos gates solo para cambiar la etiqueta de evidencia;
+no acredita pruebas nuevas ni oculta un fallo pendiente.

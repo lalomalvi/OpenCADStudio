@@ -5,11 +5,12 @@ The [fork releases](https://github.com/lalomalvi/OpenCADStudio/releases) had no
 releases on **2026-09-28**. Upstream's DMG is not proof of this fork's MCP.
 
 The new workflow builds **separate** Apple Silicon (`aarch64-apple-darwin`) and
-Intel (`x86_64-apple-darwin`) packages on native runners. They are pending actual
-native CI acceptance; neither is advertised as tested in this Windows-only
-session. There is no universal binary. Minimum deployment target is configured
-as macOS 11.0; successful native CI on macOS 15 would not itself prove the
-minimum OS works. [Rust's Apple target requirements](https://doc.rust-lang.org/rustc/platform-support/apple-darwin.html)
+Intel (`x86_64-apple-darwin`) packages on native runners. Producer af002fa1
+(2026.40) passed both native macOS 15 jobs, including installation, MCP, GUI,
+synthetic CAD and Finder. See the [current distribution audit](public-distribution-audit-20260928.md)
+for source/package identities, hashes and publication status. There is no
+universal binary. Minimum deployment target is configured as macOS 11.0;
+successful CI on macOS 15 does not prove the minimum OS works. [Rust's Apple target requirements](https://doc.rust-lang.org/rustc/platform-support/apple-darwin.html)
 describe the compiler baseline, not the product's full compatibility matrix.
 
 ## End user: fork bundle when published
@@ -82,7 +83,8 @@ installed GUI's descriptor/PID and a window PNG, then leaves it open.
 `verify --gui` closes only its own test GUI. `verify --finder` separately opens
 the exact installed `.app` through LaunchServices using a private profile,
 correlates the relay and its child GUI, requires a rendered capture, then closes
-them. Both native checks are required in macOS CI and remain unexecuted here.
+them. Both native checks passed on both macOS CI architectures for producer
+af002fa1 (2026.40); the operator still needs to check their own Mac and downloaded package.
 
 ## Developer or agent: unprepared machine to GUI
 
