@@ -196,3 +196,17 @@ para poder investigar el mismo productor sin recompilarlo. Eso no cambia el gate
 de publicación: exige success de los tres jobs nativos. También conserva la
 caché de dependencias ante fallo de empaquetado/GUI; no cambia jobs ni features
 de una ejecución ya iniciada.
+
+### Entitlements macOS: bloqueo revelado por ARM64
+
+El job ARM64 **109071790316** del run **36464719436** completó los builds
+release de la aplicación, thumbnailer, launcher y plugin RustPython API v7,
+y codesign verificó el bundle/appex. Falló después al leer los entitlements
+por pipe: Homebrew Python 3.14 reportó `io.UnsupportedOperation: File or
+stream is not seekable` al ejecutar `plistlib.load(sys.stdin.buffer)`.
+La corrección usa `plistlib.loads(sys.stdin.buffer.read())`: el comando exacto
+se comprobó con un subprocess de stdin no seekable, aceptando sandbox=true
+y rechazando sandbox=false. Sintaxis bash y diff-check pasaron en Windows.
+Eso no acredita la corrección nativa Mac ni notarización; requiere su próximo
+productor. El log bundle y el summary originales se conservan en
+`target/distribution-port/evidence-macos-arm64-0ec/`.

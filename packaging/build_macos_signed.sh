@@ -131,7 +131,7 @@ else
 fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 codesign -d --entitlements - --xml "$APP/Contents/PlugIns/DWGThumbnail.appex" \
-    | python3 -c 'import plistlib, sys; assert plistlib.load(sys.stdin.buffer).get("com.apple.security.app-sandbox") is True'
+    | python3 -c 'import plistlib, sys; assert plistlib.loads(sys.stdin.buffer.read()).get("com.apple.security.app-sandbox") is True'
 
 echo "==> dmg"
 DMG="$DIST/OpenCADStudio-v$VERSION-macos-$ARCH.dmg"
