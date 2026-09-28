@@ -107,12 +107,12 @@ def prepare(publish):
     tag = current.strftime("v%G.%V")
     version = versions(tag)
     try:
-        latest = gh("release", "view", "--json", "tagName")["tagName"]
+        latest = gh("release", "view", "--json", "tagName", "--repo", repo)["tagName"]
         first_release = False
     except subprocess.CalledProcessError:
         # An empty fork must be able to prepare its first release. Do not treat
         # an auth/network failure as empty: confirm the release list first.
-        if gh("release", "list", "--limit", "1", "--json", "tagName"):
+        if gh("release", "list", "--limit", "1", "--json", "tagName", "--repo", repo):
             raise
         latest = run("git", "rev-list", "--max-parents=0", "HEAD").splitlines()[0]
         first_release = True
@@ -127,9 +127,9 @@ def prepare(publish):
                 run("git", "cat-file", "-e", f"{sha}:scripts/desktop.py")
             except subprocess.CalledProcessError as error:
                 raise ValueError("Existing tag lacks the fork distribution entrypoint; choose a new reviewed fork version") from error
-        releases = gh("release", "list", "--limit", "100", "--json", "tagName,isDraft")
+        releases = gh("release", "list", "--limit", "100", "--json", "tagName,isDraft", "--repo", repo)
         if any(release["tagName"] == tag for release in releases):
-            published = gh("release", "view", tag, "--json", "name,isDraft,body")
+            published = gh("release", "view", tag, "--json", "name,isDraft,body", "--repo", repo)
             if (published["isDraft"] and not fork) or not published["body"].strip() or published["name"] != version["version"]:
                 raise ValueError("Existing weekly release metadata is invalid")
             output({"ready": str(publish).lower(), "tag": tag, "commit": sha})
@@ -150,13 +150,18 @@ def prepare(publish):
             before = f'{prefix}version = "{old}"'
             if before not in content:
                 raise ValueError(f"Cannot update version in {path}")
-            updates[path] = content.replace(before, f'{prefix}version = "{version["cargo"]}"', 1)
+            updated = content.replace(before, f'{prefix}version = "{version["cargo"]}"', 1)
+            if updated != content:
+                updates[path] = updated
         for path, content in updates.items():
             path.write_text(content, encoding="utf-8")
         run("git", "config", "user.name", "github-actions[bot]")
         run("git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
-        run("git", "add", "Cargo.toml", "Cargo.lock")
-        run("git", "commit", "-m", f"Release {tag}")
+        # A reviewed candidate can already contain this week's version. Tag
+        # that exact commit rather than failing on an empty metadata commit.
+        if updates:
+            run("git", "add", "Cargo.toml", "Cargo.lock")
+            run("git", "commit", "-m", f"Release {tag}")
         run("git", "tag", "-a", tag, "-m", f"Release {tag}")
         run("git", "push", "--atomic", "origin", "HEAD:main", f"refs/tags/{tag}")
         sha = run("git", "rev-parse", "HEAD")
@@ -167,18 +172,21 @@ def prepare(publish):
         notes_file.write_text(notes, encoding="utf-8")
         # Fork assets must pass native gates before becoming publicly visible.
         run("gh", "release", "create", tag, "--verify-tag", "--title", version["version"], "--notes-file", str(notes_file),
-            *( ["--draft"] if fork else ["--latest"] ))
-    published = gh("release", "view", tag, "--json", "name,body,isDraft")
+            *( ["--draft"] if fork else ["--latest"] ), "--repo", repo)
+    published = gh("release", "view", tag, "--json", "name,body,isDraft", "--repo", repo)
     if published != {"name": version["version"], "body": notes, "isDraft": fork}:
         raise ValueError("Published release notes do not match the prepared release")
     output({"ready": "true", "tag": tag, "commit": sha})
 
 
 def verify_native(tag, allow_draft=False):
-    if os.environ.get("GITHUB_REPOSITORY") == "lalomalvi/OpenCADStudio":
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if not repo:
+        raise ValueError("GITHUB_REPOSITORY must identify the release repository")
+    if repo == "lalomalvi/OpenCADStudio":
         verify_fork_native(tag, allow_draft=allow_draft)
         return
-    release = gh("release", "view", tag, "--json", "assets,body,isDraft")
+    release = gh("release", "view", tag, "--json", "assets,body,isDraft", "--repo", repo)
     expected = {
         f"OpenCADStudio-{tag}-{suffix}"
         for suffix in ("linux-x86_64.AppImage", "linux-x86_64.snap",

@@ -77,7 +77,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONPATH = 'scripts'
-          python -m unittest test_release.ReleaseTests.test_empty_fork_can_prepare_first_release_without_publishing test_release.ReleaseTests.test_calendar_versions test_release.ReleaseTests.test_release_commit_push_and_retry test_release.ReleaseTests.test_fork_release_stays_draft_through_prepare_and_retry test_release.ReleaseTests.test_fork_refuses_inherited_tag_without_distribution
+          python -m unittest test_release.ReleaseTests.test_empty_fork_can_prepare_first_release_without_publishing test_release.ReleaseTests.test_calendar_versions test_release.ReleaseTests.test_release_commit_push_and_retry test_release.ReleaseTests.test_fork_release_stays_draft_through_prepare_and_retry test_release.ReleaseTests.test_fork_refuses_inherited_tag_without_distribution test_release.ReleaseTests.test_prepared_fork_version_tags_reviewed_commit test_release.ReleaseTests.test_verification_requires_explicit_repository_context
           if ($LASTEXITCODE -ne 0) { throw 'Release preparation tests failed' }
       - name: Install outside checkout, test paths and MCP, render GUI
         shell: pwsh

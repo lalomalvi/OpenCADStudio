@@ -319,3 +319,58 @@ conserva el hash del registro sintético y retira el estado de target. Otra
 fixture junction fue rechazada antes de moverla y permaneció intacta.
 Actionlint y diff-check aprobaron. Es comprobación del aislamiento CI local,
 no aceptación nativa Mac; el siguiente run debe completar ese recorrido.
+
+### Productor 9e856c50: tres plataformas aceptadas
+
+El [run nativo 36478253841](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36478253841)
+terminó success en Windows x64 (109117266039), macOS ARM64 (109117266358)
+y macOS Intel (109117265630). Los tres completaron build release --locked,
+manifest/hash, instalación fuera del checkout con espacios, repetición/corrupción,
+MCP stdio/EOF, GUI y save/reopen/audit sintético. Ambos Mac pasaron también
+Finder/LaunchServices; se inspeccionaron sus capturas GUI, Finder y CAD.
+Tests [36478254392](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36478254392)
+aprobó workspace Rust, Python y hosts Linux/Windows. Receipt exacto del productor
+9e856c50f8cdea48448f93e6d36ee770b6f827c1, fingerprint no documental
+8e51257a167c8adea7615664c23c7a927103753ac86a73aeadcaf06e831aec4b.
+Web 36478254004 también terminó success. Publish fue skipped, sin autorización
+ni inputs de tag; ese skip no se presenta como publicación.
+
+| ZIP 2026.39.0, productor 9e856c50f8cd | SHA-256 |
+|---|---|
+| Windows x86_64, b468feed4391 | b468feed4391657b5eafecf6ace5ab125a7222b5437e7d80e5d50890243af3fe |
+| macOS arm64, 08fe49dfcf60 | 08fe49dfcf60556c7068a41f18b2a684da60d6287fc6235abe8d16503c053540 |
+| macOS x86_64, 2059b72b29b9 | 2059b72b29b9136d4dc013acc621f89ee8d1bb3ce1aac8636e8b4f674e00c1f0 |
+
+Se descargaron los tres ZIP y se verificaron los SHA contra ambos sidecars,
+manifest interno, revisión completa y cada archivo del payload. El Windows
+se instaló y aceptó aquí en el slot independiente
+C:/Users/Luis Martinez/AppData/Local/Programs/OpenCADStudio Fork Public Candidate/b468feed4391657b/application/OpenCADStudio.exe.
+Reporta OpenCADStudio 2026.39+g9e856c50, limpio. La captura GUI fue inspeccionada,
+MCP y CAD sintético aprobaron; el PID propio 25716 se cerró. Evidencia local:
+target/distribution-port/verify-windows-9e856/summary.json y gui.png.
+La instalación histórica y el dibujo privado permanecen independientes.
+
+Windows NotSigned; Mac firma ad-hoc, sin Developer ID/notarización acreditados.
+Los runners macOS 15 no prueban hardware del operador, versión mínima macOS 11
+ni aceptación de una descarga pública bajo Gatekeeper. Los bundles Mac incluyen
+RustPython API 7; no se atribuye ese plugin opcional al ZIP Windows. La limitación
+DXF PLANT externa anterior permanece documentada; no se declara paridad global.
+
+### Preparación de la primera distribución pública 2026.40
+
+v2026.40 está libre tanto en tags locales como en el fork remoto al revisar
+2026-09-28. Cargo.toml y Cargo.lock se preparan en 2026.40.0 antes del productor;
+los paquetes 2026.39 anteriores no se etiquetan como 2026.40.
+Todas las operaciones gh de preparación/verificación especifican --repo desde
+GITHUB_REPOSITORY. Una fixture con GH_REPO apuntando al original reprodujo la
+ruta incorrecta antes de la corrección. Siete pruebas aisladas con repositorios
+Git temporales y gh simulado aprobaron después, incluida reejecución y creación
+de tag sobre el commit revisado sin un commit vacío de versión. La verificación
+rechaza contexto de repositorio ausente antes de cualquier petición gh.
+Los logs before/after/seven-tests quedan en target/distribution-port/.
+
+El evento de una release publicada del fork ahora verifica fuente/assets en
+read-only; no recompila ni vuelve a subir paquetes ya aceptados. Actionlint
+aprobó los workflows afectados. Esta revisión requiere sus propios paquetes
+2026.40 y CI sobre su SHA antes de integración/publicación. No se creó tag,
+release ni se ejecutó prepare --publish sobre el fork real.

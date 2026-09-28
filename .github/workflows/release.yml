@@ -29,8 +29,26 @@ env:
   RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
 
 jobs:
+  fork-published-verification:
+    # Published fork assets have already passed the native preparation gates.
+    # Verify them read-only; a published event must not build/upload them again.
+    if: github.repository == 'lalomalvi/OpenCADStudio' && github.event_name == 'release'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+      - name: Verify the published fork source and assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: python3 scripts/release.py verify-native --tag "$RELEASE_TAG"
+
   fork-desktop:
-    if: github.repository == 'lalomalvi/OpenCADStudio'
+    if: github.repository == 'lalomalvi/OpenCADStudio' && github.event_name != 'release'
     permissions:
       contents: write
     uses: ./.github/workflows/desktop-distribution.yml

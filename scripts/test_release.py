@@ -97,6 +97,15 @@ class ReleaseTests(unittest.TestCase):
     def test_fork_release_stays_draft_through_prepare_and_retry(self):
         self._exercise_release_commit_push_and_retry(fork=True)
 
+    def test_prepared_fork_version_tags_reviewed_commit(self):
+        self._exercise_release_commit_push_and_retry(fork=True, pre_bumped=True)
+
+    def test_verification_requires_explicit_repository_context(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(release, "gh") as requests:
+            with self.assertRaisesRegex(ValueError, "GITHUB_REPOSITORY"):
+                release.verify_native("v2026.40")
+            requests.assert_not_called()
+
     def test_fork_refuses_inherited_tag_without_distribution(self):
         def run(*args):
             if args[1:3] == ("status", "--porcelain"):
@@ -113,7 +122,7 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "lacks the fork distribution"):
                 release.prepare(True)
 
-    def _exercise_release_commit_push_and_retry(self, fork):
+    def _exercise_release_commit_push_and_retry(self, fork, pre_bumped=False):
         original_run = release.run
         releases = {"v0.9.8": {"name": "v0.9.8", "body": "Previous notes", "isDraft": False}}
         latest = "v0.9.8"
@@ -123,6 +132,9 @@ class ReleaseTests(unittest.TestCase):
             nonlocal latest, fail_create
             if args[0] != "gh":
                 return original_run(*args)
+            expected_repo = "lalomalvi/OpenCADStudio" if fork else "owner/repo"
+            chosen_repo = args[args.index("--repo") + 1] if "--repo" in args else os.environ.get("GH_REPO")
+            self.assertEqual(chosen_repo, expected_repo, "Release operation escaped its repository")
             if args[1:3] == ("release", "list"):
                 return json.dumps([{"tagName": tag, "isDraft": False} for tag in releases])
             if args[1:3] == ("release", "create"):
@@ -168,6 +180,7 @@ class ReleaseTests(unittest.TestCase):
 
                 with patch.object(release, "run", run), patch.object(release, "datetime") as clock, patch.dict(os.environ, {
                     "GITHUB_REPOSITORY": "lalomalvi/OpenCADStudio" if fork else "owner/repo", "GITHUB_REF": "refs/heads/main", "GITHUB_OUTPUT": str(temp / "output"),
+                    "GH_REPO": "HakanSeven12/OpenCADStudio",
                 }):
                     clock.now.return_value = datetime(2026, 8, 30, 12, tzinfo=timezone.utc)
 
@@ -181,16 +194,25 @@ class ReleaseTests(unittest.TestCase):
                     Path("feature").write_text("web release source")
                     original_run("git", "add", "feature")
                     original_run("git", "commit", "-m", "Add web release synchronization")
+                    reviewed_sha = None
+                    if pre_bumped:
+                        for version_file in (Path("Cargo.toml"), Path("Cargo.lock")):
+                            version_file.write_text(version_file.read_text().replace('version = "0.9.8"', 'version = "2026.35.0"'))
+                        original_run("git", "add", "Cargo.toml", "Cargo.lock")
+                        original_run("git", "commit", "-m", "Reviewed fork release source")
+                        reviewed_sha = original_run("git", "rev-parse", "HEAD")
                     preview = prepare(False)
                     self.assertIn("Add web release synchronization", preview)
-                    self.assertEqual(release.cargo_version(), "0.9.8")
+                    self.assertEqual(release.cargo_version(), "2026.35.0" if pre_bumped else "0.9.8")
                     self.assertEqual(original_run("git", "tag", "--list", "v2026.35"), "")
 
                     self.assertIn("ready=true", prepare(True))
                     sha = original_run("git", "rev-parse", "HEAD")
                     self.assertEqual(release.cargo_version(), "2026.35.0")
                     self.assertIn('version = "2026.35.0"', Path("Cargo.lock").read_text())
-                    self.assertEqual(original_run("git", "log", "-1", "--format=%s"), "Release v2026.35")
+                    self.assertEqual(original_run("git", "log", "-1", "--format=%s"), "Reviewed fork release source" if pre_bumped else "Release v2026.35")
+                    if reviewed_sha:
+                        self.assertEqual(sha, reviewed_sha, "Publication must keep the reviewed source commit")
                     self.assertEqual(original_run("git", "rev-parse", "origin/main"), sha)
                     self.assertEqual(original_run("git", "rev-parse", "v2026.35^{commit}"), sha)
                     self.assertEqual(original_run("git", "status", "--porcelain"), "")
