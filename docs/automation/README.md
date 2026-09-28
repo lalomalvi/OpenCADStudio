@@ -1,5 +1,8 @@
 # OpenCADStudio MCP control
 
+Fork maintenance: [daily synchronization procedure and timing diagnosis](FORK-SYNC.md).
+Run `python docs/automation/fork_sync.py --fetch` before planning a sync.
+
 > **Client developers start here:** [`API-SPEC.md`](API-SPEC.md) is the
 > consolidated, transport-neutral API specification — conventions, envelope,
 > error codes and the full operation catalogue in one document. This README
