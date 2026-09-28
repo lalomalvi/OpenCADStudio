@@ -51,13 +51,19 @@ jobs:
           key: desktop-${{ matrix.target }}
           # Preserve compiled dependencies when a later package/GUI gate fails.
           cache-on-failure: true
+      - name: Isolate acceptance state from the Cargo cache
+        shell: pwsh
+        run: ./scripts/ci-desktop-logs.ps1
       - name: Bundle icon dependency (CI only)
         if: runner.os == 'macOS'
         run: brew install librsvg
       - name: Diagnose and exercise boundaries
+        shell: pwsh
         run: |
-          python scripts/desktop.py diagnose --logs target/desktop-logs/preflight
+          python scripts/desktop.py diagnose --logs "$env:OCS_DESKTOP_LOG_ROOT/preflight"
+          if ($LASTEXITCODE -ne 0) { throw 'Native preflight failed' }
           python scripts/test_desktop.py
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop boundary tests failed' }
       - name: Validate release tag and source version
         if: inputs.publish_tag != ''
         shell: bash
@@ -65,7 +71,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.publish_tag }}
         run: python scripts/release.py versions --tag "$RELEASE_TAG"
       - name: Build locked fork package
-        run: python scripts/desktop.py build --output dist
+        shell: pwsh
+        run: python scripts/desktop.py build --output dist --logs "$env:OCS_DESKTOP_LOG_ROOT/build"
       - name: Release preparation without external publication
         shell: pwsh
         run: |
@@ -78,17 +85,17 @@ jobs:
           $packages = @(Get-ChildItem dist -Filter '*.zip')
           if ($packages.Count -ne 1) { throw 'Expected exactly one native fork ZIP' }
           $appDirectory = Join-Path $env:RUNNER_TEMP 'OCS per user application with spaces'
-          python scripts/desktop.py install --package $packages[0].FullName --install-dir $appDirectory
+          python scripts/desktop.py install --package $packages[0].FullName --install-dir $appDirectory --logs "$env:OCS_DESKTOP_LOG_ROOT/install"
           if ($LASTEXITCODE -ne 0) { throw 'Installation failed' }
           $env:OCS_TEST_PACKAGE = $packages[0].FullName
           python scripts/test_desktop.py
           if ($LASTEXITCODE -ne 0) { throw 'Distributed integration failed' }
-          python scripts/desktop.py verify --install-dir $appDirectory --gui --cad
+          python scripts/desktop.py verify --install-dir $appDirectory --gui --cad --logs "$env:OCS_DESKTOP_LOG_ROOT/gui-cad"
           if ($LASTEXITCODE -ne 0) { throw 'GUI verification failed' }
           python scripts/desktop.py path --install-dir $appDirectory
           if ($LASTEXITCODE -ne 0) { throw 'Executable resolution failed' }
           if ($IsMacOS) {
-            python scripts/desktop.py verify --install-dir $appDirectory --finder
+            python scripts/desktop.py verify --install-dir $appDirectory --finder --logs "$env:OCS_DESKTOP_LOG_ROOT/finder"
             if ($LASTEXITCODE -ne 0) { throw 'Finder/LaunchServices opening failed' }
           }
       - uses: actions/upload-artifact@v4
@@ -97,13 +104,13 @@ jobs:
           name: desktop-evidence-${{ matrix.target }}
           # Never upload private profiles / automation descriptors (bridge tokens).
           path: |
-            target/desktop-logs/**/summary.json
-            target/desktop-logs/**/diagnosis.json
-            target/desktop-logs/**/dynamic-libraries.json
-            target/desktop-logs/**/gui-verification.json
-            target/desktop-logs/**/report.json
-            target/desktop-logs/**/*.log
-            target/desktop-logs/**/*.png
+            ${{ runner.temp }}/OCS desktop evidence-${{ github.run_id }}-${{ github.run_attempt }}/**/summary.json
+            ${{ runner.temp }}/OCS desktop evidence-${{ github.run_id }}-${{ github.run_attempt }}/**/diagnosis.json
+            ${{ runner.temp }}/OCS desktop evidence-${{ github.run_id }}-${{ github.run_attempt }}/**/dynamic-libraries.json
+            ${{ runner.temp }}/OCS desktop evidence-${{ github.run_id }}-${{ github.run_attempt }}/**/gui-verification.json
+            ${{ runner.temp }}/OCS desktop evidence-${{ github.run_id }}-${{ github.run_attempt }}/**/report.json
+            ${{ runner.temp }}/OCS desktop evidence-${{ github.run_id }}-${{ github.run_attempt }}/**/*.log
+            ${{ runner.temp }}/OCS desktop evidence-${{ github.run_id }}-${{ github.run_attempt }}/**/*.png
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always() && hashFiles('dist/*.zip') != ''

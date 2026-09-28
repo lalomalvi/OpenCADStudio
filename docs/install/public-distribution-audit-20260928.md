@@ -286,3 +286,36 @@ sigue verificando los hashes/procedencia reales.
 Dos regresiones Rust cubren selección por arquitectura, sidecars ausentes,
 assets vacíos/no subidos, origen upstream, dirty y duplicados. Su ejecución
 queda en el siguiente CI; no se atribuyen al Windows 5d60 ya aceptado.
+
+
+### Cierre Intel 5d60 y aislamiento de la caché CI
+
+El job Intel **109082775311** del run 36467983856 terminó con el mismo fallo
+plistlib no-seekable después de codesign válido. El build/paquete duró
+71 min 45 s; la aplicación inicial compiló en 51 min 49 s y el plugin en
+18 min 07 s. La segunda llamada del bundle reutilizó la app en 6,90 s.
+La caché terminó de subir 1,102,909,974 bytes a las 20:05:46 UTC.
+Log completo y bundle.log preservados bajo `target/distribution-port/`.
+
+Se publicó **63d3cafe6b916ab8566e819304ed2bdb08a109b3** sin force y ls-remote
+confirmó el SHA. Los triggers automáticos iniciaron Tests **36476970489**,
+Web **36476970156** y desktop **36476970328**. El coordinador esperó el PR;
+no agregó un dispatch. Los dos Mac del último run fallaron **antes del build**:
+la caché Cargo había restaurado el directorio fijo `target/desktop-logs/preflight`,
+y diagnose, correctamente, rechazó sobrescribirlo con FileExistsError.
+Ese fallo no ejecutó la corrección de entitlements ni demuestra un fallo Rust.
+El productor Windows y Tests seguían activos al registrar esta observación.
+
+El workflow cambia todos los logs de preflight/build/install/GUI/Finder a un
+subdirectorio por run/attempt de RUNNER_TEMP, fuera del target cacheado. Antes
+preserva la carpeta de logs restaurada en otra ubicación temporal independiente;
+no borra evidencia ni altera compilaciones. El helper CI valida los límites
+absolutos de workspace/temp y rechaza un directorio raíz con reparse point.
+Solo los resúmenes/logs/PNGs de la ejecución nueva se seleccionan para artifacts;
+los perfiles/descriptores quedan fuera de esa selección y de la caché Cargo.
+
+Una sonda PowerShell con directorios propios y espacios verificó que el move
+conserva el hash del registro sintético y retira el estado de target. Otra
+fixture junction fue rechazada antes de moverla y permaneció intacta.
+Actionlint y diff-check aprobaron. Es comprobación del aislamiento CI local,
+no aceptación nativa Mac; el siguiente run debe completar ese recorrido.
