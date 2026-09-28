@@ -90,7 +90,13 @@ jobs:
         run: |
           test -f "$OCS_TEST_PYTHON_PLUGIN" || { echo "staged plugin missing: $OCS_TEST_PYTHON_PLUGIN"; exit 1; }
           test -f "$OCS_PLUGIN_RUNNER_EXE" || { echo "runner missing: $OCS_PLUGIN_RUNNER_EXE"; exit 1; }
-          cargo test --locked --lib -- --test-threads=1 python
+          # Native Windows IO/printing changes need Windows unit coverage;
+          # reuse the already compiled lib test binary, including live IPC.
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cargo test --locked --lib -- --test-threads=1
+          else
+            cargo test --locked --lib -- --test-threads=1 python
+          fi
 
       - name: Package the tested Windows runner (no rebuild)
         if: runner.os == 'Windows'
