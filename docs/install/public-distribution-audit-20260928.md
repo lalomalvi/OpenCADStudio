@@ -104,3 +104,36 @@ no acredita un paquete 2026.39 del candidato.
 Esta revisión no ejecutó push, merge de upstream, dispatch ni creación de release.
 El JSON detallado de ramas y la simulación quedan bajo `target/` en la carpeta
 original; los cambios anteriores y la aplicación instalada se conservaron.
+
+## Ciclo de integración y distribución: continuación del 28 de septiembre
+
+Se congeló upstream en **3754426361e828cb4c0300cb5b36138d623aebfc** y se
+integró, sin conflictos, en **71a430c0f256acee0b7ebfcdec578344d0d41dc8**.
+El avance posterior fdfe2429 (README de plugins) queda para otro ciclo.
+El checkout privado original no se actualizó ni se incluyeron sus dibujos.
+
+El candidato **07f63cbe550cea5bd081d45f5b55286d213507ab** se publicó, sin
+force, en `codex/desktop-distribution`. El remoto confirmó ese mismo SHA.
+[PR draft #2](https://github.com/lalomalvi/OpenCADStudio/pull/2) conserva
+la revisión antes de integrar en main. No se creó una release ni un tag.
+
+El workflow Windows host ejecuta ahora toda la suite unitaria de la biblioteca
+sobre su productor existente, además del IPC. Esto cubre el riesgo IO Windows
+del delta upstream y no introduce una segunda compilación del test ejecutable.
+
+Resultados observados en el
+[run Tests 36462634738](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36462634738):
+workspace Rust, masterplan Python y host Linux aprobados; host Windows todavía
+activo al escribir esta continuación. El
+[check web 36462634300](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36462634300)
+aprobó. Estos resultados pertenecen a 07f63cbe, no a la corrección posterior.
+
+El [primer run nativo 36462634245](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36462634245)
+detectó el mismo fallo previo al build en ambos Mac: resolver el enlace Homebrew
+`rustup` hasta `rustup-init` alteró argv[0] y el comando rechazó `toolchain`.
+La corrección conserva el nombre absoluto de invocación del proxy y añade una
+regresión Unix ejecutable. `diagnose --logs` conserva ahora el JSON del bloqueo
+incluso si el diagnóstico falla; sin `--logs` sigue siendo de lectura.
+La comprobación local de esa corrección en Windows aprobó 8 tests y omitió 2
+(la regresión Unix y la integración con el paquete aún en construcción).
+Eso no acredita la corrección nativa Mac: requiere su siguiente run.

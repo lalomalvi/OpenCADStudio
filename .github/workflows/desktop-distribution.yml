@@ -54,7 +54,7 @@ jobs:
         run: brew install librsvg
       - name: Diagnose and exercise boundaries
         run: |
-          python scripts/desktop.py diagnose
+          python scripts/desktop.py diagnose --logs target/desktop-logs/preflight
           python scripts/test_desktop.py
       - name: Validate release tag and source version
         if: inputs.publish_tag != ''

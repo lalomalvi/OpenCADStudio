@@ -81,10 +81,10 @@ def run(argv, *, cwd=ROOT, env=None, timeout=120, log=None):
 def tool(name, candidates=()):
     found = shutil.which(name)
     if found and "WindowsApps" not in found:
-        return {"path": str(Path(found).resolve()), "status": "on_PATH"}
+        return {"path": os.path.abspath(found), "status": "on_PATH"}
     for candidate in candidates:
         if Path(candidate).is_file():
-            return {"path": str(Path(candidate).resolve()), "status": "installed_outside_PATH"}
+            return {"path": os.path.abspath(candidate), "status": "installed_outside_PATH"}
     return {"path": None, "status": "missing"}
 
 
@@ -642,7 +642,16 @@ def main():
     parser.add_argument("--finder", action="store_true", help="verify actual macOS LaunchServices bundle opening")
     args = parser.parse_args()
     if args.action == "diagnose":
-        result = diagnose()
+        # Keep default diagnosis read-only. Explicit --logs preserves CI failures.
+        diagnosis_logs = args.logs.resolve() if args.logs else None
+        if diagnosis_logs:
+            diagnosis_logs.mkdir(parents=True, exist_ok=False)
+        try:
+            result = diagnose()
+        except (Blocked, OSError, ValueError, subprocess.TimeoutExpired) as error:
+            result = {"blockers": [str(error)], "status": "blocked"}
+        if diagnosis_logs:
+            write_json(diagnosis_logs / "diagnosis.json", result)
         print(json.dumps(result, indent=2))
         return 2 if result["blockers"] else 0
     target()

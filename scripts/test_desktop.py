@@ -33,7 +33,20 @@ class DesktopBoundaries(unittest.TestCase):
         with patch("desktop.shutil.which", return_value=None):
             info = desktop.tool("cargo", [exe])
         self.assertEqual(info["status"], "installed_outside_PATH")
-        self.assertEqual(info["path"], str(exe.resolve()))
+        self.assertTrue(Path(info["path"]).is_absolute())
+        self.assertTrue(os.path.samefile(info["path"], exe))
+
+    @unittest.skipIf(os.name == "nt", "Unix tool proxy symlinks")
+    def test_rustup_proxy_keeps_invocation_name(self):
+        # Rustup/Homebrew dispatch by argv[0]; resolving the link starts rustup-init.
+        installer = self.root / "rustup-init"
+        installer.write_text("#!/usr/bin/env python3\nimport sys; from pathlib import Path; print(Path(sys.argv[0]).name)\n")
+        installer.chmod(0o755)
+        proxy = self.root / "rustup"
+        proxy.symlink_to(installer)
+        with patch("desktop.shutil.which", return_value=str(proxy)):
+            info = desktop.tool("rustup")
+        self.assertEqual(desktop.run([info["path"], "toolchain", "list"], cwd=self.root), "rustup")
 
     def test_absent_installation_has_concrete_recovery(self):
         with self.assertRaisesRegex(desktop.Blocked, "run build then install"):
