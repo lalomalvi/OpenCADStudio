@@ -1,5 +1,7 @@
 # OpenCADStudio: avance MCP y actualización del original
 
+**Estado vigente:** sincronización publicada únicamente al fork, código `70db2a4d` con upstream `c623a016`; Rust 1999/0/27 (aprobadas/fallos/ignoradas), cuatro checks CI aprobados, build limpio y sondas L2/AutoCAD aprobadas. Véase el cierre al final; la auditoría inicial y sus estados históricos se conservan. Masterplan global parcial.
+
 Fecha: 2026-09-27. Informe de continuidad solicitado por Luis. La auditoría inicial se conserva abajo. Actualización vigente: permisos resueltos, integración realizada en `codex/mcp-upstream-sync-20260927` y regresión local aprobada (1996 Rust, 202 masterplan Python y 45 automatización; 27 Rust ignoradas). El estado de publicación, CI, hallazgos de guardado y hashes está en [M0-UPSTREAM-SYNC-20260927.md](masterplan/M0-UPSTREAM-SYNC-20260927.md). El masterplan global sigue incompleto.
 
 ## 1. Ubicación y preservación
@@ -118,3 +120,24 @@ Verificación documental: `git diff --no-index --check -- NUL docs/automation/MA
 ## 9. Prompt de continuidad
 
 > Continúa OpenCADStudio desde este informe del 2026-09-27 y el corte 155 del checkpoint histórico. Revisa AGENTS, permisos, los seis documentos base, estado de Git y remotos. Preserva el DWG privado y todos los ensayos. Verifica remotos otra vez: masterplan 7e61e98c, fork-main f785e156 y upstream-main 315df5cd eran los SHAs al corte. Utiliza la copia target/upstream-audit-20260927.git para reproducir divergencia 18/112 y 182/112 y los 10/12 conflictos, sin asumir que refs siguen iguales. Prepara una rama codex de integración aislada con permisos de escritura; integra el original en el masterplan preservando controles persistentes y revisando parches ya absorbidos por upstream. Resuelve por función, revisa nuevos codec/kernel/graph y command_driver modular. Ejecuta tests, build locked y GUI/AutoCAD sintéticos nuevos; reconstruye el paquete desde código limpio vigente. Publica solo cambios verificados al fork lalomalvi/OpenCADStudio, sin force push ni envío al autor. No pidas sexta imagen ni API ni repitas slots consumidos. Mantén M1 recuperación GUI, M3 identidad/uso directo y M7 integral/L5/evaluación sin aceptación mientras falte evidencia. Documenta SHAs, CI, diferencias, fallos, pendientes y continuación antes de cerrar.
+
+## Cierre verificable de sincronización — 2026-09-27
+
+Código integrado y publicado en main del fork al redactar: `70db2a4d5af8fcb61cb6973519c8d073ccae2f40`. Incluye el masterplan `7e61e98c0bf377eb4bf2d96e086f83e0d32e02ff`, la primera fusión `5a8d8f4e8c58ffa012b66ecfd72ee60db789f72e` y upstream `c623a016956e5c397351660b91f04bb504bab20d`. La comprobación final detectó cuatro commits posteriores a 315df5cd: actualización 2026.39, normalización de referencias inexistentes de flechas de cotas y pins codec 42b44d2/kernel 4e67cd7/graph d89a9c5. Se integraron seis archivos sin conflictos, preservando guardado protegido y controles del fork.
+
+La primera fusión 5a8d8f4e aprobó CI 36333224806 y host 36333227070; su binario limpio SHA256 61F4F435BA22C838DB823E876D01D2B864B817BDED055D1D4FB86BEE5FFD7072 pasó L2 en target/mcp-isolated/20260927-104620-99f01cff y AutoCAD en target/mcp-external/20260927-113346-autocad-2590969f. Esa evidencia es histórica y no acredita los nuevos pins.
+
+| Verificación de 70db2a4d | Resultado | Evidencia |
+|---|---|---|
+| Rust workspace local | 1999 passed, 0 failed, 27 ignored; 31 grupos | target/upstream-sync/20260927-120811-df1a0122/rust-tests.log |
+| CI Rust/Python masterplan | completed/success | [36339582448](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36339582448) |
+| Host Linux/Windows, IPC real | completed/success | [36339584724](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36339584724) |
+| Build limpio | exit 0, revisión declarada 70db2a4d | target/upstream-sync/build-70db2a4d-0ade8c62/report.json |
+| L2 GUI sintética | tres entidades, guardado/reapertura/captura fenced, cierre de GUI | target/mcp-isolated/20260927-191801-9790b619/report.json |
+| AutoCAD independiente | 3/3 geometrías/handles a 1e-6, INSUNITS 6, AUDIT 0/0, DWG intacto | target/mcp-external/20260927-191848-autocad-92d13e1b/report.json |
+
+SHA256: log Rust `174278B36EC75B795199F4C8D3EDB5933DBE89B42BCFED95B77C70F75B6F3227`; binario `DF1B60B188CEB65708C1B30DE2BBB62484E501BA806F2C69CFF4B54EAFB5F75F`; reporte L2 `A1E591821DBFA7536C6A6626771A7E0DDA0234D019B884734A9168BEB2509E9F`; reporte AutoCAD `4D9C63A5C5CFC092A400413B37C0D9B51839BB0621194CC5C25BEB535C3C5A96`. Los 202 tests Python masterplan y 45 automatización locales del corte anterior siguen registrados; el CI nuevo verifica el masterplan del SHA vigente. Ignoradas no son aprobadas. Los tests de normalización de flechas DWG/DXF forman parte de la nueva regresión; no se afirma evaluación externa de cotas en este fixture de tres primitivas.
+
+Main se avanzó sin force únicamente en lalomalvi/OpenCADStudio. El siguiente commit solo documenta estos resultados; no altera el código probado. Su SHA final se verifica al publicar y se entrega en la respuesta de cierre, evitando autorreferencia imposible del documento. No hubo release, publicación al autor ni inclusión de CAD, imágenes, binarios, perfiles o claves. Fallos, originales, seis casos y paquetes históricos permanecen intactos.
+
+Pendientes: M1 conciliación de GUI nueva y resultado común multiproceso; M3 identidad/uso directos; M7 fidelidad integral, evaluación controlada y revisión humana L5; M8 paquete reconstruido del código vigente y aceptación. Sin aceptación global del masterplan. La planta de 60 entidades sigue siendo parcial; las comparaciones de prompts ventana 1/3→3/3 y puerta 0/3→1/3 no se mejoraron con reintentos ocultos.

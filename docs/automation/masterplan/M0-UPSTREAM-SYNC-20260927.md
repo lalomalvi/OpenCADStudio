@@ -100,3 +100,26 @@ La cuarta suite terminó con **1996 passed, 0 failed, 27 ignored** en 31 grupos,
 El guardado repetido, DWT 2013 y su rechazo por edit lock, propiedad/cierre, las tres pruebas de commit acotado y el resto del workspace pasaron. Se requiere huella esperada y reader de la lease para habilitar el retry Windows. Esta aprobación no afirma que 1175 nunca pueda ocurrir: agotado el límite, el guardado sigue fallando y preserva el destino. Los tres runs anteriores fallidos permanecen intactos.
 
 Python permanece 202 masterplan/45 automatización aprobadas. Se revisó la captura L2 anterior: dos líneas y círculo visibles, sin overlays. El binario anterior a este cambio de persistencia sigue identificado por su hash histórico; para el SHA publicado se generará un build nuevo y una sonda nueva, sin reusar IDs/perfiles. La publicación queda limitada al fork y a sincronización de código, sin release ni aceptación global del masterplan.
+
+## Cierre verificable de sincronización — 2026-09-27
+
+Código integrado y publicado en main del fork al redactar: `70db2a4d5af8fcb61cb6973519c8d073ccae2f40`. Incluye el masterplan `7e61e98c0bf377eb4bf2d96e086f83e0d32e02ff`, la primera fusión `5a8d8f4e8c58ffa012b66ecfd72ee60db789f72e` y upstream `c623a016956e5c397351660b91f04bb504bab20d`. La comprobación final detectó cuatro commits posteriores a 315df5cd: actualización 2026.39, normalización de referencias inexistentes de flechas de cotas y pins codec 42b44d2/kernel 4e67cd7/graph d89a9c5. Se integraron seis archivos sin conflictos, preservando guardado protegido y controles del fork.
+
+La primera fusión 5a8d8f4e aprobó CI 36333224806 y host 36333227070; su binario limpio SHA256 61F4F435BA22C838DB823E876D01D2B864B817BDED055D1D4FB86BEE5FFD7072 pasó L2 en target/mcp-isolated/20260927-104620-99f01cff y AutoCAD en target/mcp-external/20260927-113346-autocad-2590969f. Esa evidencia es histórica y no acredita los nuevos pins.
+
+| Verificación de 70db2a4d | Resultado | Evidencia |
+|---|---|---|
+| Rust workspace local | 1999 passed, 0 failed, 27 ignored; 31 grupos | target/upstream-sync/20260927-120811-df1a0122/rust-tests.log |
+| CI Rust/Python masterplan | completed/success | [36339582448](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36339582448) |
+| Host Linux/Windows, IPC real | completed/success | [36339584724](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36339584724) |
+| Build limpio | exit 0, revisión declarada 70db2a4d | target/upstream-sync/build-70db2a4d-0ade8c62/report.json |
+| L2 GUI sintética | tres entidades, guardado/reapertura/captura fenced, cierre de GUI | target/mcp-isolated/20260927-191801-9790b619/report.json |
+| AutoCAD independiente | 3/3 geometrías/handles a 1e-6, INSUNITS 6, AUDIT 0/0, DWG intacto | target/mcp-external/20260927-191848-autocad-92d13e1b/report.json |
+
+SHA256: log Rust `174278B36EC75B795199F4C8D3EDB5933DBE89B42BCFED95B77C70F75B6F3227`; binario `DF1B60B188CEB65708C1B30DE2BBB62484E501BA806F2C69CFF4B54EAFB5F75F`; reporte L2 `A1E591821DBFA7536C6A6626771A7E0DDA0234D019B884734A9168BEB2509E9F`; reporte AutoCAD `4D9C63A5C5CFC092A400413B37C0D9B51839BB0621194CC5C25BEB535C3C5A96`. Los 202 tests Python masterplan y 45 automatización locales del corte anterior siguen registrados; el CI nuevo verifica el masterplan del SHA vigente. Ignoradas no son aprobadas. Los tests de normalización de flechas DWG/DXF forman parte de la nueva regresión; no se afirma evaluación externa de cotas en este fixture de tres primitivas.
+
+Main se avanzó sin force únicamente en lalomalvi/OpenCADStudio. El siguiente commit solo documenta estos resultados; no altera el código probado. Su SHA final se verifica al publicar y se entrega en la respuesta de cierre, evitando autorreferencia imposible del documento. No hubo release, publicación al autor ni inclusión de CAD, imágenes, binarios, perfiles o claves. Fallos, originales, seis casos y paquetes históricos permanecen intactos.
+
+Pendientes: M1 conciliación de GUI nueva y resultado común multiproceso; M3 identidad/uso directos; M7 fidelidad integral, evaluación controlada y revisión humana L5; M8 paquete reconstruido del código vigente y aceptación. Sin aceptación global del masterplan. La planta de 60 entidades sigue siendo parcial; las comparaciones de prompts ventana 1/3→3/3 y puerta 0/3→1/3 no se mejoraron con reintentos ocultos.
+
+Estado observado tras el push de main: GitHub marcó el PR histórico #1 como closed/merged (draft=true; head 7e61e98c; merge_commit_sha 5a8d8f4e). Se integró por la autorización nueva de sincronización del fork; este cierre técnico no constituye aceptación M7/M8 ni release.
