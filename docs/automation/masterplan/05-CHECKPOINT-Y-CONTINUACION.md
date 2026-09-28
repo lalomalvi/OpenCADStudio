@@ -1928,3 +1928,40 @@ Pendientes: M1 conciliación de GUI nueva y resultado común multiproceso; M3 id
 Lee AGENTS, 00-INDICE.md, sus cinco documentos base, este corte, M0-UPSTREAM-SYNC-20260927.md y RESULTADOS-MCP-20260927.md. Trabaja en el worktree mcp-upstream-integration; verifica árbol, HEAD/main local-remoto, remotos y ascendencia de 7e61e98c, 5a8d8f4e y c623a016. El código aprobado es 70db2a4d; verifica igualdad de código para commits posteriores solo documentales y no atribuyas CI histórico a código nuevo. Conserva los seis casos, paquetes y todos los fallos/perfiles/hashes. Sigue M1 con conciliación segura de GUI nueva/resultado multiproceso, M3 procedencia directa, M7 reconstrucción integral y comparación controlada/revisión L5, y M8 paquete vigente/aceptación. No repitas slots Luna, IDs o perfiles consumidos, no pidas sexta imagen ni API, no abras/lees/hash/modifiques el DWG privado ni publiques al autor. Publicación exclusivamente a lalomalvi/OpenCADStudio. La sincronización está aprobada; el masterplan global sigue parcial.
 
 Estado observado tras el push de main: GitHub marcó el PR histórico #1 como closed/merged (draft=true; head 7e61e98c; merge_commit_sha 5a8d8f4e). Se integró por la autorización nueva de sincronización del fork; este cierre técnico no constituye aceptación M7/M8 ni release.
+
+## Corte 158: procedimiento de sincronización y diagnóstico de demoras — 2026-09-27
+
+La petición actual de Luis es estandarizar la sincronización y explicar la demora.
+El entregable operativo está en [FORK-SYNC.md](../FORK-SYNC.md), enlazado desde
+AGENTS.md raíz, README e índice. Contiene causas demostradas, tiempos que no deben
+sumarse por solapamiento, matriz de pruebas, ritmo cotidiano, cierre y prompt.
+Las optimizaciones de CI/caché se identifican como trabajo futuro con aceptación
+concreta; no se promete que una compilación nativa con regresiones tarde minutos.
+
+Commit del procedimiento y preflight: `101f0593331b4e62f59a586349faba7c75c31a4d`.
+No cambia Rust, Cargo, workflows, CAD ni datos privados. El script congela refs,
+valida URLs, clasifica el delta conservadoramente y compara contenido; nunca
+fusiona, compila ni publica. Una huella igual no se declara test aprobado.
+La evidencia real `target/fork-sync/20260928T013826Z-d176d13d/plan.json` terminó
+en 2.676 s, upstream `c623a016`, fork `250d5b4a`, cero commits entrantes,
+clasificación Python, sin impedimentos. Antes se actualizó origin/main, que había
+quedado obsoleto tras los pushes por URL explícita.
+
+Validación: automation 49/49 y masterplan 202/202; cuatro tests focalizados finales
+(con casos parametrizados y repo Git sintético) en 7.102 s prueban selección,
+renames, snapshot inmutable, cambios sin commit, privacidad del censo, igualdad
+de fuentes y rechazo de destino incorrecto. El primer intento de automation tuvo
+un error de importación de Pillow al aislar APPDATA; se preserva como fallo del
+entorno. Se usó la dependencia existente en lectura con bytecode desactivado y
+perfiles temporales del proyecto; no hubo instalación ni cambios globales.
+
+Aceptación de esta petición: diagnóstico respaldado por logs/CI; procedimiento y
+responsabilidades versionados; selección ejecutable probada en fixtures y repo
+real; instrucciones persistentes en AGENTS; siguiente ciclo con un snapshot y
+gates por impacto. No se lanzó otra compilación Rust ni prueba de imágenes para
+validar estos cambios Python/documentales. El último código CAD aprobado sigue
+siendo 70db2a4d, con su evidencia del corte 157; M1/M3/M7/M8 siguen parciales.
+
+Continuidad: aplicar el prompt final de FORK-SYNC.md. Medir un próximo ciclo antes
+de afirmar una mejora sostenida; si se optimiza CI, comprobar los casos de rutas y
+la atribución SHA/hash del artefacto, sin convertir checks omitidos en aprobados.
