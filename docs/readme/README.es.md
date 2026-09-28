@@ -1,196 +1,158 @@
-<p align="center">
-  <a href="../../README.md">English</a> · <a href="README.bg.md">Български</a> · <a href="README.pt-BR.md">Português (Brasil)</a> · <a href="README.cs.md">Čeština</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.fr.md">Français</a> · <a href="README.fi.md">Suomi</a> · <a href="README.de.md">Deutsch</a> · <a href="README.el.md">Ελληνικά</a> · <a href="README.hu.md">Magyar</a> · <a href="README.it.md">Italiano</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.pl.md">Polski</a> · <a href="README.ru.md">Русский</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.es.md">Español</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.ar.md">العربية</a>
-</p>
+<p align="center"><a href="../../README.md">English</a> · <a href="README.es.md">Español</a></p>
 
-<p align="center"><img src="../../assets/logo.svg" width="112" alt="Logotipo de Open CAD Studio"></p>
-<h1 align="center">Open CAD Studio</h1>
-<p align="center">Dibujo 2D y modelado 3D de código abierto para escritorio y web, desarrollado con Rust.</p>
+<p align="center"><img src="../../assets/logo.svg" width="112" alt="Logotipo de OpenCADStudio, CAD de código abierto"></p>
 
-<p align="center">
-  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
-  <a href="../../README.md#install-and-open-this-fork"><strong>Fork installation</strong></a>
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers"><img alt="Estrellas en GitHub" src="https://img.shields.io/github/stars/HakanSeven12/OpenCADStudio"></a>
-  <a href="../../LICENSE"><img alt="Licencia GPL-3.0" src="https://img.shields.io/github/license/HakanSeven12/OpenCADStudio"></a>
-</p>
+# OpenCADStudio — CAD y MCP para un ecosistema BIM abierto
 
-<p align="center">
-  <a href="https://www.opencadstudio.com"><strong>Abrir la aplicación web</strong></a> ·
-  <a href="../../README.md#install-and-open-this-fork"><strong>Descargar la aplicación de escritorio</strong></a> ·
-  <a href="https://github.com/HakanSeven12/OpenCADStudio/discussions"><strong>Participar en la conversación</strong></a>
-</p>
+**Fork de CAD de código abierto mantenido por Luis Martínez ([lalomalvi](https://github.com/lalomalvi)) para desarrollar la capa de dibujo y automatización de un ecosistema BIM orientado a arquitectura, ingeniería y construcción (AEC).** Parte de [OpenCADStudio, creado por Hakan Seven](https://github.com/HakanSeven12/OpenCADStudio), y combina dibujo 2D, modelado 3D en Rust, flujos DWG/DXF y una interfaz nativa **Model Context Protocol (MCP)** para clientes de IA compatibles.
 
-<p align="center"><img src="../../site/workspace.png" alt="Espacio de trabajo de Open CAD Studio" width="100%"></p>
+Luis desarrolla este fork comunitario como parte de su trabajo en un ecosistema BIM abierto y de su colaboración con la iniciativa [OpenAEC Foundation](https://open-aec.com/), de Países Bajos. El propósito es llevar ese trabajo a herramientas instalables, operaciones inspeccionables, entregables CAD trazables y flujos de ingeniería que puedan revisarse.
 
+[Descargar 2026.40](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40) · [Instalación Windows](../install/windows.md) · [Instalación macOS](../install/macos.md) · [API MCP](../automation/API-SPEC.md)
 
-> **Instalación del fork:** usa las guías de Windows/macOS enlazadas abajo. Las descripciones de upstream no acreditan paquetes, firma ni MCP de este fork.
+## Descargar, instalar y abrir
 
+**La versión 2026.40 está publicada para Windows x64, macOS Apple Silicon y macOS Intel.** Cada arquitectura tiene su propio ZIP, checksum `.zip.sha256` y manifiesto de procedencia `.zip.json`. Descarga los tres archivos correspondientes desde la [release de este fork](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40).
 
-## Descripción general
+| Plataforma | Paquete de la release | Guía completa |
+|---|---|---|
+| Windows x64 / MSVC | `OpenCADStudio-fork-2026.40.0-af002fa17a79-windows-x86_64-69be418ef7ba.zip` | [Verificar, instalar, abrir y localizar el EXE](../install/windows.md) |
+| macOS Apple Silicon | `OpenCADStudio-fork-2026.40.0-af002fa17a79-macos-arm64-d0c5afe63aed.zip` | [Instalar el bundle y abrir desde Finder](../install/macos.md) |
+| macOS Intel | `OpenCADStudio-fork-2026.40.0-af002fa17a79-macos-x86_64-d7a417f444f2.zip` | [Instalación en Mac Intel](../install/macos.md) |
 
-Open CAD Studio es una aplicación multiplataforma para dibujo técnico, trabajo con presentaciones y modelado de sólidos. Lee y escribe dibujos DWG y DXF de forma nativa, con un núcleo de edición compartido entre las versiones de escritorio y navegador.
+Para instalar manualmente, verifica el checksum y extrae todo el contenido en una carpeta nueva del usuario. Abre `application/OpenCADStudio.exe` en Windows o `OpenCADStudio.app` en macOS; conserva juntos los recursos. El CAD empaquetado no necesita Rust, Git ni Python para ejecutarse. El helper opcional necesita **Python 3.11+**.
 
-El proyecto está en desarrollo activo. Conserva copias de seguridad de los dibujos de producción importantes e informa de problemas reproducibles mediante [GitHub Issues](https://github.com/HakanSeven12/OpenCADStudio/issues).
-
-## Características destacadas
-
-- **Flujo de dibujo nativo** — abre, edita, recupera y guarda archivos DWG y DXF sin un servicio de conversión.
-- **Dibujo 2D preciso** — líneas, polilíneas, curvas, splines, sombreados, referencias a objetos, rastreo, capas, bloques y referencias externas.
-- **Herramientas de documentación** — texto, cotas, directrices, tolerancias, tablas, espacio modelo, espacio papel, ventanas gráficas y estilos de trazado.
-- **Modelado 3D respaldado por kernel** — primitivas sólidas, extrusión, revolución, barrido, loft, operaciones booleanas y teselación de entidades ACIS.
-- **Renderizado por GPU** — vistas 2D y 3D aceleradas mediante `wgpu`, con cámaras ortográfica y en perspectiva.
-- **Flujos ampliables** — complementos nativos, scripts de comandos, conversión sin interfaz y una API de automatización JSON basada en líneas.
-
-<p align="center"><img src="../../site/modeling.png" alt="Modelo 3D en Open CAD Studio" width="100%"></p>
-
-## Flujos de archivos
-
-| Formato o flujo | Compatibilidad |
-| --- | --- |
-| DWG | Lectura y escritura; destinos de guardado versionados de R14 a 2018 |
-| DXF | Lectura y escritura; destinos de guardado versionados de R14 a 2018 |
-| BAK / SV$ | Apertura de copias de seguridad y archivos de guardado automático |
-| OBJ | Importación de mallas poligonales |
-| LandXML | Importación de puntos topográficos `CgPoint` |
-| STL | Exportación de datos de malla 3D |
-| STEP AP203 | Exportación de datos de malla 3D |
-| PDF | Trazado de presentaciones y geometría seleccionada en escritorio |
-| CSV | Extracción de datos de propiedades de entidades |
-| CTB / STB | Carga y edición de tablas de estilos de trazado |
-
-## Escritorio o web
-
-Usa la [aplicación web](https://www.opencadstudio.com) para acceder de inmediato sin instalar nada. Los dibujos se seleccionan mediante el navegador y se guardan como descargas locales.
-
-Usa la aplicación de escritorio para asociaciones de archivos nativas, miniaturas del gestor de archivos, impresión del sistema, salida PDF, complementos externos, scripts de comandos y automatización sin interfaz. Hay versiones para Windows, Linux y macOS con Apple Silicon.
-
-## Instalación
-
-Este fork es **lalomalvi/OpenCADStudio**. Clonar descarga el código; no instala
-ni abre la aplicación. La API del fork no tenía releases el 2026-09-28.
-
-- [Windows: requisitos, paquete portable, instalación y GUI verificada](../install/windows.md).
-- [macOS: Apple Silicon e Intel separados, bundle, Finder y MCP](../install/macos.md).
-- [Contrato operativo para agentes](../install/agents.md).
-
-Desde el checkout, con los requisitos de la guía instalados explícitamente:
+Para automatizar la descarga, instalación y apertura verificada, ejecuta desde una copia de este fork:
 
 ```powershell
-& '.\scripts\desktop.ps1' diagnose
-& '.\scripts\desktop.ps1' build
-& '.\scripts\desktop.ps1' install --package 'RUTA_ABSOLUTA_DEL_ZIP_GENERADO'
+# Windows — PowerShell
+& '.\scripts\desktop.ps1' download --tag v2026.40
 & '.\scripts\desktop.ps1' open
 & '.\scripts\desktop.ps1' path
 ```
 
-En macOS utiliza `bash scripts/desktop-macos.sh` con esas mismas acciones.
-La guía contiene el recorrido completo desde un equipo sin preparar. `open`
-comprueba la GUI; `mcp` inicia el mismo ejecutable con `--mcp` por stdio.
-No se anuncia firma de editor, notarización ni soporte nativo sin evidencia.
-Los paquetes de upstream son versiones distintas, no distribuciones de este fork.
-
-
-## Idiomas
-
-Open CAD Studio puede seguir el idioma del sistema o usar cualquiera de estos 21 idiomas de interfaz:
-
-> Árabe · Portugués de Brasil · Búlgaro · Checo · Neerlandés · Inglés · Finés · Francés · Alemán · Griego · Hindi · Húngaro · Italiano · Japonés · Coreano · Polaco · Ruso · Chino simplificado · Español · Chino tradicional · Turco
-
-Cambia el idioma en los ajustes de la aplicación. La versión web también usa la configuración regional preferida del navegador cuando se selecciona **Sistema**.
-
-## Compilar desde el código fuente
-
-### Escritorio
-
-Requisitos:
-
-- Git
-- Cadena de herramientas estable actual de Rust
-- Bibliotecas de desarrollo de gráficos y fuentes de la plataforma
-
-En Ubuntu o Debian, instala las dependencias nativas:
-
 ```bash
-sudo apt update
-sudo apt install libgl1-mesa-dev libx11-dev libxcursor-dev libxi-dev \
-  libxrandr-dev libxkbcommon-dev libwayland-dev libfontconfig1-dev \
-  libfreetype6-dev
+# macOS — terminal nativa Apple Silicon o Intel
+bash scripts/desktop-macos.sh download --tag v2026.40
+bash scripts/desktop-macos.sh open
+bash scripts/desktop-macos.sh path
 ```
 
-Después compila:
+`download` verifica e instala el paquete de la arquitectura actual. `open` verifica una GUI aislada y la deja abierta. `path` imprime el ejecutable instalado con ruta absoluta. `mcp` inicia stdio sobre ese mismo binario; es una operación distinta de abrir la GUI. Clonar descarga el código; la instalación y apertura requieren completar estos pasos.
+
+**Firma:** Windows 2026.40 está NotSigned; ambos bundles Mac tienen firma ad-hoc, sin Developer ID/notarización acreditados. El checksum acredita integridad, no identidad del publicador ni aceptación de Gatekeeper/SmartScreen. CI nativo pasó en macOS 15; macOS 11 como mínimo configurado y el Mac del operador siguen sin comprobarse. Las guías mantienen las protecciones del sistema.
+
+## Por qué existe este fork
+
+El trabajo BIM conecta dibujos, geometría, información de ingeniería y personas. Este fork desarrolla la parte CAD y de automatización, con interfaces explícitas entre el editor, el cliente de IA, su ejecutor y quien revisa el resultado.
+
+El trabajo se concentra en:
+
+- **Entrega de escritorio utilizable:** paquetes verificados, instalaciones por usuario, rutas inequívocas y GUI/MCP funcionando fuera del repositorio.
+- **Automatización independiente del cliente:** una interfaz MCP nativa para descubrir sesiones, inspeccionar dibujos, ejecutar operaciones y capturar resultados.
+- **Entregables CAD trazables:** versiones DWG/DXF explícitas, auditoría, reapertura, hashes y evidencia conservada.
+- **Flujos abiertos de ingeniería:** conexión del trabajo CAD con un ecosistema BIM mediante contratos documentados e integraciones validadas por separado.
+- **Colaboración con el original:** integración de snapshots revisados y contribuciones acotadas, preservando autoría y licencia GPL.
+
+### Capacidades actuales y dirección BIM
+
+| Área | Estado |
+|---|---|
+| Base CAD | Dibujo DWG/DXF nativo, herramientas 2D y modelado 3D heredados de OpenCADStudio |
+| IA y MCP | Endpoint stdio y herramientas documentadas de sesiones, lectura, ejecución y captura |
+| Distribución | Paquetes publicados y verificados Windows x64, Mac ARM64 e Intel |
+| Robustez imagen → CAD | Campaña en curso con alcance acotado, contratos y evidencia; ver el [checkpoint](../automation/masterplan/05-CHECKPOINT-Y-CONTINUACION.md) |
+| Interoperabilidad BIM | Dirección del ecosistema; conectores IFC/IFCX/BCF y garantías de intercambio requieren implementación y aceptación propias |
+
+2026.40 acredita la distribución CAD/MCP aquí descrita. Autoría BIM completa, certificación IFC, conformidad de ingeniería y fidelidad CAD global tienen alcances de aceptación separados.
+
+## OpenAEC y atribución del proyecto
+
+[OpenAEC](https://open-aec.com/) desarrolla, apoya y promueve software de código abierto para la cadena AEC. Su sitio presenta Open CAD Studio, de Hakan Seven, como un proyecto comunitario alineado con su ecosistema. La iniciativa tiene su sede en Dordrecht, Países Bajos.
+
+| Rol | Referencia |
+|---|---|
+| Proyecto CAD original y autor | [Hakan Seven / OpenCADStudio](https://github.com/HakanSeven12/OpenCADStudio) |
+| Este fork y su mantenedor | [Luis Martínez / lalomalvi](https://github.com/lalomalvi), [repositorio del fork](https://github.com/lalomalvi/OpenCADStudio) |
+| Contexto de colaboración de Luis | [Iniciativa OpenAEC Foundation](https://open-aec.com/) |
+| Distribución y verificación del fork | [Releases](https://github.com/lalomalvi/OpenCADStudio/releases), [auditoría](../install/public-distribution-audit-20260928.md) |
+
+Este README documenta el propósito y los avances del fork. La aplicación, código y contribuciones originales conservan su atribución. La [demo web original](https://www.opencadstudio.com) se mantiene por separado; las releases de este repositorio entregan el escritorio/MCP del fork.
+
+## MCP nativo para automatización CAD
+
+| Herramienta | Función |
+|---|---|
+| `ocs_sessions` | Descubrir sesiones, estado de arranque e identidad del editor |
+| `ocs_read` | Inspeccionar capacidades, estado del documento, registros, geometría y resultados |
+| `ocs_execute` | Solicitar operaciones del editor, cambios de registros y lotes secuenciales |
+| `ocs_capture` | Capturar una imagen acotada del viewport o ventana para revisión |
+
+El cliente debe arrancar el ejecutable instalado con `--mcp`. Usa su ruta absoluta real como `command` y `["--mcp"]` como `args`. El comando `config` genera la configuración instalada y puede incluir el perfil aislado de una GUI abierta y verificada:
+
+```powershell
+& '.\scripts\desktop.ps1' config
+& '.\scripts\desktop.ps1' verify --gui
+```
+
+```bash
+bash scripts/desktop-macos.sh config
+bash scripts/desktop-macos.sh verify --gui
+```
+
+`verify --gui` cierra únicamente su sesión de prueba. Las aceptaciones usan perfiles privados y fixtures sintéticas. Se preservan dibujos y sesiones del usuario. Protocolo, resultado visual, persistencia e interoperabilidad CAD independiente conservan evidencias distintas.
+
+Consulta la [guía operativa MCP](../automation/README.md), [especificación API](../automation/API-SPEC.md), [guía de cliente](../automation/mcp_client.md) y [contrato para agentes](../install/agents.md).
+
+## Capacidades CAD heredadas
+
+- Lectura y escritura DWG/DXF con versiones objetivo explícitas.
+- Líneas, polilíneas, curvas, sombreados, referencias a objetos, capas, bloques y referencias externas.
+- Texto, cotas, tablas, espacio modelo/papel, viewports y estilos de trazado.
+- Primitivas sólidas, extrusión, revolución, barrido, loft, operaciones booleanas y teselación ACIS.
+- Renderizado GPU con `wgpu`, impresión/PDF en escritorio y plugins en procesos separados.
+- Núcleo Rust compartido entre escritorio y navegador; interfaz en 21 idiomas.
+
+![Espacio CAD heredado del proyecto OpenCADStudio original](../../site/workspace.png)
+
+Documentación de plugins: [arquitectura](../plugin-architecture.md), [plantilla](../plugin-template/README.md), [registro](../../plugins/README.md). Los bundles Mac incluyen RustPython; el ZIP Windows no incluye ese plugin opcional. Plugins de escritorio y capacidades de navegador tienen alcances distintos.
+
+## Verificación y límites conocidos
+
+Fuente de los paquetes publicados: [`af002fa17a795892792ecae26e87cfb5886047b9`](https://github.com/lalomalvi/OpenCADStudio/commit/af002fa17a795892792ecae26e87cfb5886047b9), Cargo **2026.40.0**, Rust **1.98.1**, build release limpio con **Cargo.lock / --locked**.
+
+- [CI nativo de distribución](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36484188603): tres plataformas aprobadas, incluidos paquetes, instalación, recursos, corrupción, MCP, GUI y CAD sintético; ambos Mac aprobaron Finder.
+- [CI de workspace y hosts](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36484188997): Rust workspace, automatización Python y hosts reales Windows/Linux aprobados.
+- Windows local verificó el mismo paquete publicado, fuera del checkout, con GUI aislada y dibujos sintéticos.
+
+La auditoría externa AutoCAD de los DWG sintéticos anteriores 2000/2013/2018 registró cero errores. El DXF 2000 conserva dos errores PLANT preexistentes y terminación al límite. Estas pruebas acotadas no acreditan paridad DWG/DXF global. Los recibos, hashes, intentos fallidos y gates restantes están en la [auditoría de distribución](../install/public-distribution-audit-20260928.md).
+
+## Compilar y contribuir
+
+Las guías [Windows](../install/windows.md) y [macOS](../install/macos.md) incluyen requisitos nativos, diagnóstico y el recorrido build → paquete → instalación → apertura. La distribución usa Rust **1.98.1** y **--locked**; no se declara un MSRV inferior probado. Los scripts no instalan dependencias globales silenciosamente.
 
 ```bash
 git clone https://github.com/lalomalvi/OpenCADStudio.git
 cd OpenCADStudio
-cargo build --locked --release --bin OpenCADStudio
 ```
 
-El binario resultante se escribe en `target/release/OpenCADStudio` (`OpenCADStudio.exe` en Windows).
+Luego sigue la guía de tu plataforma. El desarrollo Linux desde fuentes permanece disponible; la matriz publicada del fork cubre Windows y las dos arquitecturas Mac. El desarrollo web heredado utiliza `wasm32-unknown-unknown`, Trunk y wasm-bindgen-cli; su compilación se evalúa por separado de los paquetes nativos.
 
-### Web
+Se aceptan [pull requests acotados para este fork](https://github.com/lalomalvi/OpenCADStudio/pulls), con problema, alcance, revisión de fuente y evidencia. Para contribuciones al CAD original, consulta [upstream](https://github.com/HakanSeven12/OpenCADStudio). Sigue la [política de seguridad](../../SECURITY.md) para reportar vulnerabilidades.
 
-Instala una vez el destino WebAssembly y las herramientas de compilación:
+## Documentación y registro del trabajo
 
-```bash
-rustup target add wasm32-unknown-unknown
-cargo install trunk wasm-bindgen-cli
-```
+- [README principal en inglés](../../README.md)
+- [Instalación Windows](../install/windows.md) e [instalación macOS](../install/macos.md)
+- [API MCP](../automation/API-SPEC.md) y [guía de automatización](../automation/README.md)
+- [Masterplan imagen → CAD](../automation/masterplan/00-INDICE.md) y [checkpoint vigente](../automation/masterplan/05-CHECKPOINT-Y-CONTINUACION.md)
+- [Procedimiento de sincronización upstream](../automation/FORK-SYNC.md)
+- [Auditoría de distribución pública](../install/public-distribution-audit-20260928.md)
 
-Inicia el servidor de desarrollo:
+Las versiones inglesa y española describen el propósito y entrega actuales del fork. Las demás traducciones conservan contenido de upstream; las guías y auditorías enlazadas gobiernan la distribución específica del fork.
 
-```bash
-trunk serve
-```
+## Licencia y crédito
 
-## Automatización
+OpenCADStudio y este fork se distribuyen bajo [GNU GPL v3](../../LICENSE). Al redistribuir, conserva los avisos de copyright, licencia y obligaciones de código fuente. Hakan Seven y los contribuidores originales conservan el crédito por el CAD de base; los cambios del fork tienen su autoría en el historial Git.
 
-El binario de escritorio admite conversión puntual y un servidor persistente sin interfaz:
-
-```bash
-OpenCADStudio --export input.dwg output.dxf
-OpenCADStudio --serve
-OpenCADStudio --serve --port 4242
-OpenCADStudio --mcp
-```
-
-El servidor intercambia un objeto JSON por línea mediante entrada/salida estándar o un socket TCP local. Consulta la [guía de automatización](../automation/README.md).
-
-## Complementos
-
-Los complementos de escritorio se ejecutan en procesos separados y se comunican con el anfitrión mediante la API de complementos versionada. La versión del navegador no carga complementos nativos.
-
-- [Arquitectura de complementos](../plugin-architecture.md)
-- [Plantilla de complemento](../plugin-template/README.md)
-- [Registro de complementos](../../plugins/README.md)
-
-## Documentación del proyecto
-
-- [API de automatización](../automation/README.md)
-- [Arquitectura de complementos](../plugin-architecture.md)
-- [Canal de teselación](../tessellation.md)
-- [Política de seguridad](../../SECURITY.md)
-
-## Contribuir
-
-Son bienvenidos los informes de errores, pull requests específicos, traducciones, mejoras de documentación y contribuciones de complementos.
-
-- Busca en los [issues](https://github.com/HakanSeven12/OpenCADStudio/issues) existentes antes de abrir un informe nuevo.
-- Usa [Discussions](https://github.com/HakanSeven12/OpenCADStudio/discussions) para preguntas e ideas.
-- Informa de vulnerabilidades de forma privada siguiendo la [política de seguridad](../../SECURITY.md).
-
-## Crecimiento del proyecto
-
-<a href="https://github.com/HakanSeven12/OpenCADStudio/stargazers">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://www.opencadstudio.com/star-history-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="https://www.opencadstudio.com/star-history-light.svg">
-    <img alt="Estrellas y descargas de versiones de Open CAD Studio" src="https://www.opencadstudio.com/star-history-light.svg">
-  </picture>
-</a>
-
-## Apoya el proyecto
-
-Si Open CAD Studio te ayuda en tu trabajo, apoya su desarrollo mediante [GitHub Sponsors](https://github.com/sponsors/HakanSeven12) o [Patreon](https://www.patreon.com/HakanSeven12).
-
-## Licencia
-
-Open CAD Studio se distribuye bajo la [Licencia Pública General de GNU v3.0](../../LICENSE).
+Para apoyar el desarrollo original: [GitHub Sponsors de Hakan Seven](https://github.com/sponsors/HakanSeven12).

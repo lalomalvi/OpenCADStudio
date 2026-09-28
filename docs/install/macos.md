@@ -1,8 +1,9 @@
 # macOS: install, locate and open this fork
 
 This is **lalomalvi/OpenCADStudio**. A clone is source, not a `.app` installation.
-The [fork releases](https://github.com/lalomalvi/OpenCADStudio/releases) had no
-releases on **2026-09-28**. Upstream's DMG is not proof of this fork's MCP.
+The [fork release 2026.40](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40)
+was published on **2026-09-28**, with separate Apple Silicon and Intel ZIPs,
+checksums and manifests from source af002fa17a795892792ecae26e87cfb5886047b9.
 
 The new workflow builds **separate** Apple Silicon (`aarch64-apple-darwin`) and
 Intel (`x86_64-apple-darwin`) packages on native runners. Producer af002fa1
@@ -62,8 +63,9 @@ bash scripts/desktop-macos.sh open
 bash scripts/desktop-macos.sh path
 ```
 
-Today `download` reports no compatible fork package and exits 2. When given a
-reviewed local/CI ZIP, install it with:
+`download --tag v2026.40` selects the published package for the native host
+architecture. If no compatible package exists it exits 2 with the source route.
+For an already downloaded, reviewed ZIP, install it with:
 
 ```bash
 bash scripts/desktop-macos.sh install --package "$HOME/Downloads/EXACT_PACKAGE.zip"

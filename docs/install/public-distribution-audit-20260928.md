@@ -440,3 +440,46 @@ junto con sus resultados nativos, toolchain y receipt completos. El fingerprint
 no documental debe coincidir antes del push. [skip ci] en el commit documental
 evita repetir los mismos gates solo para cambiar la etiqueta de evidencia;
 no acredita pruebas nuevas ni oculta un fallo pendiente.
+
+
+### Publicación autorizada y verificada — 2026-09-28
+
+Luis autorizó explícitamente crear/publicar v2026.40 con el estado de firma
+revisado y pidió explicar el propósito BIM y su colaboración con OpenAEC en el
+README. El tag anotado v2026.40 se creó sobre af002fa17a795892792ecae26e87cfb5886047b9,
+sin mover main ni sobrescribir tags. Se creó draft del fork y se subieron los
+nueve assets revisados. verify-native --allow-draft descargó los assets reales
+y aprobó checksums, manifests, todos los payload hashes y fuente/tag. Solo
+entonces se promovió y verify-native volvió a aprobar la release pública.
+
+[Release pública 2026.40](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40),
+publishedAt 2026-09-28T22:23:47Z, isDraft=false, isPrerelease=false, nueve assets
+uploaded con los tamaños/hashes de la tabla anterior. El evento published
+inició [Release 36492126353](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36492126353),
+que terminó success verificando en read-only; no recompiló paquetes nativos.
+El workflow web heredado también arrancó (36492126137); su publicación se
+registra por separado y no establece aceptación nativa.
+
+Se ejecutó también el helper real download --tag v2026.40 desde la API pública,
+sin sustituir el ZIP por un artifact CI. Verificó e instaló/reutilizó el slot
+Windows 69be418ef7ba23ed; fuente, hash y MCP stdio/EOF volvieron a coincidir.
+Evidencia: target/distribution-port/public-download-verification-2026.40/summary.json;
+ZIP descargado en target/distribution-port/public-download-2026.40/.
+
+README principal y español describen ahora al mantenedor Luis Martínez
+(lalomalvi), su propósito de desarrollar la capa CAD/MCP de un ecosistema BIM y
+la colaboración con la iniciativa OpenAEC Foundation declarada por él. El sitio
+oficial https://open-aec.com/en/ verifica el contexto AEC, Dordrecht/Países Bajos
+y la atribución de OpenCADStudio original a Hakan Seven como proyecto comunitario.
+No se atribuye al fork certificación IFC ni integración IFC/IFCX/BCF aceptada.
+La documentación conserva créditos/licencia y distingue avances de dirección BIM.
+Firma confiable, prueba del Mac del operador y mínimo macOS 11 siguen pendientes.
+
+El paquete descargado públicamente también se abrió con el helper: GUI Drawing1
+renderizada inspeccionada, mismo EXE/commit/hash y MCP aprobado. PID propio
+12768, left_open=true, configuración privada; la GUI se dejó abierta.
+Evidencia: target/distribution-port/public-open-verification-2026.40/summary.json
+y gui.png. No se modificaron dibujos privados ni la instalación histórica.
+Los enlaces relativos de ambos README y sus fences se comprobaron; diff-check
+aprobó. Esta actualización es exclusivamente Markdown, con las mismas fuentes
+no documentales que el productor público, y no exige recompilar paquetes.
