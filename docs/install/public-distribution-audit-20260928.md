@@ -210,3 +210,29 @@ y rechazando sandbox=false. Sintaxis bash y diff-check pasaron en Windows.
 Eso no acredita la corrección nativa Mac ni notarización; requiere su próximo
 productor. El log bundle y el summary originales se conservan en
 `target/distribution-port/evidence-macos-arm64-0ec/`.
+
+### Binding CI y límite externo DXF
+
+El [run Tests 36467984171](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36467984171)
+terminó con success en workspace Rust, masterplan Python, hosts Windows/Linux y
+sync-verification. El receipt descargado y validado identifica exactamente
+**5d60eff15b5ed45e15d2b70d4ccc64688db626dd**, con scopes
+rust_workspace/python/host y fingerprint
+`07df1e8d211b183cc991a71f378dd67f2af4c67a5085efff5454f1fb75fe8987`.
+Así se comprobó el binding corregido, no solo el color del check.
+Una comparación diferencial en el mismo entorno UTF-8 confirmó que el wrapper
+anterior devuelve RPC -32700, mientras el corregido devuelve el initialize
+esperado y EOF limpio. Resultado: `target/distribution-port/bom-differential.json`.
+
+La sonda externa adicional del DXF 2000 sí abrió el archivo y contó las cinco
+entidades de Model, pero AutoCAD AUDIT encontró **2 errores, 0 fixed**, ambos
+por Description Unprintable del linetype PLANT. Se conservó el dibujo y el log,
+sin reparación. La fixture histórica Windows 2026.38 produjo exactamente los
+mismos dos errores de PLANT y las mismas cinco entidades en una copia read-only;
+source/copy SHA-256 iguales:
+`7df8d518c65340d4140dd6f1b5a6a1ba350320926e3b13125598b5907bff94ba`.
+El asset PLANT también coincide en el baseline 0fa6f008.
+Esto es una limitación externa preexistente de ese caso DXF, no se atribuye a
+la integración actual. No se declara auditoría externa DXF limpia, reparación,
+ni fidelidad CAD global. Ambos procesos alcanzaron el límite y se terminaron.
+Evidencia de comparación: `target/distribution-port/baseline-dxf-0fa/report.json`.
