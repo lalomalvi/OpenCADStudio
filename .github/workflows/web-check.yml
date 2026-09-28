@@ -23,6 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate website and fork regressions
+        run: |
+          python3 scripts/test_site.py
+          python3 scripts/test_public_site.py
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown

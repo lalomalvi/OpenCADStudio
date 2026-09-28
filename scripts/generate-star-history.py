@@ -87,8 +87,6 @@ def fetch_star_dates(repository: str, token: str | None) -> list[datetime]:
     else:
         raise RuntimeError("stargazer pagination exceeded 100 pages")
 
-    if not dates:
-        raise RuntimeError("GitHub returned no dated stargazers")
     dates.sort()
     return dates
 
@@ -133,8 +131,6 @@ def fetch_release_downloads(
         raise RuntimeError("release pagination exceeded 100 pages")
 
     releases.sort(key=lambda release: release[1])
-    if len(releases) < 2:
-        raise RuntimeError("GitHub returned fewer than two published releases")
     return releases[:-1]
 
 
@@ -185,7 +181,7 @@ def render_svg(
         axis_label = "Downloads / release"
         line_color = colors["download_line"]
         point_color = colors["download_point"]
-        last_label = f"{releases[-1][0]} · {releases[-1][2]}"
+        last_label = f"{releases[-1][0]} · {releases[-1][2]}" if releases else ""
 
     if labels:
         title = labels["stars" if stars else "downloads"]
@@ -197,6 +193,20 @@ def render_svg(
             last_label = str(len(dates))
         else:
             subtitle = labels["chart_totals"].format(count=f"{total_downloads:,}", releases=len(releases)) + " · " + subtitle
+
+    if not points:
+        # Empty repositories and a first release are valid observations. Do not
+        # invent historical points or count the deliberately excluded latest.
+        return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-labelledby="title description">
+<title id="title">{escape(title)}</title>
+<desc id="description">{escape(subtitle)}</desc>
+<rect width="{WIDTH}" height="{HEIGHT}" rx="14" fill="{colors["background"]}" stroke="{colors["border"]}" />
+<g font-family="sans-serif" fill="{colors["text"]}">
+<text x="72" y="52" font-size="21">{escape(title)}</text>
+<text x="72" y="92" font-size="13">{escape(subtitle)}</text>
+<text x="480" y="240" text-anchor="middle" font-size="64">0</text>
+<text x="480" y="290" text-anchor="middle" font-size="16">{escape(axis_label)}</text>
+</g></svg>'''
 
     start = points[0][0] - timedelta(days=2)
     end = max(now, points[-1][0]) + timedelta(days=2)
@@ -313,7 +323,7 @@ def main() -> None:
     )
     parser.add_argument("--output-dir", type=Path, default=Path("dist"))
     args = parser.parse_args()
-    catalogs = {path.stem: json.loads(path.read_text()) for path in (Path(__file__).resolve().parents[1] / "site/locales").glob("*.json")}
+    catalogs = {path.stem: json.loads(path.read_text(encoding="utf-8")) for path in (Path(__file__).resolve().parents[1] / "site/locales").glob("*.json")}
 
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     dates = fetch_star_dates(args.repository, token)

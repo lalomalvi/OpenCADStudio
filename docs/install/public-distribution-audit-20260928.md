@@ -483,3 +483,36 @@ y gui.png. No se modificaron dibujos privados ni la instalación histórica.
 Los enlaces relativos de ambos README y sus fences se comprobaron; diff-check
 aprobó. Esta actualización es exclusivamente Markdown, con las mismas fuentes
 no documentales que el productor público, y no exige recompilar paquetes.
+
+## Corrección posterior: web y descripción PLANT (candidato)
+
+Base del fork: 9dc82a6d2376bae3136db101f1e61054d86945a7. Preflight actualizado
+2026-09-28T23:21Z observa upstream 0a3dab12e3e92b2be6adb368ce617669364c0671,
+siete commits posteriores; se reservan para otro ciclo. Esta corrección no
+mueve el tag ni sustituye los nueve assets públicos v2026.40.
+
+Web 36492126137 falló después de compilar WASM: el token personalizado de
+las gráficas devolvió HTTP 401. El candidato utiliza github.token, acepta cero
+estrellas y una sola release (la más reciente sigue excluida de la historia),
+genera un snapshot vacío cuando Discussions está deshabilitado y toma la URL
+real de Pages. La web del fork usa sus enlaces/repositorio, canonicals, sitemap,
+manifest y navegación bajo /OpenCADStudio/; no copia el CNAME de upstream.
+Las 21 traducciones y dos pruebas focalizadas aprobaron localmente. La prueba
+nueva se incorpora al check web CI. Deploy y URLs públicas aún requieren
+verificación remota antes de llamarlos aprobados.
+
+La sonda aislada en target/distribution-port/dxf-plant-isolation-20260928/
+conservó las cinco entidades y los hashes de ambos DXF: baseline reprodujo dos
+advertencias Description Unprintable PLANT; cambiar solo esa descripción a
+Plant pattern produjo Total errors found 0 fixed 0. El catálogo modifica
+exclusivamente dicha descripción, conserva segmentos, shapes, longitudes y
+unidades. No reescribe archivos existentes del usuario. La codificación general
+de descripciones DXF arbitrarias sigue fuera de esta corrección acotada.
+Ambas sondas terminaron forzadamente porque QUIT esperaba confirmar descarte;
+se debe responder Yes en la siguiente verificación privada de solo lectura.
+Aún falta acreditar el DXF exportado por el binario nuevo, no solo la copia.
+
+No se encontraron certificados de firma de código en CurrentUser/My ni en
+LocalMachine/My. La firma confiable requiere una credencial del editor externa;
+no se crea una autofirmada ni se cambia SmartScreen. Prueba del Mac del operador,
+notarización y mínimo macOS 11 continúan separados.

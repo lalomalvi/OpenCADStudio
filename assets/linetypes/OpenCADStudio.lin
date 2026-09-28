@@ -114,7 +114,7 @@ A,.00254,-5.08,[ZIG,ltypeshp.shx,X=-5.08,S=5.08],-10.16,[ZIG,ltypeshp.shx,R=180,
 A,25.4,[PT1,ltypeshp.shx,s=5.08],-5.86232
 *POINT2,----\/-----\/---
 A,25.4,[PT2,ltypeshp.shx,s=5.08],-5.86232
-*PLANT,_/^\_\^\_
+*PLANT,Plant pattern
 A,0.01,[PLANT1,ltypeshp.shx,s=1.0],-3.0,[PLANT2,ltypeshp.shx,s=1.0],-3.15,[PLANT3,ltypeshp.shx,s=1.0],-4.23,[PLANT4,ltypeshp.shx,s=1.0],-4.63,[PLANT5,ltypeshp.shx,s=1.0],-2.5,[PLANT6,ltypeshp.shx,s=1.0],-4.42
 
 *DRAINAGE,Drainage ---->---->---->----

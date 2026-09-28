@@ -82,11 +82,17 @@ jobs:
             test "v$VERSION" = "$RELEASE_TAG"
           fi
 
+      - name: Read GitHub Pages URL
+        id: pages
+        uses: actions/configure-pages@v5
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
       - name: Install trunk
         uses: taiki-e/install-action@v2
@@ -107,7 +113,9 @@ jobs:
           tool: wasm-bindgen@${{ steps.wasm-bindgen-version.outputs.version }}
 
       - name: Build web bundle
-        run: trunk build --locked --release --public-url /app/ --dist dist/app --html-output index.html web-app.html
+        env:
+          SITE_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: trunk build --locked --release --public-url "$SITE_BASE_PATH/app/" --dist dist/app --html-output index.html web-app.html
 
       - name: Check out current website
         uses: actions/checkout@v4
@@ -121,6 +129,9 @@ jobs:
 
       - name: Assemble landing page
         working-directory: website
+        env:
+          OCS_SITE_URL: ${{ steps.pages.outputs.base_url }}
+          OCS_SITE_REPOSITORY: ${{ github.repository }}
         run: sh scripts/assemble-site.sh "$GITHUB_WORKSPACE/dist"
 
       - name: Record website source
@@ -260,8 +271,8 @@ jobs:
       # Publish separate light/dark charts for stars and release downloads.
       - name: Generate project growth charts
         env:
-          GITHUB_TOKEN: ${{ secrets.OCS_GITHUB_TOKEN }}
-        run: python3 website/scripts/generate-star-history.py --output-dir dist
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 website/scripts/generate-star-history.py --repository "$GITHUB_REPOSITORY" --output-dir dist
 
       # Browsers cannot reliably fetch YouTube playlist/oEmbed responses because
       # of CORS. Build a same-origin listing and thumbnail directory for the
@@ -332,6 +343,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_discussions)" != "true" ]; then
+            printf '[]\n' > dist/app/discussions.json
+            echo "discussions disabled: empty public snapshot"
+            exit 0
+          fi
           QUERY='
             query($owner: String!, $name: String!) {
               repository(owner: $owner, name: $name) {

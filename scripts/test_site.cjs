@@ -55,3 +55,12 @@ keyboard.escape();
 assert.equal(keyboard.menuOpen(), false);
 assert.equal(keyboard.focused(), true);
 console.log('Website language matching, redirects, manual choices and blocked storage passed');
+
+const projectSource = source.replace('const SITE_BASE_PATH = "";', 'const SITE_BASE_PATH = "/OpenCADStudio";');
+const projectContext = visit('en-US').context;
+projectContext.navigator.language = 'es-MX';
+projectContext.location.pathname = '/OpenCADStudio/';
+let projectRedirect;
+projectContext.location.replace = url => { projectRedirect = url; };
+vm.runInNewContext(projectSource, {...projectContext});
+assert.equal(projectRedirect, '/OpenCADStudio/es-ES/?ref=test#formats');

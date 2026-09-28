@@ -3,15 +3,32 @@
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import sys
 from html import escape
+from urllib.parse import urlsplit
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = "https://www.opencadstudio.com"
-REPO = "https://github.com/HakanSeven12/OpenCADStudio"
+BASE = os.environ.get("OCS_SITE_URL", "https://www.opencadstudio.com").rstrip("/")
+SITE = urlsplit(BASE)
+if SITE.scheme != "https" or not SITE.netloc or SITE.query or SITE.fragment:
+    raise ValueError("OCS_SITE_URL must be an absolute HTTPS site URL")
+PREFIX = SITE.path.rstrip("/")
+REPO = "https://github.com/" + os.environ.get("OCS_SITE_REPOSITORY", "HakanSeven12/OpenCADStudio")
+
+def site_paths(html):
+    return re.sub(r'(\b(?:href|src)=["\'])/(?!/)', lambda match: match[1] + PREFIX + "/", html)
+
+def manifest_paths(value):
+    if isinstance(value, dict):
+        return {key: manifest_paths(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [manifest_paths(item) for item in value]
+    return PREFIX + value if isinstance(value, str) and value.startswith("/") else value
+
 
 
 def locale_path(locale):
@@ -23,7 +40,7 @@ def public_path(locale):
 
 
 def load_catalogs():
-    catalogs = {p.stem: json.loads(p.read_text()) for p in sorted((ROOT / "site/locales").glob("*.json"))}
+    catalogs = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in sorted((ROOT / "site/locales").glob("*.json"))}
     supported = {p.parent.name for p in (ROOT / "locales").glob("*/opencadstudio.ftl")}
     if catalogs.keys() != supported:
         raise ValueError(f"Website locale mismatch: {catalogs.keys() ^ supported}")
@@ -41,7 +58,7 @@ def load_catalogs():
 
 def build(output):
     catalogs = load_catalogs()
-    template = (ROOT / "index.html").read_text()
+    template = (ROOT / "index.html").read_text(encoding="utf-8")
     (output / "assets").mkdir(parents=True, exist_ok=True)
 
     def asset(source):
@@ -60,13 +77,13 @@ def build(output):
              '<link rel="icon" href="/favicon.png" type="image/png" sizes="96x96" />\n'
              '<link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />\n'
              '<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />')
-    manifest = json.loads((ROOT / "site/site.webmanifest").read_text())
+    manifest = json.loads((ROOT / "site/site.webmanifest").read_text(encoding="utf-8"))
     manifest["icons"] = [{"src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml"}]
     for size in (192, 512):
         manifest["icons"].append({"src": asset(ROOT / f"site/icon-{size}.png"), "sizes": f"{size}x{size}", "type": "image/png"})
     shutil.copyfile(ROOT / "site/apple-touch-icon.png", output / "apple-touch-icon.png")
     css_version = hashlib.sha256((ROOT / "site/site.css").read_bytes()).hexdigest()[:12]
-    script = "const SITE_LOCALES = " + json.dumps(list(catalogs)) + ";\n" + (ROOT / "site/site.js").read_text()
+    script = "const SITE_BASE_PATH = " + json.dumps(PREFIX) + ";\n" + "const SITE_LOCALES = " + json.dumps(list(catalogs)) + ";\n" + (ROOT / "site/site.js").read_text(encoding="utf-8")
     (output / "site.js").write_text(script, encoding="utf-8")
     js_version = hashlib.sha256(script.encode()).hexdigest()[:12]
     alternates = '\n'.join(f'<link rel="alternate" hreflang="{lang}" href="{BASE}{public_path(lang)}" />' for lang in catalogs)
@@ -105,11 +122,20 @@ def build(output):
                                       if locale == "en-US" else ""),
                       schema=json.dumps(schema, ensure_ascii=False).replace("<", "\\u003c"))
         rendered = re.sub(r"\{\{(\w+)\}\}", lambda match: values[match[1]], template)
+        rendered = rendered.replace("https://www.opencadstudio.com", BASE).replace(
+            "https://github.com/HakanSeven12/OpenCADStudio", REPO)
+        if REPO != "https://github.com/HakanSeven12/OpenCADStudio":
+            rendered = rendered.replace(
+                '<body>', '<body><aside style="padding:12px;text-align:center">'
+                'Community fork by Luis Mart\u00ednez (lalomalvi) for an open BIM ecosystem. '
+                'Original project by Hakan I\u015f\u0131k. '
+                f'<a href="{REPO}#readme">Fork scope and OpenAEC context</a></aside>')
+        rendered = site_paths(rendered)
         (destination / "index.html").write_text(rendered, encoding="utf-8")
         localized_manifest = {**manifest, "lang": locale, "dir": values["direction"],
                               "description": messages["description"], "start_url": path,
                               "shortcuts": [{"name": messages["launch"], "url": "/app/"}]}
-        (destination / "site.webmanifest").write_text(json.dumps(localized_manifest, ensure_ascii=False, indent=2) + '\n', encoding="utf-8")
+        (destination / "site.webmanifest").write_text(json.dumps(manifest_paths(localized_manifest), ensure_ascii=False, indent=2) + '\n', encoding="utf-8")
     for filename in ("index.html", "site.webmanifest"):
         shutil.copyfile(output / "en-US" / filename, output / filename)
     urls = ''.join(f'<url><loc>{BASE}{public_path(locale)}</loc></url>\n' for locale in catalogs)
@@ -117,8 +143,9 @@ def build(output):
 
     app = output / "app/index.html"
     if app.exists():
-        html = re.sub(r'<link\b(?=[^>]*\brel=["\'](?:(?:shortcut )?icon|apple-touch-icon)["\'])[^>]*>', '', app.read_text())
-        app.write_text(html.replace('</head>', icons + '\n</head>'), encoding="utf-8")
+        html = re.sub(r'<link\b(?=[^>]*\brel=["\'](?:(?:shortcut )?icon|apple-touch-icon)["\'])[^>]*>', '', app.read_text(encoding="utf-8"))
+        app.write_text(html.replace('</head>', site_paths(icons) + '\n</head>'), encoding="utf-8")
+    (output / "robots.txt").write_text("User-agent: *\nAllow: /\nSitemap: " + BASE + "/sitemap.xml\n", encoding="utf-8")
     print(f"Built {len(catalogs)} website languages and current application icons")
 
 

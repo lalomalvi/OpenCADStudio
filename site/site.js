@@ -14,8 +14,9 @@ function preferredLocale(language) {
   let saved;
   try { saved = localStorage.getItem(storageKey); } catch {}
   const locale = SITE_LOCALES.includes(saved) ? saved : preferredLocale(navigator.language);
-  if ((location.pathname === "/" || location.pathname === "/index.html") && locale !== "en-US") {
-    location.replace(`/${locale}/${location.search}${location.hash}`);
+  const root = SITE_BASE_PATH + "/";
+  if ((location.pathname === root || location.pathname === root + "index.html") && locale !== "en-US") {
+    location.replace(`${root}${locale}/${location.search}${location.hash}`);
   }
   document.addEventListener("click", event => {
     const link = event.target.closest(".language-picker a[hreflang]");
