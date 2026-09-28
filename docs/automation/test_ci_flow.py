@@ -83,8 +83,9 @@ class FlowTests(unittest.TestCase):
             manifest = {'schema': 'fork-ci-runtime-1', 'source_sha': sha,
                         'source_fingerprint': key, 'platform': 'windows',
                         'rustc': 'host: x86_64-pc-windows-msvc',
-                        'build_command': ['cargo', 'build', '--locked', '--bin', 'OpenCADStudio'],
-                        'features': 'default',
+                        'build_command': runtime.BUILD,
+                        'features': 'rust-embed/debug-embed',
+                        'startup_without_source_locales': 'passed',
                         'version': 'revision: ' + sha[:12],
                         'files': {name: {'sha256': runtime.digest(root / name),
                                          'bytes': (root / name).stat().st_size} for name in runtime.FILES}}
@@ -107,6 +108,23 @@ class FlowTests(unittest.TestCase):
             (root / 'runtime.json').write_text(json.dumps(manifest))
             with self.assertRaises(ValueError):
                 runtime.verify(root, sha, key)
+
+    def test_locale_relocation_is_ci_only_and_restores_after_failure(self):
+        with self.fixture_dir() as directory:
+            root = Path(directory)
+            (root / 'locales').mkdir()
+            (root / 'locales/source.ftl').write_text('fixture source\n')
+            with patch.dict(runtime.os.environ, {'GITHUB_ACTIONS': 'false'}):
+                with self.assertRaises(ValueError):
+                    runtime.check_portability(root, root / 'fake.exe')
+            def failed_start(*args, **kwargs):
+                self.assertFalse((root / 'locales').exists())
+                return runtime.subprocess.CompletedProcess(args[0], 101, '', 'missing locales')
+            with patch.dict(runtime.os.environ, {'GITHUB_ACTIONS': 'true'}):
+                with patch.object(runtime.subprocess, 'run', side_effect=failed_start):
+                    with self.assertRaises(ValueError):
+                        runtime.check_portability(root, root / 'fake.exe')
+            self.assertEqual((root / 'locales/source.ftl').read_text(), 'fixture source\n')
 
 
 if __name__ == '__main__':

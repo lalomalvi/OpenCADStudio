@@ -157,6 +157,13 @@ No se ejecuta al descargarlo y no se presenta como release/instalador. Artefacto
 expirados, ausentes o alterados no se reutilizan. No atribuir al runner pruebas IO
 Windows que el host Python no ejecuta: una regresión IO exige su test específico.
 
+El runner debug portátil usa `--features rust-embed/debug-embed`: incrusta idiomas
+que un build debug normal busca en el checkout donde se compiló. Antes de subir
+el artefacto, CI oculta temporalmente su propia carpeta locales, verifica discovery
+MCP y la restaura incluso ante fallo. Ese ensayo se restringe al checkout de CI;
+no se ocultan recursos en el equipo del usuario. El primer artefacto 90a3d269 falló
+localmente por esta dependencia de idiomas y queda como ensayo histórico fallido.
+
 ## Ritmo, presupuesto y eliminación del trabajo repetido
 
 - Antes de trabajar, o una vez por jornada activa: un fetch y preflight; sin delta,

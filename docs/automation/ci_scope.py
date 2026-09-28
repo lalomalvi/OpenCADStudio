@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 from fork_sync import changed, classify, fingerprint, git
 
-POLICY = 'fork-ci-1'
+POLICY = 'fork-ci-2'
 POLICY_FILES = {'docs/automation/ci_scope.py', 'docs/automation/ci_runtime.py'}
 
 
