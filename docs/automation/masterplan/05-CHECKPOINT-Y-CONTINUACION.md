@@ -1965,3 +1965,90 @@ siendo 70db2a4d, con su evidencia del corte 157; M1/M3/M7/M8 siguen parciales.
 Continuidad: aplicar el prompt final de FORK-SYNC.md. Medir un próximo ciclo antes
 de afirmar una mejora sostenida; si se optimiza CI, comprobar los casos de rutas y
 la atribución SHA/hash del artefacto, sin convertir checks omitidos en aprobados.
+
+## Corte 159: flujo automatizado, runner reutilizable y aceptación — 2026-09-27
+
+Luis autorizó continuar para mejorar el flujo y eliminar repeticiones. Se conserva
+upstream congelado `c623a016956e5c397351660b91f04bb504bab20d`, ancestro del candidato.
+Base main del fork `a85b2a26467a0c280ffeb6f6d1cc14d42c2ddce6`; código de automatización
+aprobado y publicado sin force en main/rama del fork al redactar:
+`f491490f2ab88fcc0e99f3019fce002ea0eb4d89`. Worktree operativo mcp-upstream-integration,
+rama codex/mcp-upstream-sync-20260927. Origin lalomalvi/OpenCADStudio; upstream
+HakanSeven12/OpenCADStudio solo lectura. El commit siguiente cierra documentación;
+su SHA local/remoto se entrega después de publicar, sin autorreferencia.
+
+**Implementado:** ci_scope.py selecciona por delta Git: prosa no ejecuta Rust/Python/host;
+Python ejecuta sus suites; nativo/infraestructura, selector/empaquetador o base ausente
+exigen alcance completo. Tests llama al host reusable Linux/Windows y termina en
+sync-verification con recibo explícito. Un skipped/cancelled no aprueba un gate requerido.
+fork_sync_ci.py observa runs del SHA antes de enviar; un claim atómico local conserva
+el envío incierto y bloquea redispatch automático. CI Windows empaqueta EXE/plugin ya
+construidos, con revisión, toolchain, features, tamaños y hashes; la descarga no ejecuta.
+AGENTS.md y FORK-SYNC.md son las instrucciones persistentes para futuros agentes.
+
+**Fallo encontrado y corregido:** candidato inicial `90a3d269062d6d94e6320d78836860ef4c46b781`
+pasó [CI 36371884983](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36371884983),
+pero su EXE debug falló aquí antes de CAD (exit 101: en-US/opencadstudio.ftl ausente).
+Buscaba idiomas en la máquina compiladora. Ensayos fallidos preservados:
+target/mcp-isolated/20260927-211258-38a5c187/report.json y
+target/ci-flow/startup-20260927-211412-04de7b89/report.json. El candidato corregido
+incrusta locales mediante rust-embed/debug-embed. CI oculta solo su propia carpeta de
+idiomas durante discovery MCP, la restaura incluso ante fallo y exige el arranque
+antes de subir el paquete. Política fork-ci-2 impide reutilizar el recibo antiguo.
+No se ocultaron recursos ni se modificaron perfiles globales en el equipo de Luis.
+
+| Verificación de f491490f | Resultado | Evidencia |
+|---|---|---|
+| CI unificado y check de cierre | completed/success, Rust + Python + host Linux/Windows | [36373266340](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36373266340) |
+| Workspace Linux CI | 1979 passed, 0 failed, 26 ignored; 31 grupos | target/fork-flow-acceptance/f491490f2ab8/test.log |
+| Python CI | masterplan 202/202, automation 56/56 | masterplan-python.log en esa misma carpeta |
+| Política y recuperación focalizadas locales | 7/7; matriz, gates omitidos, SHA/política, envío incierto, hashes y restauración de idiomas | test_ci_flow.py; actionlint 1.7.7 aprobó ambos workflows |
+| Selección sobre Git sintético real | 5 casos: prosa, Python, manifest, nativo y base ausente | selection-fixtures.json en esa misma carpeta; ensayo original de 90a3d269, selector sin cambio de lógica |
+| Reutilización real del recibo | mismos tres gates requeridos, flags false; reuse_run 36373266340 | reuse-selection.json y reuse-flags.txt en esa misma carpeta |
+| No duplicación de CI | --start tras éxito devolvió verified y mismo ID; un run antes de publicar main | report.json en esa misma carpeta |
+| EXE CI en GUI local nueva | passed, 3 entidades, save_verified/reapertura, captura fenced y cierre GUI | target/mcp-isolated/20260927-213257-a5240283/report.json |
+| AutoCAD independiente | 3/3 geometrías/handles a 1e-6; INSUNITS 6, AUDIT 0 errores/0 reparaciones, entrada intacta | target/mcp-external/20260927-213325-autocad-88e2fb33/report.json |
+
+Runner descargado: target/fork-sync-ci/runtime-f491490f2ab8-1a5b51be/OpenCADStudio.exe.
+Su runtime.json registra productor f491490f/36373266340, rustc 1.98.1 MSVC,
+OpenCADStudio 2026.39+gf491490f y arranque sin locales fuente passed. SHA256 EXE
+`b643d02729224542a03c26abcf020a11af7ae4924156e9ad75b16b68c8fdde3a` (205365760 bytes),
+L2 `3ac0bd1671626202422fda2bc0a03433aa9483de8f1c18269c204bfa776a11de`, AutoCAD
+`6a3ea41af137fa11acd7d1235847544bf58608f077da101c0a7480ea7bd10ae5`.
+El resumen único local es target/fork-flow-acceptance/f491490f2ab8/report.json.
+No confundir la revisión del binario productor con el commit Markdown posterior.
+
+**Tiempo y repeticiones:** run corregido 12 min 23 s; job workspace 6 min 30 s,
+Python 18 s, host Linux 7 min 56 s y host Windows 11 min 43 s, solapados: no sumar.
+Cero nuevas compilaciones Cargo locales en esta mejora. Hubo dos candidatos nativos
+distintos porque el primer paquete falló realmente, no dos reintentos del mismo gate.
+No se promete un porcentaje sostenido de aceleración a partir de este único ciclo.
+El cierre Markdown se comprueba por separado con su alcance real; el recibo final se
+guarda en target/fork-flow-acceptance/doc-close.json y se informa su ID al cerrar.
+
+**Límites y pendientes:** el claim es local, no lock distribuido entre equipos. La
+reutilización automática de recibos es del mismo SHA; un cierre documental puede
+descargar explícitamente con --reuse-ref f491490f si la huella no documental coincide.
+Artefactos expirados/alterados y recibos sin cobertura no se aceptan. Optimización de
+post-cache/features queda para medición posterior. Este es un runner de pruebas,
+no paquete release/instalador. M1 conciliación GUI nueva/resultado multiproceso,
+M3 identidad/uso directos, M7 plano integral/comparación controlada/L5 humana y
+M8 paquete vigente/aceptación siguen parciales. No se reejecutaron imágenes/slots Luna.
+Originales, seis casos, fallos, perfiles y paquetes históricos preservados. DWG privado
+sin abrir/leer/hash/modificación; ningún CAD, imagen, ejecutable, perfil o clave añadido
+a Git por este trabajo. Publicación exclusivamente al fork, sin release al autor.
+
+### Prompt de continuidad desde el corte 159
+
+Lee AGENTS.md, FORK-SYNC.md, 00-INDICE.md, sus cinco documentos y este corte.
+Usa mcp-upstream-integration; verifica árbol, remotos y HEAD/main local-remoto.
+Para sincronizar: preflight --fetch, congela un SHA upstream, selecciona gates por delta
+y observa con fork_sync_ci.py antes de --start. Reutiliza recibos comprobados y runner
+con --artifact --reuse-ref f491490f solo si fuentes/configuración/cobertura coinciden;
+declara siempre su SHA productor. No recompiles ni redispatches por timeout o Markdown.
+Para continuar producto: M1 conciliación segura, M3 procedencia directa, M7 fidelidad
+integral/L5 y M8 paquete/aceptación; esta automatización no los acredita. Conserva todos
+los fallos/ensayos; no repitas IDs, perfiles o slots Luna, no pidas sexta imagen ni API,
+no abras/lees/hash/modifiques el DWG privado. Commit/push sin force solo a
+lalomalvi/OpenCADStudio cuando pasen los gates elegidos. Cierra con SHA local/remoto,
+resultados verificables, duración por fase y pendiente concreto.

@@ -189,8 +189,8 @@ localmente por esta dependencia de idiomas y queda como ensayo histórico fallid
 | Diagnóstico y procedimiento único | Implementado en este documento | Logs y duraciones de arriba |
 | Preflight, snapshot, destinos y selección conservadora | Implementado en fork_sync.py | Tests con repos sintéticos + ejecución real |
 | Aprendizaje persistente para futuros agentes | AGENTS.md raíz y enlace en README/índice | Archivo versionado, no memoria informal |
-| Separar jobs CI por rutas, host reusable, recibo y coordinador | Implementado; verificar el run de aceptación vigente | Matriz de rutas, casos omitido/fallo, timeout sin redispatch y check estable |
-| Reutilizar runner Windows con hashes | Implementado; verificar artefacto del run completo vigente | Descarga + SHA/configuración/hash, sonda sintética nueva sin build local |
+| Separar jobs CI por rutas, host reusable, recibo y coordinador | Aprobado en f491490f, CI 36373266340 | 56 tests automation + 202 masterplan; recibo completo, reutilización real y un solo run del candidato |
+| Reutilizar runner Windows con hashes | Aprobado: EXE descargado y verificado, sin build local | Arranque portátil, L2 nuevo y AutoCAD 3/3; rutas/hashes en corte 159 |
 | Evitar segundo build local | Usar el artefacto probado de host CI | No atribuirle una revisión de commit documental posterior |
 | Reducir post-cache o unificar features Cargo | Pendiente de medición posterior | No cambiar caches/features para ganar una cifra sin evidencia |
 | Reducir conflictos recurrentes | En cada integración | Inventario corto de parches propios: MCP/IO/captura/QA; retirar duplicados ya absorbidos solo con revisión y pruebas |
@@ -199,7 +199,8 @@ El workflow cambiado requiere una aceptación completa de su candidato, una sola
 vez. Luego los ejemplos de prosa/Python usan únicamente sus gates. No es posible
 garantizar que una futura integración con regresiones dure pocos minutos. Sí se
 puede evitar repetir trabajo sin una razón y dejar visible por qué cada gate se
-ejecuta. El próximo ciclo medirá si se cumplen esos objetivos.
+ejecuta. La aceptación medida y sus límites están en el corte 159 del checkpoint.
+El próximo ciclo medirá si la mejora se sostiene con otro delta.
 
 ## Cierre y continuación
 
