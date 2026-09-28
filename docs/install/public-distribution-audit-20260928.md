@@ -137,3 +137,62 @@ incluso si el diagnóstico falla; sin `--logs` sigue siendo de lectura.
 La comprobación local de esa corrección en Windows aprobó 8 tests y omitió 2
 (la regresión Unix y la integración con el paquete aún en construcción).
 Eso no acredita la corrección nativa Mac: requiere su siguiente run.
+
+El siguiente candidato, **0ec62b707eb19ac815f09401a52c5ee3598c9b83**, publicó la
+corrección del proxy. Ambos runners Mac superaron diagnóstico y regresión Unix
+antes de entrar al build, en
+[desktop 36464719436](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36464719436).
+Esto confirma el bloqueo previo corregido; no equivale a paquete/GUI/Finder aprobados.
+
+Al enviar ese candidato, el coordinador consultó antes de que GitHub mostrara
+el run automático del PR y creó el dispatch 36464719819. Se canceló únicamente
+ese duplicado y se conservó
+[Tests automático 36464719765](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36464719765).
+El claim original se mantiene como evidencia, sin redispatch. La corrección
+posterior del coordinador consulta PRs abiertos en el SHA exacto: si su trigger
+automático aún no aparece, informa `awaiting_pull_request_run` sin dispatch.
+Sus tres regresiones y las suites locales de automatización (59) y masterplan
+(202) aprobaron; no requieren una compilación Rust local.
+
+### Fallos concretos y sondas conservadas
+
+El primer productor Windows pasó build release, empaquetado, protocolo del EXE
+instalado y cinco pruebas de preparación de release. Generó
+`OpenCADStudio-fork-2026.39.0-09794ab62401-windows-x86_64-c13061039322.zip`,
+SHA-256 `c130610393229d960a0be990093c97eed8b8e4547b6ee25e64ce078c8ad7a973`.
+Falló después, al negociar MCP a través de PowerShell 5.1: la codificación UTF-8
+con BOM de Console.InputEncoding añadía una preámbulo al pipe raw de .NET
+Framework. No se acreditó la aceptación completa de ese paquete y no se publicó.
+La corrección crea el child con UTF-8 sin BOM, restaura inmediatamente la
+codificación anterior y mantiene copia de bytes; la regresión del paquete incluye
+ahora un subprocess con la codificación UTF-8 que reveló el fallo en CI.
+La regresión local sobre el binario fork instalado anterior pasó initialize,
+cuatro herramientas y EOF limpio; no se hicieron operaciones CAD en esa sesión.
+
+El runner debug del host Windows pasó los gates unitarios e IPC reales. Su
+productor fue **09794ab62401114f049ecbb73e743967fef22715**, merge temporal del PR;
+Actions informaba head **07f63cbe**. Se descargó y se comprobaron todos sus hashes,
+y el árbol Git de ambos SHAs resultó idéntico. No se atribuye el binario a 07f63cbe.
+Los workflows de Tests/host/desktop pasan ahora el head SHA del PR explícitamente
+al checkout para que fuente, binary y receipt tengan una sola identidad.
+
+Una sonda propia fuera del checkout usó ese productor debug verificado en una
+carpeta TEMP nueva con espacios. El primer ensayo agotó captura: tras cerrar los
+diálogos iniciales, `--new` había dejado la pantalla Start sin viewport. La
+corrección crea primero un dibujo vacío solamente en la sesión de PID/EXE propios.
+Su segundo ensayo pasó GUI renderizada y save/reopen/audit de DWG 2000/2013/2018
+más DXF 2000. Se inspeccionó el PNG del editor; la instancia de prueba se cerró.
+Esto es una sonda del productor histórico debug, no instalación de una release.
+Evidencia local: `target/distribution-port/probe-fixed-ci-09794ab6/`.
+
+AutoCAD 2025 abrió los tres DWG sintéticos en read-only y devolvió
+`Total errors found 0 fixed 0` en los tres. Los tres procesos alcanzaron el límite
+25 s después de `_.QUIT` y fueron terminados por la sonda: exit -1,
+ForcedTermination=true. Se conserva esa limitación; no se afirma salida limpia
+ni fidelidad CAD global. Logs bajo el subdirectorio synthetic-cad de la sonda.
+
+El workflow conserva ahora los ZIP ya construidos si falla un gate posterior,
+para poder investigar el mismo productor sin recompilarlo. Eso no cambia el gate
+de publicación: exige success de los tres jobs nativos. También conserva la
+caché de dependencias ante fallo de empaquetado/GUI; no cambia jobs ni features
+de una ejecución ya iniciada.

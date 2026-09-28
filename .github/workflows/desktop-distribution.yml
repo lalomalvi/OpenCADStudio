@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
@@ -49,6 +49,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: desktop-${{ matrix.target }}
+          # Preserve compiled dependencies when a later package/GUI gate fails.
+          cache-on-failure: true
       - name: Bundle icon dependency (CI only)
         if: runner.os == 'macOS'
         run: brew install librsvg
@@ -104,7 +106,10 @@ jobs:
             target/desktop-logs/**/*.png
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('dist/*.zip') != ''
         with:
+          # Retain a built payload even when later acceptance fails; publication
+          # still requires every native job to succeed.
           name: fork-package-${{ matrix.target }}
           path: dist/*
           if-no-files-found: error
@@ -117,7 +122,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:

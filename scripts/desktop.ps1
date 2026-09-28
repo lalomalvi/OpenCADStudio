@@ -23,7 +23,17 @@ function Invoke-DesktopHelper([string]$Executable, [string[]]$DesktopPrefix = @(
         $startInfo.Arguments = $quotedArguments -join ' '
         $process = [System.Diagnostics.Process]::new()
         $process.StartInfo = $startInfo
-        if (-not $process.Start()) { [Console]::Error.WriteLine('MCP helper did not start.'); exit 2 }
+        # .NET Framework builds StandardInput's StreamWriter from Console.InputEncoding.
+        # UTF-8 with a BOM inserts a preamble into otherwise raw JSON-RPC pipes.
+        # Select BOM-free UTF-8 only while constructing this child, then restore it.
+        $originalInputEncoding = [Console]::InputEncoding
+        try {
+            [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+            if (-not $process.Start()) { [Console]::Error.WriteLine('MCP helper did not start.'); exit 2 }
+            $childInput = $process.StandardInput.BaseStream
+        } finally {
+            [Console]::InputEncoding = $originalInputEncoding
+        }
         $clientInput = [Console]::OpenStandardInput()
         $inputBuffer = [byte[]]::new(65536)
         $inputRead = $clientInput.ReadAsync($inputBuffer, 0, $inputBuffer.Length)
@@ -37,8 +47,8 @@ function Invoke-DesktopHelper([string]$Executable, [string[]]$DesktopPrefix = @(
                     $process.WaitForExit()
                     break
                 }
-                $process.StandardInput.BaseStream.Write($inputBuffer, 0, $byteCount)
-                $process.StandardInput.BaseStream.Flush()
+                $childInput.Write($inputBuffer, 0, $byteCount)
+                $childInput.Flush()
                 $inputRead = $clientInput.ReadAsync($inputBuffer, 0, $inputBuffer.Length)
             }
             [System.Threading.Thread]::Sleep(10)

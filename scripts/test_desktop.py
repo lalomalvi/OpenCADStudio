@@ -116,16 +116,24 @@ class DistributedIntegration(unittest.TestCase):
             fragment = json.loads(desktop.run(command + ["config", "--install-dir", str(root / "user application")], cwd=root.resolve()))
             self.assertEqual(fragment["command"], state["executable"])
             self.assertEqual(fragment["args"], ["--mcp"])
-            client = desktop.smoke.start(Path(state["executable"]), cwd=root.resolve(),
-                                        env={**os.environ, "OCS_CONFIG_DIR": str(root / "wrapper private config")},
-                                        command=command + ["mcp", "--install-dir", str(root / "user application")])
-            reply = desktop.smoke.request(client, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                                                  "params": {"protocolVersion": "2025-11-25", "capabilities": {},
-                                                             "clientInfo": {"name": "wrapper-test", "version": "1"}}})
-            self.assertEqual(reply["result"]["protocolVersion"], "2025-11-25")
-            tools = desktop.smoke.request(client, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
-            self.assertEqual({t["name"] for t in tools["result"]["tools"]}, desktop.smoke.TOOLS)
-            desktop.smoke.close(client)
+            wrapper_commands = [command + ["mcp", "--install-dir", str(root / "user application")]]
+            if os.name == "nt":
+                helper = str(desktop.ROOT / "scripts/desktop.ps1").replace("'", "''")
+                installation = str(root / "user application").replace("'", "''")
+                # CI's UTF-8 console encoding must not prepend a BOM to raw RPC.
+                wrapper_commands.append(["powershell.exe", "-NoProfile", "-Command",
+                    "[Console]::InputEncoding=[Text.Encoding]::UTF8; & '" + helper + "' mcp --install-dir '" + installation + "'"])
+            for wrapper_command in wrapper_commands:
+                client = desktop.smoke.start(Path(state["executable"]), cwd=root.resolve(),
+                                            env={**os.environ, "OCS_CONFIG_DIR": str(root / "wrapper private config")},
+                                            command=wrapper_command)
+                reply = desktop.smoke.request(client, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                                      "params": {"protocolVersion": "2025-11-25", "capabilities": {},
+                                                                 "clientInfo": {"name": "wrapper-test", "version": "1"}}})
+                self.assertEqual(reply["result"]["protocolVersion"], "2025-11-25")
+                tools = desktop.smoke.request(client, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+                self.assertEqual({t["name"] for t in tools["result"]["tools"]}, desktop.smoke.TOOLS)
+                desktop.smoke.close(client)
             executable = Path(state["executable"])
             removed = executable.with_suffix(".removed")
             executable.rename(removed)

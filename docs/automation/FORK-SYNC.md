@@ -214,3 +214,10 @@ elige los gates por el delta real, reutiliza evidencia comprobada y publica sin
 force solo al fork cuando pasen. Conserva originales/privados. No persigas nuevos
 commits durante el ciclo ni conviertas esta tarea en release o evaluación M7/M8.
 Termina con SHA local/remoto, resultados y duración por fase.»
+
+Si una revisión recién enviada tiene un PR abierto en el mismo SHA y el run
+Actions aún no aparece, el coordinador devuelve `awaiting_pull_request_run`.
+Espera de visibilidad, no aprobación de gates ni un dispatch incierto. Consultar
+otra vez el mismo candidato; no lanzar un workflow paralelo al trigger del PR.
+Si ese trigger nunca aparece, investigar el evento/workflow antes de iniciar
+manualmente otro run.

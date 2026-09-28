@@ -9,6 +9,7 @@ import subprocess
 import time
 import uuid
 import zipfile
+from urllib.parse import quote
 from fork_sync import fingerprint, git, validate_remotes
 from ci_scope import valid_receipt
 
@@ -94,6 +95,19 @@ def claim_dispatch(root, sha, ref, base, scope):
     return record
 
 
+
+def start_when_absent(root, sha, ref, base, scope):
+    # PR events can take several seconds to become visible in Actions. An open
+    # PR at this exact revision already requests Tests; never race that trigger.
+    pulls = gh('api', f'repos/{REPO}/pulls?state=open&head={quote("lalomalvi:" + ref, safe="")}&per_page=100')
+    for pull in pulls:
+        head = pull.get('head', {})
+        if pull.get('state') == 'open' and head.get('sha') == sha and (head.get('repo') or {}).get('full_name') == REPO:
+            return {'state': 'awaiting_pull_request_run', 'pull_request': pull['number'],
+                    'url': pull['html_url'], 'reason': 'automatic Tests trigger not visible yet; observe again without dispatch'}
+    return claim_dispatch(root, sha, ref, base, scope)
+
+
 def download_runtime(root, sha, run_id):
     from ci_runtime import verify
     receipt = receipt_for_run(run_id, sha)
@@ -141,7 +155,7 @@ def main():
         remote = git(root, 'ls-remote', 'https://github.com/' + REPO + '.git', 'refs/heads/' + ref)
         if not ref or not remote or remote.split()[0] != head:
             raise ValueError('publish candidate branch before dispatch')
-        state = claim_dispatch(root, head, ref, selection['base'] or '',
+        state = start_when_absent(root, head, ref, selection['base'] or '',
                                'full' if args.full else 'auto')
     if args.artifact:
         if state['state'] != 'verified':

@@ -499,6 +499,7 @@ def open_gui(state, log_dir, keep=True, cad=False, finder=False):
     env = {**os.environ, "OCS_CONFIG_DIR": str(profile)}
     exe = Path(state["executable"])
     gui_pid = None
+    empty_document_prepared = False
     if finder:
         if platform.system() != "Darwin":
             raise Blocked("--finder requires a native macOS host")
@@ -543,6 +544,16 @@ def open_gui(state, log_dir, keep=True, cad=False, finder=False):
                     if dismissed.get("result", {}).get("isError"):
                         raise Blocked("Owned GUI startup modal could not be dismissed; inspect its capture manually.")
                     time.sleep(0.2)
+                    continue
+                if not empty_document_prepared:
+                    # --new starts at the welcome screen in the current upstream.
+                    # Create a drawing only in our PID-correlated private session.
+                    created = smoke.request(client, {"jsonrpc": "2.0", "id": "empty-document", "method": "tools/call",
+                        "params": {"name": "ocs_execute", "arguments": {"ocs_session_id": sid,
+                                   "request": {"op": "new", "request_id": "empty-" + uuid.uuid4().hex}}}})
+                    if created.get("error") or created.get("result", {}).get("isError"):
+                        raise Blocked("Owned GUI could not create its empty acceptance drawing")
+                    empty_document_prepared = True
                     continue
                 # A rendered capture verifies the view is ready, even on a headless CI desktop.
                 capture = smoke.request(client, {"jsonrpc": "2.0", "id": "capture", "method": "tools/call",
