@@ -2052,3 +2052,44 @@ los fallos/ensayos; no repitas IDs, perfiles o slots Luna, no pidas sexta imagen
 no abras/lees/hash/modifiques el DWG privado. Commit/push sin force solo a
 lalomalvi/OpenCADStudio cuando pasen los gates elegidos. Cierra con SHA local/remoto,
 resultados verificables, duración por fase y pendiente concreto.
+
+## Corte 160: cierre de sesión y aprendizajes preservados — 2026-09-28
+
+Luis pidió documentar éxitos, fallos, lo no realizado y continuidad, y cerrar la sesión.
+Síntesis única: [CIERRE-SESION-20260928.md](../CIERRE-SESION-20260928.md), enlazada desde
+el índice y RESULTADOS-MCP-20260927.md. Reúne transporte/PlanSpec, seis fuentes de
+desarrollo, balance del pase de cinco, planta parcial de 60 entidades, comparación
+ventana/puerta, integración/conflictos/Windows 1175, errores de fixtures/Pillow,
+portabilidad del EXE, demoras del proceso, automatización y límites de aceptación.
+Conserva todos los cortes y documentos previos; no borra originales ni evidencia.
+
+Al revalidar antes de este cierre: HEAD y origin/main locales y main/rama del fork
+`b4f41325f35046c57ae83ae4b5b0e2c0eb16358b`, árbol limpio. Upstream congelado c623a016
+es ancestro. [CI completo 36373266340](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36373266340)
+de f491490f y [CI documental 36374426564](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36374426564)
+de b4f41325 siguen completed/success. El documental duró 35 s y omitió Rust/Python/host,
+validated=[]: no confundirlo con nuevos tests. Se comprobaron existencia/hash de los
+reportes de aceptación y fallo del flujo, sin repetir CAD ni modelo ni Cargo.
+
+Incidente posterior comunicado por Luis: diálogo git-remote-https.exe con lectura
+inválida de memoria. La consulta de eventos/procesos no identificó causa ni comando;
+Git 2.55.0.windows.5. HTTPS posterior funciona y la publicación está completa.
+No se declara crash corregido ni se atribuye a CAD/antivirus/RAM. Se deja el criterio
+para registrar recurrencia en la síntesis; no se cambia el sistema para este cierre.
+
+Solo se añaden/corrigen cuatro archivos Markdown. El próximo commit no modifica
+fuentes no documentales; su SHA remoto/local se verifica al publicarlo exclusivamente
+al fork y se entrega en la respuesta. El recibo de este cierre se conserva localmente
+en target/fork-flow-acceptance/session-close-20260928.json. No release, no push al autor,
+no archivos privados ni nuevas pruebas de imágenes. M1/M3/M7/M8 siguen parciales.
+
+### Prompt de continuidad desde el corte 160
+
+Usa el prompt íntegro de CIERRE-SESION-20260928.md, sección 8. Verifica primero Git,
+AGENTS, seis documentos base, SHAs local/remoto y evidencia. Continúa en el worktree
+mcp-upstream-integration: prioridad M1 conciliación segura de GUI nueva/resultado
+multiproceso con fixtures y un efecto único; después M3 procedencia, M7 fidelidad/L5
+y M8 paquete vigente. Reutiliza solo evidencia vinculada a SHA/configuración/cobertura.
+No recompiles/reenvíes por timeout o prosa, no repitas slots/IDs/perfiles, no pidas
+sexta imagen ni API, no abras/lees/hash/modifiques el DWG privado. Conserva todos los
+fallos. Publica sin force únicamente en lalomalvi/OpenCADStudio con gates aprobados.

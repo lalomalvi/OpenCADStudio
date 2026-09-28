@@ -1,5 +1,8 @@
 # Masterplan de robustecimiento MCP y reconstrucción CAD
 
+Cierre y aprendizajes de la sesión: [CIERRE-SESION-20260928.md](../CIERRE-SESION-20260928.md).
+Incluye resultados, fallos conservados, trabajo pendiente y prompt desde el corte 160.
+
 Sincronización cotidiana del fork: [procedimiento y diagnóstico de tiempos](../FORK-SYNC.md).
 Este mantenimiento usa un snapshot y pruebas por impacto; no exige cerrar M7/M8.
 Versión 1.0 del plan: 2026-09-23. Estado vigente: M0 aprobado, M1 acotado L1/L2, M2–M6 parciales y M7/M8 sin aceptación global. El historial y los gates exactos están en [05-CHECKPOINT-Y-CONTINUACION.md](05-CHECKPOINT-Y-CONTINUACION.md).

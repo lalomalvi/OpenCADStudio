@@ -1,6 +1,6 @@
 # Resultados del robustecimiento MCP
 
-**Estado vigente:** sincronización publicada únicamente al fork, código `70db2a4d` con upstream `c623a016`; Rust 1999/0/27 (aprobadas/fallos/ignoradas), cuatro checks CI aprobados, build limpio y sondas L2/AutoCAD aprobadas. Véase el cierre al final; la auditoría inicial y sus estados históricos se conservan. Masterplan global parcial.
+**Estado vigente al cierre de sesión:** fork publicado en `b4f41325`; upstream congelado `c623a016`, integración CAD `70db2a4d` y automatización/runner probado `f491490f`. CI completo, GUI sintética nueva y AutoCAD aprobados; CI documental de b4f41325 aprobado en 35 s. [Síntesis de sesión y aprendizajes](CIERRE-SESION-20260928.md), checkpoint corte 160. Las tablas, contadores y pendientes iniciales de este informe se conservan como historia fechada; no representan todos el HEAD actual. Masterplan global parcial.
 
 Fecha de síntesis: 2026-09-27. Fuente: checkpoint 155 y reportes históricos. Hoy se leyeron los resúmenes y la comparación visual; no se repitieron llamadas Luna ni ejecuciones CAD.
 
