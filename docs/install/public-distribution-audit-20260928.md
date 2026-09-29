@@ -75,13 +75,13 @@ bundle macOS; no se presume una notarización.
 
 El flujo público del fork ahora prepara una **release draft**: la promoción
 pública ocurre solo después de los tres jobs nativos y la verificación de assets,
-hashes y procedencia del tag. Los reintentos conservan el draft y su commit; un
+hashes y procedencia del tag. Los reintentós conservan el draft y su commit; un
 tag heredado sin el entrypoint de distribución del fork se rechaza antes de crear
 una release. Las notas identifican el desktop/MCP del fork y no prometen web.
 
 Pruebas del traslado: **8 límites aprobados, 1 integración con paquete real
 omitida** hasta reconstruir el candidato; **5 pruebas de preparación de release
-aprobadas** contra repositorios temporales locales, incluyendo draft/reintento y
+aprobadas** contra repositorios temporales locales, incluyendo draft/reintentó y
 rechazo de tag heredado. Actionlint, sintaxis Python/shell y diff-check pasaron.
 La evidencia Windows del
 [paquete anterior](audit-20260928.md) sigue válida para ese binario y alcance;
@@ -672,3 +672,22 @@ Los nuevos paquetes deben tener su propio productor limpio y gates nativos;
 los éxitos 84721ff5 y 87c321a4 no acreditan este nuevo contenido.
 Firma Windows confiable, Developer ID/notarización y Mac del operador siguen
 pendientes de credenciales/equipo externos; no se desactiva su seguridad.
+
+
+## Cierre público 2026.40.1 (2026-09-29 UTC)
+
+Productor limpio 196b1b7c554a17299fd546850614db4bfc77de7a; upstream congelado 60f35e2b es ancestro. PR #6 integrado y main publicado. Tests 36519903206 y distribución 36519975664 aprobaron sus gates requeridos; no se reutilizaron builds nativos históricos para acreditar este contenido. Cargo.lock SHA-256: 4356a0b8755515054369f5ca068a6773590ebc6f24ad405b188b00da24f8771a.
+
+Los tres paquetes, nueve assets, sidecars, origen, tag y todos los payloads fueron verificados antes de promover el draft. La release pública v2026.40.1 conserva v2026.40 intacta. Windows local verificó EXE instalado, GUI/MCP, dibujos sintéticos y AutoCAD AUDIT de los cuatro formatos: cero errores, cinco entidades, salida natural, hashes intactos y cero avisos PLANT. macOS 15 ARM/Intel aprobó GUI/MCP/CAD y Finder en CI; se inspeccionaron las capturas.
+
+- aarch64-apple-darwin: 0c5abd0690cb55567dd888860a39cc4f0110f6c049cc0ec85a6b21c6b18943bc (44156349 bytes).
+- x86_64-apple-darwin: 1e6cedd0bddc61b35b7db236bb0d2fed73cfcde41cbd04451ddf31a81e3f0056 (47645717 bytes).
+- x86_64-pc-windows-msvc: 89d9222bd46aef604246ef76aa0f0e38fc356b014cb83d76c246c6efe4cd9a4f (36919189 bytes).
+
+Pages de la misma fuente/tag pasó 53 comprobaciones HTTP, 21 idiomas y Dibujo nuevo: Drawing1 renderizado sin errores nuevos. Evidencias en target/distribution-port: candidate-196b1b7c-package-verification.json, tests-196b1b7c/verification.json, native-196b1b7c-verified.json, external-windows-196b1b7c/results.json, release-2026.40.1-published.json, public-web-196b1b7c.json y public-web-browser-196b1b7c.json.
+
+Luis decidió expresamente terminar con la firma actual: Windows NotSigned; Mac ad-hoc sin Developer ID/notarización. Ese estado no se presenta como firma confiable. La prueba en el Mac del operador y los mínimos macOS 11/Windows 10 no están acreditados; no bloquean la publicación autorizada con este alcance. No se tocaron dibujos privados ni sesiones anteriores.
+
+Pages [36526683763](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36526683763) y verificación publicada [36526684074](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36526684074) finalizaron con success. La descarga pública real mediante desktop.download coincide exactamente con el ZIP Windows instalado y probado: public-download-2026.40.1-verification.json. El módulo JS/WASM observado en navegador consta en public-web-browser-196b1b7c.json. El cierre Markdown conserva el fingerprint probado 91f9e163f4947673ef0d5dd2748efd006d2913e0fec3f5c48c31490667c67162; el binario sigue identificando su productor 196b1b7c.
+
+El primer deploy de Pages fue rechazado por la regla del entorno github-pages, que solo admitía main. Se preservó pages-196b1b7c-rejected-tag.json; se agregó exclusivamente el tag v2026.40.1 (sin wildcard ni secretos de entorno) y se reintentó solo el job deploy del mismo run, reutilizando el bundle aprobado. Las reglas previas permanecen: pages-policy-before-2026.40.1.json y pages-policy-added-2026.40.1.json. Los tags futuros requieren su propia habilitación deliberada.

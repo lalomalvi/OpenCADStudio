@@ -1,13 +1,13 @@
 # macOS: install, locate and open this fork
 
 This is **lalomalvi/OpenCADStudio**. A clone is source, not a `.app` installation.
-The [fork release 2026.40](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40)
-was published on **2026-09-28**, with separate Apple Silicon and Intel ZIPs,
-checksums and manifests from source af002fa17a795892792ecae26e87cfb5886047b9.
+The [fork release 2026.40.1](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40.1)
+was published on **2026-09-29**, with separate Apple Silicon and Intel ZIPs,
+checksums and manifests from source 196b1b7c554a17299fd546850614db4bfc77de7a.
 
 The new workflow builds **separate** Apple Silicon (`aarch64-apple-darwin`) and
-Intel (`x86_64-apple-darwin`) packages on native runners. Producer af002fa1
-(2026.40) passed both native macOS 15 jobs, including installation, MCP, GUI,
+Intel (`x86_64-apple-darwin`) packages on native runners. Producer 196b1b7c
+(2026.40.1) passed both native macOS 15 jobs, including installation, MCP, GUI,
 synthetic CAD and Finder. See the [current distribution audit](public-distribution-audit-20260928.md)
 for source/package identities, hashes and publication status. There is no
 universal binary. Minimum deployment target is configured as macOS 11.0;
@@ -63,7 +63,7 @@ bash scripts/desktop-macos.sh open
 bash scripts/desktop-macos.sh path
 ```
 
-`download --tag v2026.40` selects the published package for the native host
+`download --tag v2026.40.1` selects the published package for the native host
 architecture. If no compatible package exists it exits 2 with the source route.
 For an already downloaded, reviewed ZIP, install it with:
 
@@ -86,7 +86,7 @@ installed GUI's descriptor/PID and a window PNG, then leaves it open.
 the exact installed `.app` through LaunchServices using a private profile,
 correlates the relay and its child GUI, requires a rendered capture, then closes
 them. Both native checks passed on both macOS CI architectures for producer
-af002fa1 (2026.40); the operator still needs to check their own Mac and downloaded package.
+196b1b7c (2026.40.1); the operator still needs to check their own Mac and downloaded package.
 
 ## Developer or agent: unprepared machine to GUI
 

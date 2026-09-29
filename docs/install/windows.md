@@ -6,10 +6,10 @@ source code. It is not an installed desktop application.
 
 ## End user: published ZIP, when available
 
-The [fork release 2026.40](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40)
-was published on 2026-09-28 after all three native package jobs passed. Choose
+The [fork release 2026.40.1](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40.1)
+was published on 2026-09-29 after all three native package jobs passed. Choose
 the Windows x64 ZIP and its matching checksum/manifest from that release. Its
-source is af002fa17a795892792ecae26e87cfb5886047b9, clean release, Rust 1.98.1.
+source is 196b1b7c554a17299fd546850614db4bfc77de7a, clean release, Rust 1.98.1.
 See the [distribution audit](public-distribution-audit-20260928.md) for hashes,
 GUI/MCP acceptance and the real signing state.
 

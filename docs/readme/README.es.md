@@ -8,17 +8,17 @@
 
 Luis desarrolla este fork comunitario como parte de su trabajo en un ecosistema BIM abierto y de su colaboración con la iniciativa [OpenAEC Foundation](https://open-aec.com/), de Países Bajos. El propósito es llevar ese trabajo a herramientas instalables, operaciones inspeccionables, entregables CAD trazables y flujos de ingeniería que puedan revisarse.
 
-[Web del fork](https://lalomalvi.github.io/OpenCADStudio/es-ES/) · [Abrir CAD en navegador](https://lalomalvi.github.io/OpenCADStudio/app/) · [Descargar 2026.40](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40) · [Instalación Windows](../install/windows.md) · [Instalación macOS](../install/macos.md) · [API MCP](../automation/API-SPEC.md)
+[Web del fork](https://lalomalvi.github.io/OpenCADStudio/es-ES/) · [Abrir CAD en navegador](https://lalomalvi.github.io/OpenCADStudio/app/) · [Descargar 2026.40.1](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40.1) · [Instalación Windows](../install/windows.md) · [Instalación macOS](../install/macos.md) · [API MCP](../automation/API-SPEC.md)
 
 ## Descargar, instalar y abrir
 
-**La versión 2026.40 está publicada para Windows x64, macOS Apple Silicon y macOS Intel.** Cada arquitectura tiene su propio ZIP, checksum `.zip.sha256` y manifiesto de procedencia `.zip.json`. Descarga los tres archivos correspondientes desde la [release de este fork](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40).
+**La versión 2026.40.1 está publicada para Windows x64, macOS Apple Silicon y macOS Intel.** Cada arquitectura tiene su propio ZIP, checksum `.zip.sha256` y manifiesto de procedencia `.zip.json`. Descarga los tres archivos correspondientes desde la [release de este fork](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40.1).
 
 | Plataforma | Paquete de la release | Guía completa |
 |---|---|---|
-| Windows x64 / MSVC | `OpenCADStudio-fork-2026.40.0-af002fa17a79-windows-x86_64-69be418ef7ba.zip` | [Verificar, instalar, abrir y localizar el EXE](../install/windows.md) |
-| macOS Apple Silicon | `OpenCADStudio-fork-2026.40.0-af002fa17a79-macos-arm64-d0c5afe63aed.zip` | [Instalar el bundle y abrir desde Finder](../install/macos.md) |
-| macOS Intel | `OpenCADStudio-fork-2026.40.0-af002fa17a79-macos-x86_64-d7a417f444f2.zip` | [Instalación en Mac Intel](../install/macos.md) |
+| Windows x64 / MSVC | `OpenCADStudio-fork-2026.40.1-196b1b7c554a-windows-x86_64-89d9222bd46a.zip` | [Verificar, instalar, abrir y localizar el EXE](../install/windows.md) |
+| macOS Apple Silicon | `OpenCADStudio-fork-2026.40.1-196b1b7c554a-macos-arm64-0c5abd0690cb.zip` | [Instalar el bundle y abrir desde Finder](../install/macos.md) |
+| macOS Intel | `OpenCADStudio-fork-2026.40.1-196b1b7c554a-macos-x86_64-1e6cedd0bddc.zip` | [Instalación en Mac Intel](../install/macos.md) |
 
 Para instalar manualmente, verifica el checksum y extrae todo el contenido en una carpeta nueva del usuario. Abre `application/OpenCADStudio.exe` en Windows o `OpenCADStudio.app` en macOS; conserva juntos los recursos. El CAD empaquetado no necesita Rust, Git ni Python para ejecutarse. El helper opcional necesita **Python 3.11+**.
 
@@ -26,21 +26,21 @@ Para automatizar la descarga, instalación y apertura verificada, ejecuta desde 
 
 ```powershell
 # Windows — PowerShell
-& '.\scripts\desktop.ps1' download --tag v2026.40
+& '.\scripts\desktop.ps1' download --tag v2026.40.1
 & '.\scripts\desktop.ps1' open
 & '.\scripts\desktop.ps1' path
 ```
 
 ```bash
 # macOS — terminal nativa Apple Silicon o Intel
-bash scripts/desktop-macos.sh download --tag v2026.40
+bash scripts/desktop-macos.sh download --tag v2026.40.1
 bash scripts/desktop-macos.sh open
 bash scripts/desktop-macos.sh path
 ```
 
 `download` verifica e instala el paquete de la arquitectura actual. `open` verifica una GUI aislada y la deja abierta. `path` imprime el ejecutable instalado con ruta absoluta. `mcp` inicia stdio sobre ese mismo binario; es una operación distinta de abrir la GUI. Clonar descarga el código; la instalación y apertura requieren completar estos pasos.
 
-**Firma:** Windows 2026.40 está NotSigned; ambos bundles Mac tienen firma ad-hoc, sin Developer ID/notarización acreditados. El checksum acredita integridad, no identidad del publicador ni aceptación de Gatekeeper/SmartScreen. CI nativo pasó en macOS 15; macOS 11 como mínimo configurado y el Mac del operador siguen sin comprobarse. Las guías mantienen las protecciones del sistema.
+**Firma:** Windows 2026.40.1 está NotSigned; ambos bundles Mac tienen firma ad-hoc, sin Developer ID/notarización acreditados. El checksum acredita integridad, no identidad del publicador ni aceptación de Gatekeeper/SmartScreen. CI nativo pasó en macOS 15; macOS 11 como mínimo configurado y el Mac del operador siguen sin comprobarse. Las guías mantienen las protecciones del sistema.
 
 ## Por qué existe este fork
 
@@ -64,7 +64,7 @@ El trabajo se concentra en:
 | Robustez imagen → CAD | Campaña en curso con alcance acotado, contratos y evidencia; ver el [checkpoint](../automation/masterplan/05-CHECKPOINT-Y-CONTINUACION.md) |
 | Interoperabilidad BIM | Dirección del ecosistema; conectores IFC/IFCX/BCF y garantías de intercambio requieren implementación y aceptación propias |
 
-2026.40 acredita la distribución CAD/MCP aquí descrita. Autoría BIM completa, certificación IFC, conformidad de ingeniería y fidelidad CAD global tienen alcances de aceptación separados.
+2026.40.1 acredita la distribución CAD/MCP aquí descrita. Autoría BIM completa, certificación IFC, conformidad de ingeniería y fidelidad CAD global tienen alcances de aceptación separados.
 
 ## OpenAEC y atribución del proyecto
 
@@ -119,13 +119,13 @@ Documentación de plugins: [arquitectura](../plugin-architecture.md), [plantilla
 
 ## Verificación y límites conocidos
 
-Fuente de los paquetes publicados: [`af002fa17a795892792ecae26e87cfb5886047b9`](https://github.com/lalomalvi/OpenCADStudio/commit/af002fa17a795892792ecae26e87cfb5886047b9), Cargo **2026.40.0**, Rust **1.98.1**, build release limpio con **Cargo.lock / --locked**.
+Fuente de los paquetes publicados: [`196b1b7c554a17299fd546850614db4bfc77de7a`](https://github.com/lalomalvi/OpenCADStudio/commit/196b1b7c554a17299fd546850614db4bfc77de7a), Cargo **2026.40.1**, Rust **1.98.1**, build release limpio con **Cargo.lock / --locked**.
 
-- [CI nativo de distribución](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36484188603): tres plataformas aprobadas, incluidos paquetes, instalación, recursos, corrupción, MCP, GUI y CAD sintético; ambos Mac aprobaron Finder.
-- [CI de workspace y hosts](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36484188997): Rust workspace, automatización Python y hosts reales Windows/Linux aprobados.
+- [CI nativo de distribución](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36519975664): tres plataformas aprobadas, incluidos paquetes, instalación, recursos, corrupción, MCP, GUI y CAD sintético; ambos Mac aprobaron Finder.
+- [CI de workspace y hosts](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36519903206): Rust workspace, automatización Python y hosts reales Windows/Linux aprobados.
 - Windows local verificó el mismo paquete publicado, fuera del checkout, con GUI aislada y dibujos sintéticos.
 
-La release pública v2026.40 conserva los dos errores históricos de descripción PLANT en el DXF 2000 sintético. El candidato posterior `84721ff5` corrige esa descripción: sus DWG 2000/2013/2018 y DXF 2000 generados en Windows pasan AutoCAD AUDIT con cero errores, cinco entidades, salida limpia y hashes intactos. Está instalado y verificado localmente; sus paquetes candidatos aún no se han publicado en una nueva release. El mismo candidato también aprobó [CI nativo Windows y ambas arquitecturas macOS 15](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36498042609), con GUI/MCP, guardados sintéticos y Finder en Mac. Intel aprobó en el intento 2 tras el timeout inicial preservado; se reutilizaron los resultados Windows/ARM. Estas pruebas acotadas no acreditan paridad DWG/DXF global. Los recibos, hashes, intentos fallidos y gates restantes están en la [auditoría de distribución](../install/public-distribution-audit-20260928.md).
+La release pública v2026.40.1 corrige la descripción PLANT e incluye el reloj web corregido y los nueve commits upstream congelados en 60f35e2b. Sus DWG 2000/2013/2018 y DXF 2000 generados en Windows pasan AutoCAD AUDIT con cero errores, cinco entidades, salida limpia y hashes intactos. La web pública abre Drawing1 vacío sin nuevos errores de consola. v2026.40 y sus nueve archivos originales se conservan intactos. Estas pruebas acotadas no acreditan paridad CAD global ni edición/exportación web completa. Consulta la [auditoría de distribución](../install/public-distribution-audit-20260928.md).
 
 ## Compilar y contribuir
 
