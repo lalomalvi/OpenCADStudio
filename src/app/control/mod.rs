@@ -161,7 +161,7 @@ struct Operation {
     document_id: Option<u64>,
     origin_document: u64,
     geometry_revision: u64,
-    started_at: std::time::Instant,
+    started_at: iced::time::Instant,
     capture_dispatched: bool,
     capture_clean_frames: u8,
     result: Value,
@@ -785,7 +785,7 @@ impl OpenCADStudio {
             document_id: doc,
             origin_document: tab.id,
             geometry_revision: tab.scene.geometry_epoch,
-            started_at: std::time::Instant::now(),
+            started_at: iced::time::Instant::now(),
             capture_dispatched: false,
             capture_clean_frames: 0,
             result: json!({}),
@@ -1422,7 +1422,7 @@ impl OpenCADStudio {
         path: String,
         screenshot: Option<iced::window::Screenshot>,
     ) {
-        let screenshot_available_at = std::time::Instant::now();
+        let screenshot_available_at = iced::time::Instant::now();
         let result = (|| -> Result<Value, String> {
             let s = screenshot
                 .ok_or("The window is minimized or has no size; restore it and capture again")?;
@@ -1526,8 +1526,8 @@ impl OpenCADStudio {
             image
                 .save_with_format(&path, image::ImageFormat::Png)
                 .map_err(|e| e.to_string())?;
-            let encoded_at = std::time::Instant::now();
-            let elapsed_ms = |start: std::time::Instant, end: std::time::Instant| {
+            let encoded_at = iced::time::Instant::now();
+            let elapsed_ms = |start: iced::time::Instant, end: iced::time::Instant| {
                 end.saturating_duration_since(start).as_secs_f64() * 1000.0
             };
             Ok(

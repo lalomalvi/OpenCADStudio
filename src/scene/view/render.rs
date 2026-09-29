@@ -262,7 +262,7 @@ pub struct Primitive {
     /// One entry per viewport drawn this frame (≥1).
     pub(in crate::scene) viewports: Vec<ViewportData>,
     pub(in crate::scene) rendered_revision:
-        Arc<std::sync::Mutex<Option<(u64, u64, std::time::Instant)>>>,
+        Arc<std::sync::Mutex<Option<(u64, u64, iced::time::Instant)>>>,
     /// Background color used to clear each viewport's MSAA buffer.
     pub(in crate::scene) bg_color: [f32; 4],
     /// Active Iced theme text colour for GPU-rendered ViewCube labels.
@@ -1361,7 +1361,7 @@ retained_contributors={}",
         }
         if let Some(revision) = encoded_revision {
             *self.rendered_revision.lock().unwrap() =
-                Some((revision.0, revision.1, std::time::Instant::now()));
+                Some((revision.0, revision.1, iced::time::Instant::now()));
         }
         let render_ms = nav_render_started.elapsed().as_secs_f64() * 1000.0;
         if let Some(sample) = self.nav_perf {

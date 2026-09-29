@@ -571,3 +571,36 @@ falla la API. Se mueve la comprobación de datos y ambas suites web antes de Car
 El crédito del banner se corrigió a Hakan Seven, confirmado por la API del perfil.
 Estos cambios son de web/Python; Rust, Cargo.lock, catálogo y scripts/packaging
 nativos permanecen idénticos al productor 84721ff5, cuyo SHA se conserva.
+
+
+## Candidato nativo aprobado; fallo web reproducido al crear dibujo
+
+Distribución 36498042609 aprobó las tres arquitecturas del productor limpio
+84721ff5 en intento 2. Solo Intel se recuperó: paquete, instalación en ruta con
+espacios, GUI/MCP, CAD sintético y Finder aprobaron. Windows/ARM conservaron su
+éxito inicial. Se inspeccionaron capturas Intel y se comprobaron los tres ZIP,
+sidecars y los 29 archivos de payload en candidate-84721ff5-package-verification.json.
+Intel SHA-256: ad01f1cfda7280b6750461b6253c15511ada34f1d06bdcebc3fa215edb66f43d.
+Los candidatos no se publicaron; v2026.40 conserva af002fa1 y nueve assets.
+
+PR #4 quedó integrado en c04266c2 tras Tests 36504854347 verified completo
+(Rust/Python/hosts Windows y Linux), fingerprint
+36b57af82b8a6c6ec9b40011cc47a18b3255f95c7b88c6545c2d9b7a9042ddd5.
+Pages 36507372549 success desplegó c04266c2: consulta agregada, suites web,
+WASM y publicación aprobaron. La sonda HTTP acreditó 53 requests, 21 idiomas,
+canonicals/manifest/rutas, JS/CSS y el WASM realmente referenciado por el HTML.
+El primer intento de sonda buscó además un nombre WASM de reserva sin uso:
+HTTP 404; se conservó y corrigió solo la sonda, sin reconstrucción del sitio.
+
+La página española y Start de la aplicación renderizaron, pero Dibujo nuevo
+reprodujo panic: std/src/sys/time/unsupported.rs:13:9, time not implemented on
+this platform. No se declara aceptado el editor web por haber compilado o cargado
+Start. Fallo preservado: public-web-browser-c04266c2-failed.json; el receipt de
+Start aislado sigue histórico. Crear el primer viewport invoca std::time::Instant
+para el sello de revisión de render; la ruta de control compartida también usa
+ese reloj. Se sustituye por iced::time::Instant en esas dos rutas y sus tipos:
+Iced fijado 23604ff reexporta web-time 1.1.0, reloj web en wasm y std::time::*
+en hosts nativos. No cambia Cargo.lock ni el algoritmo/orden de captura.
+La corrección debe aprobar compilación WASM y crear un dibujo real en el navegador;
+el recibo c04266c2 no acredita este Rust nuevo. Los paquetes nativos anteriores
+conservan su productor y sus resultados; no se atribuye al nuevo SHA su versión.

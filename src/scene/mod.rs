@@ -2056,9 +2056,10 @@ pub struct Scene {
     pub interim_wire: Option<WireModel>,
     pub camera_generation: u64,
     /// Last geometry/camera pair actually encoded by the viewport shader.
-    /// Capture waits for this pair before reading the window surface.
+    /// Capture waits for this pair before reading the window surface. Iced uses
+    /// a browser monotonic clock on wasm and the same std clock on native hosts.
     pub(crate) rendered_revision:
-        Arc<std::sync::Mutex<Option<(u64, u64, std::time::Instant)>>>,
+        Arc<std::sync::Mutex<Option<(u64, u64, iced::time::Instant)>>>,
     /// Incremented whenever geometry-affecting state changes (entities, selection,
     /// preview wires, layer visibility, layout). The GPU pipeline uses this to
     /// skip re-uploading unchanged geometry buffers every frame.
