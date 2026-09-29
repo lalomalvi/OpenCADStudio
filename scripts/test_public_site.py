@@ -45,6 +45,19 @@ class PublicSiteTests(unittest.TestCase):
                     self.assertFalse(tree.findall(".//{http://www.w3.org/2000/svg}path"))
                     self.assertIn("0", " ".join(tree.itertext()))
 
+    def test_aggregate_stars_without_personal_listing(self):
+        week = {"week": 1790467200, "total": 3, "days": [0, 2, 0, 0, 0, 1, 0]}
+        with patch.object(charts.urllib.request, "urlopen", return_value=self.response([week])) as api:
+            dates = charts.fetch_star_dates("lalomalvi/OpenCADStudio", "test-token")
+            self.assertIn("/stargazers/history?per_page=30", api.call_args.args[0].full_url)
+            self.assertEqual(len(dates), 3)
+            self.assertEqual(dates[0], dates[1])
+            self.assertEqual((dates[2] - dates[0]).days, 4)
+        for invalid in ({**week, "total": 4}, {**week, "days": [-1, 2, 0, 0, 0, 1, 0]}):
+            with patch.object(charts.urllib.request, "urlopen", return_value=self.response([invalid])):
+                with self.assertRaises(ValueError):
+                    charts.fetch_star_dates("lalomalvi/OpenCADStudio", None)
+
     def test_project_paths_and_owned_origin(self):
         base = "https://lalomalvi.github.io/OpenCADStudio"
         with tempfile.TemporaryDirectory() as directory:
@@ -61,7 +74,7 @@ class PublicSiteTests(unittest.TestCase):
                 if page.parent.name == "app":
                     continue
                 self.assertIn("https://github.com/lalomalvi/OpenCADStudio/releases", html)
-                self.assertIn("Original project by Hakan", html)
+                self.assertIn("Original project by Hakan Seven.", html)
                 import re
                 for target in re.findall(r'(?:src|href)=["\'](/[^"\']*)', html):
                     path = urlsplit(target).path

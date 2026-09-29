@@ -128,7 +128,7 @@ def build(output):
             rendered = rendered.replace(
                 '<body>', '<body><aside style="padding:12px;text-align:center">'
                 'Community fork by Luis Mart\u00ednez (lalomalvi) for an open BIM ecosystem. '
-                'Original project by Hakan I\u015f\u0131k. '
+                'Original project by Hakan Seven. '
                 f'<a href="{REPO}#readme">Fork scope and OpenAEC context</a></aside>')
         rendered = site_paths(rendered)
         (destination / "index.html").write_text(rendered, encoding="utf-8")

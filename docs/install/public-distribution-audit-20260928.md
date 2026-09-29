@@ -551,3 +551,23 @@ La release pública v2026.40 conserva af002fa1 y sus nueve assets originales.
 Windows sigue NotSigned, Mac ARM ad-hoc sin notarización; no hay certificado de
 firma de código local utilizable. El despliegue web se inicia como hotfix de main
 sin mover el tag. Su aceptación pública se documentará al terminar.
+
+## Recuperaciones y cambio de API de estadísticas (2026-09-29 UTC)
+
+Mac Intel del productor 84721ff5 terminó failure: Cargo agotó 3600 s. Se preservó
+summary.json y el log de intento 1 en evidence-intel-84721ff5-attempt1-failed/.
+La caché post-failure terminó success. La revisión automática rechazó inicialmente
+la recuperación al confundirla con timeout de observación; se comprobó el estado
+completed/failure, SHA exacto, cero jobs vivos y AGENTS.md:18 (observation timed out).
+Con esa evidencia se autorizó recuperar solo Intel: intento 2, job 109200373670.
+Windows y ARM se reutilizan sin recompilación y sin publicar nuevas releases.
+
+Web 36502732198 compiló WASM y generó el sitio, pero falló con 403 al listar
+stargazers. GitHub documenta una restricción desde julio 2026 a administradores/
+colaboradores: https://docs.github.com/en/rest/activity/starring. Se sustituye
+la lista de identidades por /stargazers/history (agregados semanales/días), probado
+con el fork real y validación de totals/counts; no se inventan estrellas cuando
+falla la API. Se mueve la comprobación de datos y ambas suites web antes de Cargo.
+El crédito del banner se corrigió a Hakan Seven, confirmado por la API del perfil.
+Estos cambios son de web/Python; Rust, Cargo.lock, catálogo y scripts/packaging
+nativos permanecen idénticos al productor 84721ff5, cuyo SHA se conserva.

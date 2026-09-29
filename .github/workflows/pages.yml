@@ -86,6 +86,24 @@ jobs:
         id: pages
         uses: actions/configure-pages@v5
 
+      - name: Check out current website
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: website
+
+      - name: Validate website
+        working-directory: website
+        run: |
+          python3 scripts/test_site.py
+          python3 scripts/test_public_site.py
+
+      # Publish separate light/dark charts for stars and release downloads.
+      - name: Generate project growth charts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 website/scripts/generate-star-history.py --repository "$GITHUB_REPOSITORY" --output-dir dist
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -116,16 +134,6 @@ jobs:
         env:
           SITE_BASE_PATH: ${{ steps.pages.outputs.base_path }}
         run: trunk build --locked --release --public-url "$SITE_BASE_PATH/app/" --dist dist/app --html-output index.html web-app.html
-
-      - name: Check out current website
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          path: website
-
-      - name: Validate website
-        working-directory: website
-        run: python3 scripts/test_site.py
 
       - name: Assemble landing page
         working-directory: website
@@ -267,12 +275,6 @@ jobs:
           )
           print(f"supporters: {len(supporters)}")
           PY
-
-      # Publish separate light/dark charts for stars and release downloads.
-      - name: Generate project growth charts
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python3 website/scripts/generate-star-history.py --repository "$GITHUB_REPOSITORY" --output-dir dist
 
       # Browsers cannot reliably fetch YouTube playlist/oEmbed responses because
       # of CORS. Build a same-origin listing and thumbnail directory for the

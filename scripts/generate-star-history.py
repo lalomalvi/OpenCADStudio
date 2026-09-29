@@ -62,9 +62,9 @@ def next_link(header: str | None) -> str | None:
 
 
 def fetch_star_dates(repository: str, token: str | None) -> list[datetime]:
-    url = f"https://api.github.com/repos/{repository}/stargazers?per_page=100"
+    url = f"https://api.github.com/repos/{repository}/stargazers/history?per_page=30"
     headers = {
-        "Accept": "application/vnd.github.star+json",
+        "Accept": "application/vnd.github+json",
         "User-Agent": "OpenCADStudio-star-history",
         "X-GitHub-Api-Version": API_VERSION,
     }
@@ -77,15 +77,23 @@ def fetch_star_dates(repository: str, token: str | None) -> list[datetime]:
         with urllib.request.urlopen(request, timeout=30) as response:
             payload = json.load(response)
             link = response.headers.get("Link")
-        for entry in payload:
-            value = entry.get("starred_at")
-            if value:
-                dates.append(datetime.fromisoformat(value.replace("Z", "+00:00")))
+        # GitHub restricted individual stargazer listings in July 2026.
+        # Public aggregate history avoids personal identities and admin access.
+        # Dates below are daily bucket anchors, not individual star timestamps.
+        for week in payload:
+            start = datetime.fromtimestamp(week["week"], timezone.utc)
+            counts = week["days"]
+            if len(counts) != 7 or any(type(count) is not int or count < 0 for count in counts):
+                raise ValueError("GitHub returned invalid daily star counts")
+            if sum(counts) != week["total"]:
+                raise ValueError("GitHub weekly star total differs from daily counts")
+            for day, count in enumerate(counts):
+                dates.extend([start + timedelta(days=day)] * count)
         url = next_link(link)
         if not url:
             break
     else:
-        raise RuntimeError("stargazer pagination exceeded 100 pages")
+        raise RuntimeError("aggregate star history pagination exceeded 100 pages")
 
     dates.sort()
     return dates
