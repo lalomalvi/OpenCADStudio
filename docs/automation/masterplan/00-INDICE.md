@@ -87,3 +87,7 @@ Una versión candidata requiere todos los gates técnicos y de fidelidad de su a
 [M8-CI-FORK-V1.md](M8-CI-FORK-V1.md): workflows manuales del fork, Rust workspace CI y Python host Linux/Windows aprobados en sus SHAs; checks automáticos del PR aún no acreditados.
 [M7-PUERTA-NORESTE-REPETIBILIDAD-V1.md](M7-PUERTA-NORESTE-REPETIBILIDAD-V1.md): seis llamadas Luna intercaladas sobre puerta ya vista; prompt inicial 0/3 y corregido 1/3, sin CAD nuevo ni aceptación M7.
 [M8-RELEASE-CANDIDATO-B79E-V1.md](M8-RELEASE-CANDIDATO-B79E-V1.md): segundo bundle Windows x64 desde SHA limpio exacto, guard de revisión probado, verificación tras extracción y smoke sintético L2/AutoCAD L4 4/4; M8 sigue parcial.
+
+## Corte consolidado 2026-09-29
+
+[06-INFORME-MAESTRO-Y-MEJORAS-20260929.md](06-INFORME-MAESTRO-Y-MEJORAS-20260929.md) es la entrada vigente para mejoras MCP: capacidades, dificultades, tiempos/tokens, 19 frentes R01-R19, cobertura M0-M8 y continuidad. [Datos e índice de evidencia](06-METRICAS-Y-EVIDENCIAS-20260929.json). Conserva los estados históricos; incorpora distribución 2026.40.1 y las evaluaciones E1 (imagen), E2 (creación) y E3 (modificación). Instrucción de este ciclo: commit local, no push.

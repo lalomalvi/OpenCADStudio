@@ -870,3 +870,7 @@ MCP uses the installed desktop binary. Complete the [Windows](../install/windows
 or [macOS](../install/macos.md) route and get its absolute executable with
 `scripts/desktop.py path`. GUI launch and `--mcp` are different commands.
 See the [agent installation contract](../install/agents.md) before stopping at a clone.
+
+## MCP evaluation and improvement backlog
+
+[Master report, metrics and handoff (2026-09-29)](masterplan/06-INFORME-MAESTRO-Y-MEJORAS-20260929.md) consolidates existing M0-M8 work, image interpretation, native creation/editing, known issues and measurable acceptance gates. This documentation cycle is local-only; private CAD and traces stay outside Git.

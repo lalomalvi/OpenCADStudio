@@ -2093,3 +2093,11 @@ y M8 paquete vigente. Reutiliza solo evidencia vinculada a SHA/configuración/co
 No recompiles/reenvíes por timeout o prosa, no repitas slots/IDs/perfiles, no pidas
 sexta imagen ni API, no abras/lees/hash/modifiques el DWG privado. Conserva todos los
 fallos. Publica sin force únicamente en lalomalvi/OpenCADStudio con gates aprobados.
+
+## Corte 161: informe maestro y edición conversacional — 2026-09-29
+
+Luis pidió consolidar tiempos/tokens, fortalezas, dificultades y todas las mejoras pendientes para cualquier agente; autorizó commit local y prohibió push. [Informe maestro](06-INFORME-MAESTRO-Y-MEJORAS-20260929.md) y [métricas/evidencias](06-METRICAS-Y-EVIDENCIAS-20260929.json) reúnen M0-M8 y R01-R19. Operativo actual: desktop-distribution, codex/windows-web-dxf; HEAD previo 26bce00a, binario productor 196b1b7c. El prompt de ese informe sustituye para este ciclo las instrucciones antiguas de worktree/publicación.
+
+Imagen E1: fidelidad no aceptada, una llamada solicitada Luna, JSON recuperado solo en representación, geometría externa 83/86 y sonda suplementaria invalidada. Caso E2 (V1, creación) y modificación E3 (V2): creación/edición/persistencia interna aprobadas acotadamente; seis cambios, 184 entidades sin cambio y cinco transformadas. Bounds INSERT y capa de primera referencia siguen pendientes. Contexto recuperable es prototipo; no aceptación M7 ni externa de ambos casos.
+
+Métricas V1/V2 preservadas con sus cortes: 4,102,865 y 2,787,659 tokens; 1,230.681 y 921.624 s de pared; 55.726305 y 29.860522 s de llamadas MCP. Cargas distintas, no benchmark causal. Distribución pública 2026.40.1 ya tiene recibos; Mac físico/firma confiable separados. Sin nuevos tests CAD/modelo/Cargo, sin merge necesario, sin push. Evidencia privada bajo target excluida de Git. Retomar desde R01/R02/R03, custodia R05/R11 y gates del maestro.

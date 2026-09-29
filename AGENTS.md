@@ -52,3 +52,10 @@ For synchronizing upstream or publishing this fork, follow
   and console; preserve any panic with its source/module identity.
 - Keep browser GUI, desktop GUI/MCP, CAD interoperability and native publication
   results separate. A web-only fix does not relabel earlier native packages.
+
+## MCP improvement continuity
+
+For MCP evaluation, performance and hardening work, start with
+[the consolidated evidence and improvement report](docs/automation/masterplan/06-INFORME-MAESTRO-Y-MEJORAS-20260929.md).
+It maps current findings to M0-M8 and preserves scoped results and private evidence.
+The report's current cycle is local-only: do not push based on historical publication authorization.

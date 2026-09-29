@@ -1,0 +1,142 @@
+{
+  "schema": "mcp-master-evidence-index-1",
+  "measured_at_utc": "2026-09-29T07:47:11.788322+00:00",
+  "source_head_before_documentation": "26bce00ab883b86c6f0e3b0edb3075d65b9062aa",
+  "binary_producer": "196b1b7c554a17299fd546850614db4bfc77de7a",
+  "evidence_availability": "Local private target artifacts; not shipped in Git; missing files do not constitute passing evidence. Hash existence checks are not new CAD runs.",
+  "image_case": {
+    "requested_model": "gpt-6-luna",
+    "effective_model": "unverified_by_cli",
+    "generator_seconds": 135.83,
+    "narrative_previous_seconds": 135.84,
+    "discrepancy": "0.01 seconds; structured receipt used, historical narrative preserved",
+    "usage_cli": {
+      "input_tokens": 16629,
+      "cached_input_tokens": 11008,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 7352,
+      "reasoning_output_tokens": 0
+    },
+    "total_tokens": 23981,
+    "billing_cost": null,
+    "scope": "One generator call; excludes evaluator and tool work; image fidelity not accepted"
+  },
+  "iterations": {
+    "v1": {
+      "iteration": "v1",
+      "usage_delta": {
+        "input_tokens": 4070859,
+        "cached_input_tokens": 3885824,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 32006,
+        "reasoning_output_tokens": 10891,
+        "total_tokens": 4102865
+      },
+      "cache_hit_pct": 95.45464483048909,
+      "input_not_cached": 185035,
+      "turn_start_utc": "2026-09-29T06:44:49.350Z",
+      "usage_cutoff_utc": "2026-09-29T07:05:20.031Z",
+      "total_elapsed_s_until_usage_cutoff": 1230.681,
+      "token_usage_scope": "Local Codex thread cumulative counter delta; repeated context charged to input on each completion, not unique text. Reasoning output is a subset of output. Not API invoicing. V2 excludes final response and work after cutoff.",
+      "rpc_calls_all": 150,
+      "tool_calls_observed": 142,
+      "tool_rpc_summed_elapsed_s": 55.726305,
+      "mutation_calls_completed": 59,
+      "mutation_client_elapsed_s": 48.47499549999338,
+      "strict_script_commands_completed": 430,
+      "strict_script_client_elapsed_s": 46.865432899983716,
+      "strict_script_commands_per_s": 9.17520597574912,
+      "elapsed_span_first_last_rpc_s": 820.432994,
+      "core_scope": "Client-observed serial tool-call sums; includes protocol/transport and GUI time, not pure kernel CPU. Does not include model reasoning or filesystem tools. Phase gaps included only in elapsed span/total."
+    },
+    "v2": {
+      "iteration": "v2",
+      "usage_delta": {
+        "input_tokens": 2761216,
+        "cached_input_tokens": 2603008,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 26443,
+        "reasoning_output_tokens": 10495,
+        "total_tokens": 2787659
+      },
+      "cache_hit_pct": 94.2703504542926,
+      "input_not_cached": 158208,
+      "turn_start_utc": "2026-09-29T07:13:47.587Z",
+      "usage_cutoff_utc": "2026-09-29T07:29:09.211Z",
+      "total_elapsed_s_until_usage_cutoff": 921.624,
+      "token_usage_scope": "Local Codex thread cumulative counter delta; repeated context charged to input on each completion, not unique text. Reasoning output is a subset of output. Not API invoicing. V2 excludes final response and work after cutoff.",
+      "rpc_calls_all": 58,
+      "tool_calls_observed": 55,
+      "tool_rpc_summed_elapsed_s": 29.860522,
+      "mutation_calls_completed": 26,
+      "mutation_client_elapsed_s": 25.758028299991565,
+      "strict_script_commands_completed": 218,
+      "strict_script_client_elapsed_s": 24.69473700000526,
+      "strict_script_commands_per_s": 8.827791929914198,
+      "elapsed_span_first_last_rpc_s": 430.250908,
+      "core_scope": "Client-observed serial tool-call sums; includes protocol/transport and GUI time, not pure kernel CPU. Does not include model reasoning or filesystem tools. Phase gaps included only in elapsed span/total."
+    }
+  },
+  "metrics_source_recorded_at": "2026-09-29T07:29:47.764394+00:00",
+  "model_recorded_in_thread": "gpt-6-sol",
+  "comparison": "Different workloads: V1 design/build; V2 selective modification with extension. These are descriptive observations, not controlled speed benchmark.",
+  "billing_cost": null,
+  "artifacts_redacted": {
+    "redaction_for_publication": "Copy redacted for publication on 2026-10-01: per-file paths, names and SHA-256 of private case artifacts removed; counts kept. The full path and hash index stays only in the private local copy, outside the history prepared for publication.",
+    "files_total": 29,
+    "cases": {
+      "E1a": {
+        "files": 6,
+        "receipts": 6,
+        "captures": 0,
+        "cad": 0
+      },
+      "E1b": {
+        "files": 4,
+        "receipts": 3,
+        "captures": 0,
+        "cad": 1
+      },
+      "E2": {
+        "files": 7,
+        "receipts": 5,
+        "captures": 1,
+        "cad": 1
+      },
+      "E3": {
+        "files": 12,
+        "receipts": 8,
+        "captures": 3,
+        "cad": 1
+      }
+    },
+    "tracked": false
+  },
+  "documentation_turn": {
+    "schema": "documentation-turn-metrics-1",
+    "request_start_utc": "2026-09-29T07:31:26.876Z",
+    "usage_cutoff_utc": "2026-09-29T07:47:11.884Z",
+    "measured_at_utc": "2026-09-29T07:48:05.924020+00:00",
+    "model_recorded_in_thread": "gpt-6-astra",
+    "usage_delta": {
+      "input_tokens": 1013796,
+      "cached_input_tokens": 745472,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 22346,
+      "reasoning_output_tokens": 863,
+      "total_tokens": 1036142
+    },
+    "wall_seconds_until_cutoff": 945.008,
+    "scope": "Documentation request only. Local cumulative token_count delta, repeated context included. Excludes work after cutoff, final validation/commit and final response. Cache subset of input; reasoning subset of output. Not a bill. Separate from all CAD runs.",
+    "billing_cost": null,
+    "new_cad_or_model_evaluation_runs": 0,
+    "artifact_hashes_verified": 29,
+    "dwg_hashes_verified_against_existing_verdicts": 3,
+    "incidents": [
+      "Windows command length limit prevented process creation; split writes; no partial file from failed launch",
+      "rg literal Windows glob rejected; corrected to directory and -g",
+      "Overlong read output truncated; narrowed subsequent reads"
+    ],
+    "verification": "metrics arithmetic and evidence identities checked; documentation links and Git diff checked separately before commit"
+  }
+}
