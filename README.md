@@ -8,7 +8,7 @@
 
 Luis develops this community fork as part of his work on an open BIM ecosystem and his collaboration with the [OpenAEC Foundation initiative](https://open-aec.com/en/) in the Netherlands. The focus is practical: installable tools, inspectable operations, traceable drawing outputs and engineering workflows that people can review.
 
-[Download 2026.40](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40) · [Windows installation](docs/install/windows.md) · [macOS installation](docs/install/macos.md) · [MCP API](docs/automation/API-SPEC.md) · [Español](docs/readme/README.es.md)
+[Fork website](https://lalomalvi.github.io/OpenCADStudio/) · [Open the browser CAD](https://lalomalvi.github.io/OpenCADStudio/app/) · [Download 2026.40](https://github.com/lalomalvi/OpenCADStudio/releases/tag/v2026.40) · [Windows installation](docs/install/windows.md) · [macOS installation](docs/install/macos.md) · [MCP API](docs/automation/API-SPEC.md) · [Español](docs/readme/README.es.md)
 
 ## Download, install and open
 
@@ -127,7 +127,7 @@ Source for the published packages: [`af002fa17a795892792ecae26e87cfb5886047b9`](
 - [Workspace and host CI](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36484188997): Rust workspace, Python automation and real hosts on Windows/Linux passed.
 - Local Windows acceptance verified the same published package outside the checkout with an isolated GUI and synthetic drawings.
 
-The published v2026.40 retains the historical two PLANT description errors in synthetic DXF 2000. The post-release candidate `84721ff5` corrects that description: its Windows-generated DWG 2000/2013/2018 and DXF 2000 all pass AutoCAD AUDIT with zero errors, five entities, clean exit and unchanged hashes. It is installed and verified locally; the candidate packages have not been published as a new release. These bounded checks do not establish global DWG/DXF parity. Full receipts, checksums, preserved failures and remaining gates are in the [dated distribution audit](docs/install/public-distribution-audit-20260928.md).
+The published v2026.40 retains the historical two PLANT description errors in synthetic DXF 2000. The post-release candidate `84721ff5` corrects that description: its Windows-generated DWG 2000/2013/2018 and DXF 2000 all pass AutoCAD AUDIT with zero errors, five entities, clean exit and unchanged hashes. It is installed and verified locally; the candidate packages have not been published as a new release. The same candidate also passed [native CI on Windows and both macOS 15 architectures](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36498042609), including GUI/MCP, synthetic saves and Finder on Mac. Intel succeeded in attempt 2 after the preserved initial timeout; Windows/ARM results were reused. These bounded checks do not establish global DWG/DXF parity. Full receipts, checksums, preserved failures and remaining gates are in the [dated distribution audit](docs/install/public-distribution-audit-20260928.md).
 
 ## Build and contribute
 

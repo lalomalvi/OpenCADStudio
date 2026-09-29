@@ -41,3 +41,14 @@ For synchronizing upstream or publishing this fork, follow
 - Use Cargo.lock (`--locked`). Keep protocol, GUI, CAD and publication results
   distinct. Do not declare native compatibility from script syntax checks.
 - No release publication or global tool installation is implied by offline tests.
+
+
+## Web acceptance
+
+- For this fork, use its verified GitHub Pages origin and repository links;
+  never carry upstream CNAME/domain settings into the fork deployment.
+- A green WASM build, valid HTTP assets or the Start page do not establish editor
+  acceptance. Create an isolated empty drawing and inspect the rendered viewport
+  and console; preserve any panic with its source/module identity.
+- Keep browser GUI, desktop GUI/MCP, CAD interoperability and native publication
+  results separate. A web-only fix does not relabel earlier native packages.

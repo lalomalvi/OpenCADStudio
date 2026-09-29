@@ -604,3 +604,49 @@ en hosts nativos. No cambia Cargo.lock ni el algoritmo/orden de captura.
 La corrección debe aprobar compilación WASM y crear un dibujo real en el navegador;
 el recibo c04266c2 no acredita este Rust nuevo. Los paquetes nativos anteriores
 conservan su productor y sus resultados; no se atribuye al nuevo SHA su versión.
+
+
+## Cierre de candidatos y web pública (2026-09-29 UTC)
+
+PR #3 quedó integrado por fast-forward en 42dddd1a; PR #4 en c04266c2;
+PR #5 integra la corrección del reloj web.
+Tests 36508707491 aprobó el productor 87c321a4c4519cefcc5ca6343a2cfd1d636d294f:
+Rust workspace, Python y hosts reales Windows/Linux. Recibo verified con fingerprint
+76226d700f508cc8eb5bb04598ce85971dc59079153da5da5dedeedb2031377a.
+Evidencia: target/distribution-port/tests-87c321a4/verification.json y log completo.
+
+Distribución 36498042609 terminó success en el intento 2 del mismo productor
+84721ff5a20c8e891a09705fa6c0aa500a760149. Solo Intel se recuperó: su compilación,
+instalación en ruta con espacios, protocolo, GUI/CAD y Finder aprobaron. Windows
+y ARM conservaron sus éxitos del intento 1 sin recompilar. Se inspeccionaron
+las capturas GUI/Finder y dibujo sintético de ambas arquitecturas Mac. Los tres
+ZIP, sidecars, procedencia, fuente limpia y los 29 payloads fueron comprobados;
+resultados candidate-84721ff5-package-verification.json y
+candidate-84721ff5-sidecar-verification.json (JSON externo/nombre/hash coincidentes). SHA-256:
+
+- Windows: 64e4f04ec085f350e7df478d0558cef68e1cbb66648163f7d284bd260ea54e73.
+- Mac ARM: 79cc957bb6830afbf9e243750fece230e0cee6db2a51fc91e0daeb1a67c1f02d.
+- Mac Intel: ad01f1cfda7280b6750461b6253c15511ada34f1d06bdcebc3fa215edb66f43d.
+
+Pages 36510352906 desplegó el hotfix de main 87c321a4 con build_main=true, sin
+mover el tag. La consulta agregada de estrellas y tres regresiones del sitio
+aprobaron antes de Cargo. Sitio propio https://lalomalvi.github.io/OpenCADStudio/:
+21 páginas/traducciones, canonicals, manifest/scope, sitemap/robots, release.json,
+JS/CSS y magic WASM verificados por HTTP. site-version.txt y app/release.json
+identifican 87c321a4 y versión base 2026.40. Se inspeccionaron la portada española y el CAD web; después de Dibujo nuevo,
+la pestaña Drawing1 y el viewport renderizaron sin panic ni errores de consola.
+Esto acredita creación/apertura del documento vacío en navegador, no edición/
+exportación web completa, CAD de escritorio ni paridad de formatos.
+Evidencia: target/distribution-port/public-web-87c321a4.json, pages-87c321a4-verified.json.
+La regresión anterior c04266c2 se conserva y queda supersedida por esta
+prueba New drawing del módulo 4c2ebc3a4d2471ad; errores anteriores del tab no
+se atribuyen al nuevo módulo. Receipt: public-web-browser-87c321a4.json.
+README inglés/español enlazan la web del fork; la demo upstream conserva su crédito.
+
+Los paquetes candidatos 84721ff5 están listos para preparar una siguiente release,
+pero no están publicados. v2026.40 conserva af002fa1 y sus nueve assets originales.
+Siguen separados: certificado confiable Windows, Developer ID/notarización Mac,
+prueba en el Mac del operador, mínimo macOS 11 y compatibilidad Windows 10.
+Los siete commits nuevos de upstream del preflight se reservan al siguiente ciclo.
+Este cierre modifica solo Markdown: fuente no documental idéntica a 87c321a4,
+por lo que conserva su recibo completo y no exige reconstrucción nativa ni WASM.
