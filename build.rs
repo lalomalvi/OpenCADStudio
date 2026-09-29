@@ -24,9 +24,10 @@ fn main() {
     let version = std::env::var("CARGO_PKG_VERSION").expect("Cargo package version");
     let parts: Vec<&str> = version.split('.').collect();
     let app_version = if parts.len() == 3 && parts[0].len() == 4
-        && parts[0].starts_with("20") && parts[2] == "0"
+        && parts[0].starts_with("20")
     {
-        format!("{}.{:02}", parts[0], parts[1].parse::<u32>().expect("week number"))
+        let weekly = format!("{}.{:02}", parts[0], parts[1].parse::<u32>().expect("week number"));
+        if parts[2] == "0" { weekly } else { format!("{weekly}.{}", parts[2]) }
     } else {
         version.clone()
     };

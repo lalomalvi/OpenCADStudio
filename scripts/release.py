@@ -21,12 +21,15 @@ def gh(*args):
 
 def versions(tag):
     version = tag.removeprefix("v")
-    weekly = re.fullmatch(r"(20\d{2})\.(\d{2})", version)
+    weekly = re.fullmatch(r"(20\d{2})\.(\d{2})(?:\.([1-9]\d*))?", version)
     if weekly:
-        year, week = map(int, weekly.groups())
+        year, week = map(int, weekly.groups()[:2])
+        patch = int(weekly.group(3) or "0")
         date.fromisocalendar(year, week, 1)
-        cargo = f"{year}.{week}.0"
-        msi = f"{year - 2000}.{week}.0"
+        if patch > 65535:
+            raise ValueError(f"Unsupported MSI patch: {version}")
+        cargo = f"{year}.{week}.{patch}"
+        msi = f"{year - 2000}.{week}.{patch}"
     elif re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version):
         cargo = msi = version
         major, minor, patch = map(int, version.split("."))
@@ -43,8 +46,9 @@ def cargo_version():
 
 def display_version(cargo):
     year, week, patch = cargo.split(".")
-    if len(year) == 4 and year.startswith("20") and patch == "0":
-        return versions(f"{year}.{int(week):02}")["version"]
+    if len(year) == 4 and year.startswith("20"):
+        tag = f"{year}.{int(week):02}" + (f".{patch}" if patch != "0" else "")
+        return versions(tag)["version"]
     return cargo
 
 

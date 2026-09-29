@@ -650,3 +650,25 @@ prueba en el Mac del operador, mínimo macOS 11 y compatibilidad Windows 10.
 Los siete commits nuevos de upstream del preflight se reservan al siguiente ciclo.
 Este cierre modifica solo Markdown: fuente no documental idéntica a 87c321a4,
 por lo que conserva su recibo completo y no exige reconstrucción nativa ni WASM.
+
+
+## Inicio del ciclo correctivo 2026.40.1 (2026-09-29 UTC)
+
+Luis autorizó terminar lo pendiente, incluida la siguiente distribución pública.
+Preflight 20260929T035916Z-06070e67 congeló main del fork 0a5fc31f y upstream
+60f35e2b1d4f34d184b336a914d6f39c91b29144: nueve commits nuevos frente a 37544263.
+La integración preserva PLANT y el reloj iced::time del fork; incluye FLATTEN,
+XCLIP/plot, inicio INSERT, snap paramétrico, colores y lease de lectura Windows.
+No se refrescará upstream para ampliar este ciclo al cerrar.
+
+Se prepara v2026.40.1 (Cargo 2026.40.1, MSI 26.40.1), sin mover v2026.40.
+El versionador admite parches positivos de semana ISO, valida la semana real,
+rechaza ceros no canónicos y limita el patch MSI a 65535. Cargo.lock solo cambia
+la versión del paquete raíz; las dependencias permanecen congeladas.
+La primera suite local conservó un fallo de la sonda rustc independiente en
+Windows: no enlaza winresource de Cargo. Esa sonda se delimita explícitamente a
+otros hosts; el build Cargo Windows completo y su metadata siguen obligatorios.
+Los nuevos paquetes deben tener su propio productor limpio y gates nativos;
+los éxitos 84721ff5 y 87c321a4 no acreditan este nuevo contenido.
+Firma Windows confiable, Developer ID/notarización y Mac del operador siguen
+pendientes de credenciales/equipo externos; no se desactiva su seguridad.
