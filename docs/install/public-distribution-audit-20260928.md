@@ -516,3 +516,38 @@ No se encontraron certificados de firma de código en CurrentUser/My ni en
 LocalMachine/My. La firma confiable requiere una credencial del editor externa;
 no se crea una autofirmada ni se cambia SmartScreen. Prueba del Mac del operador,
 notarización y mínimo macOS 11 continúan separados.
+
+## Integración de la corrección Windows; Mac Intel continúa separado
+
+Productor limpio 84721ff5a20c8e891a09705fa6c0aa500a760149, Rust 1.98.1,
+Cargo.lock sin cambios, versión 2026.40+3.g84721ff5. Tests 36498042994 terminó
+success: rust_workspace, python y host Windows/Linux validados; fingerprint
+aeaf00200aef337ef9eb8afb12cea73be2848d35d4fc5c7810486e634c361d71.
+Web check 36498042575 aprobó WASM, 21 idiomas y regresiones del fork.
+En distribución 36498042609, Windows y Mac ARM terminaron success, incluyendo
+GUI/MCP, CAD sintético y Finder en ARM; Mac Intel seguía en construcción al
+preparar esta integración. No se declara aprobado ni se publican paquetes nuevos.
+
+Windows local (Windows 11 Pro 10.0.26200, x64) verificó e instaló el ZIP
+OpenCADStudio-fork-2026.40.0-84721ff5a20c-windows-x86_64-64e4f04ec085.zip,
+SHA-256 64e4f04ec085f350e7df478d0558cef68e1cbb66648163f7d284bd260ea54e73,
+en %LOCALAPPDATA%/Programs/OpenCADStudio Fork Windows Fix Candidate/
+64e4f04ec085f350/application/OpenCADStudio.exe. PID propio 19596, GUI abierta
+con perfil privado. GUI y dibujo sintético renderizados inspeccionados. MCP
+stdio/EOF, cinco versiones y cuatro herramientas aprobaron en ese mismo EXE.
+
+AutoCAD 2025 READ_ONLY aceptó DWG 2000/2013/2018 y DXF 2000 nuevos: cinco
+entidades, AUDIT 0/0, cero advertencias PLANT, salida natural 0 y hash intacto
+en los cuatro. El DXF exportado coincide con el aislamiento corregido:
+2d000252c22ea72ca051ad09de827daac0602de02b579b165b50fda73809b3cc.
+No se acredita paridad global de formatos. El primer intento de la sonda quedó
+preservado: colisión de nombres de perfil DWG/DXF con el mismo stem; se corrigió
+solo la sonda, sin recompilar el producto.
+
+Evidencia: target/distribution-port/verify-windows-84721ff5/,
+external-windows-84721ff5-complete/results.json y tests-84721ff5/verification.json.
+La GUI pública anterior y las instalaciones históricas siguen preservadas.
+La release pública v2026.40 conserva af002fa1 y sus nueve assets originales.
+Windows sigue NotSigned, Mac ARM ad-hoc sin notarización; no hay certificado de
+firma de código local utilizable. El despliegue web se inicia como hotfix de main
+sin mover el tag. Su aceptación pública se documentará al terminar.

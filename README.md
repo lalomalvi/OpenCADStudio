@@ -127,7 +127,7 @@ Source for the published packages: [`af002fa17a795892792ecae26e87cfb5886047b9`](
 - [Workspace and host CI](https://github.com/lalomalvi/OpenCADStudio/actions/runs/36484188997): Rust workspace, Python automation and real hosts on Windows/Linux passed.
 - Local Windows acceptance verified the same published package outside the checkout with an isolated GUI and synthetic drawings.
 
-The external AutoCAD check of earlier synthetic DWG 2000/2013/2018 files recorded zero audit errors. Synthetic DXF 2000 retains two pre-existing PLANT errors and timeout termination. These bounded results do not establish global DWG/DXF parity. Full receipts, checksums, preserved failures and remaining gates are in the [dated distribution audit](docs/install/public-distribution-audit-20260928.md).
+The published v2026.40 retains the historical two PLANT description errors in synthetic DXF 2000. The post-release candidate `84721ff5` corrects that description: its Windows-generated DWG 2000/2013/2018 and DXF 2000 all pass AutoCAD AUDIT with zero errors, five entities, clean exit and unchanged hashes. It is installed and verified locally; the candidate packages have not been published as a new release. These bounded checks do not establish global DWG/DXF parity. Full receipts, checksums, preserved failures and remaining gates are in the [dated distribution audit](docs/install/public-distribution-audit-20260928.md).
 
 ## Build and contribute
 
