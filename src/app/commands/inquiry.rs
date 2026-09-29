@@ -1995,4 +1995,3 @@ mod find_replace_command_tests {
         }
     }
 }
-
