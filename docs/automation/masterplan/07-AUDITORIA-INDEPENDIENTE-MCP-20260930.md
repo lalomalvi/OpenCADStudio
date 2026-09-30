@@ -87,17 +87,17 @@ Tiene tres puntos débiles:
 **Conclusión 1. Recuperar sin duplicar depende hoy del cliente, no del servidor.** El harness propio (`mcp_client.py`) mitiga el riesgo: siempre envía `revision` y consulta `operation` en vez de reenviar. Un cliente genérico no tiene esa protección, por cuatro defectos de contrato verificados en código:
 
 - **Revisión implícita.** `revision` es opcional y el servidor la rellena con la última que vio *él*, no el agente (`src/mcp.rs:758`).
-- **Errores mal etiquetados.** Todo error posterior al envío sale como `invalid_arguments, retryable:false` (`src/mcp.rs:1993-2000`).
+- **Errores mal etiquetados.** Todo error que el servidor propaga como `Err` sale como `invalid_arguments, retryable:false` (`src/mcp.rs:1993-2000`), también después de enviar la mutación: E/S, sondeo, consulta posterior, journal. Las respuestas de la GUI que llegan como valor (p. ej. `response_timeout`) sí conservan su código.
 - **Lectura que ejecuta.** `ocs_read op:"operation"` se anuncia `readOnlyHint:true`, pero sobre un lote inconcluso ejecuta los pasos que faltan (`src/mcp.rs:1627-1633` → `708-724`).
 - **Idempotencia acotada.** Solo cubre las últimas **128** operaciones en memoria de la GUI (`src/app/control/mod.rs:1287-1292`) y compara la solicitud entera, incluidos los campos que inyecta el servidor.
 
 **Conclusión 2. D01 y D02 son del programa, no del harness.**
 
-- **D01.** El bounds de un INSERT es un marcador provisional del codec («*For now, return a bounding box at the insertion point*») que ninguna ruta de consulta de la aplicación corrige.
+- **D01.** Ninguna ruta de consulta de la aplicación trata el INSERT: delega en el codec. En una revisión cercana del codec (`42b44d2`; la fijada, `cdf2277`, no estaba disponible) ese cálculo es un marcador provisional («*For now, return a bounding box at the insertion point*»). La propia aplicación asume ese colapso (`src/scene/mod.rs:1550-1552`).
   - `contains_point` y `near` ni siquiera consideran INSERT.
   - `query` mezcla hijos de definiciones de bloque en coordenadas locales.
 - **D02.** `block_define` nunca asigna capa a la referencia; comparte función con el comando BLOCK de la GUI.
-- **Además,** `save_verified` compara solo **conteos por tipo y por capa** (`src/app/automation.rs:366-378`). «Verificado» no significa geometría preservada.
+- **Además,** la comparación semántica de `save_verified` es de **conteos por tipo y por capa** (`src/app/automation.rs:366-378`). La operación sí comprueba reapertura y versión, pero «verificado» no significa geometría ni handles preservados.
 
 **Conclusión 3. No hay base para declarar ganador entre modelos o harnesses.**
 
@@ -124,7 +124,7 @@ Lo que sí existe es buena infraestructura de custodia —reserva con hash, cade
 | A01 | Rama operativa `codex/windows-web-dxf`; HEAD previo `26bce00a` (06 §1) | `26bce00a` + 1 commit documental; worktree limpio | Confirmada | El commit documental no estaba publicado; versión redactada para publicación: `d0d88409` |
 | A02 | Binario instalado v2026.40.1 con productor `196b1b7c` (06 §1) | `196b1b7c` es padre de `26bce00a`; sin cambios en `src/`, `Cargo.*` ni `crates/` | Parcial | Fuente confirmada; EXE, hash y perfil sin verificar |
 | A03 | El checkout original tiene cambios históricos y CAD privado (06 §1) | `git status` del checkout de la sesión | Confirmada | — |
-| A04 | Los bounds de INSERT colapsan en el punto de inserción; una ventana dentro del símbolo devuelve cero (D01) | `src/scene/convert/tess.rs:1761-1793`: sin rama INSERT, cae en `bounding_box()` del codec. Codec `insert.rs:695-699` (†, rev. `42b44d2`). `src/scene/mod.rs:1550-1552`. Bucle en `src/app/automation.rs:1006` y filtro en `1049-1058` | Confirmada (mecanismo) | Causa en el programa. Las 25 referencias de E2 no se verificaron |
+| A04 | Los bounds de INSERT colapsan en el punto de inserción; una ventana dentro del símbolo devuelve cero (D01) | `src/scene/convert/tess.rs:1761-1793`: sin rama INSERT, cae en `bounding_box()` del codec. Codec `insert.rs:695-699` (†, rev. `42b44d2`). `src/scene/mod.rs:1550-1552`. Bucle en `src/app/automation.rs:1006` y filtro en `1049-1058` | Confirmada en la app; el colapso del codec, en revisión cercana | La app no trata INSERT (confirmado). El colapso al punto se leyó en el codec `42b44d2`, no en el fijado `cdf2277`. Las 25 referencias de E2 no se verificaron |
 | A05 | Las primeras referencias de `block_define` quedaron en capa 0 (D02) | `src/scene/entity.rs:1080-1083` crea `DxfInsert::new(name, ZERO)` sin asignar capa; `src/app/control/entities.rs:173-198` hace lo mismo en `entities_create` | Confirmada y ampliada | Afecta a **todas** las referencias de `block_define` y a todo INSERT creado sin `layer`. Si es defecto o diseño lo fija el contrato R02 |
 | A06 | Con MCP se pudo crear, modificar, conservar, guardar, reabrir y auditar (E2/E3) | Las operaciones existen (`src/mcp.rs:51-97`); `save_verified` en `src/app/automation.rs:1281-1412` | Parcial | Capacidad confirmada. Resultados de corrida sin verificar. «Verificado» = conteos |
 | A07 | V2 conserva 184 entidades sin cambio geométrico y transforma 5 (E3) | Recibo local no versionado | Desconocida | No leído por regla. La comparación la hizo el harness, no el producto |
@@ -300,7 +300,7 @@ Cada hallazgo indica: severidad, impacto, causa (confirmada o hipótesis), repro
 - **Mitigación actual:** el cliente del proyecto.
 - **Recomendación:** B01.
 
-**M2 · Errores posteriores al envío etiquetados `invalid_arguments, retryable:false`, con carrera de 15 s contra 15 s — Alta**
+**M2 · Errores propagados después del envío etiquetados `invalid_arguments, retryable:false`, con carrera de 15 s contra 15 s — Alta**
 
 - **Causa confirmada:** todo `Err` de `call_tool` pasa por `error_result` (`src/mcp.rs:1993-2000`, `2202`). Estos `Err` pueden ocurrir **después** de enviar la mutación:
   - lectura de E/S en `exchange` (`:501-507`);
@@ -858,3 +858,13 @@ Primero hay que corregir B01–B04 para que el contrato valga igual para cualqui
 - En los worktrees solo hay binarios de depuración o anteriores al código auditado. El más cercano es un artefacto de CI en depuración (`09794ab6`).
 
 No hay evidencia local de un binario compilado del código auditado, así que B19 gana prioridad. Detalle en [M4-CONTRATO-HUMANO-AGENTE-V1](M4-CONTRATO-HUMANO-AGENTE-V1.md).
+
+## Erratas 2026-09-30 (tras la auditoría de Codex)
+
+Codex contrastó cinco hallazgos de esta auditoría con el código. Confirmó la revisión implícita (M1) y la lectura que reanuda lotes (M3), y señaló tres exageraciones de redacción, corregidas en el texto:
+
+1. **M2 y resumen.** Decía «todo error posterior al envío». Correcto: todo error que el servidor **propaga como `Err`**; las respuestas de la GUI que llegan como valor conservan su código.
+2. **A04 y resumen (D01).** Decía «confirmada» sin salvedad. Correcto: la ausencia de tratamiento de INSERT en la aplicación está confirmada; el colapso al punto se leyó en una revisión cercana del codec, no en la fijada.
+3. **Resumen (`save_verified`).** Decía que «compara solo conteos». Correcto: su comparación semántica es de conteos, y además comprueba reapertura y versión.
+
+Los hallazgos, sus severidades y el backlog no cambian.

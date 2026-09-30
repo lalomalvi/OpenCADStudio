@@ -16,7 +16,11 @@ python docs/automation/masterplan/m8_release_package.py verify --root .
 
 El siguiente caso sintético genera un DWG y una captura en una GUI propia, comprueba guardado/reapertura y cierra esa GUI. Ejecuta `run` **una sola vez** para cada nombre; si una respuesta se pierde, inspecciona ese run, sin repetir la mutación.
 
-Primero, el contrato. `review` escribe una hoja de una página con lo que se va a dibujar, los supuestos, las dudas y lo que no se verifica. `approve` lo ejecuta **solo el humano**, en su propia terminal interactiva: muestra la hoja, pide teclear los primeros 12 caracteres del hash del plan y lo anota en un registro encadenado por hash. Un agente no puede aprobar: sin terminal interactiva, el comando se niega. Sin aprobación, `run` no abre la GUI.
+Primero, el contrato. `review` escribe una hoja de una página con lo que se va a dibujar, los supuestos, las dudas y lo que no se verifica. `approve` lo ejecuta **solo el humano**, en su propia terminal interactiva: muestra la hoja, pide teclear los primeros 12 caracteres del hash del plan y lo anota en un registro encadenado por hash.
+
+- Un agente no debe aprobar. Sin terminal interactiva el comando se niega, pero es un freno de procedimiento, no una firma criptográfica: quien pueda escribir el registro o llamar a la API de Python podría falsearlo.
+- `status` indica si `run` aceptaría hoy la aprobación (`usable_by_run`).
+- Sin aprobación utilizable, `run` no abre la GUI.
 
 ```powershell
 python docs/automation/masterplan/plan_contract.py review --plan docs/automation/masterplan/fixtures/synthetic-wall.planspec.json --out target/mcp-release/synthetic-01-review

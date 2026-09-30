@@ -23,6 +23,7 @@ APPROVAL_SCHEMA = "m4-plan-contract-approval-1"
 HUMAN_CHANNEL = "interactive_tty"
 DOUBTS_ACK = "ACEPTO DUDAS"
 PREFIX_LENGTH = 12
+DETAIL_ROWS = 60
 DEFAULT_CAPABILITIES = frozenset({"layer_assignment"})
 REVIEW_MD = "contract-review.md"
 REVIEW_JSON = "contract-review.json"
@@ -91,6 +92,21 @@ def _meters(value) -> str:
     return f"{value:.3f}" if isinstance(value, (int, float)) else "?"
 
 
+def _length(nodes: dict, element: dict):
+    start, end = nodes.get(str(element.get("start"))), nodes.get(str(element.get("end")))
+    if not start or not end or not all(isinstance(point.get(axis), (int, float))
+                                       for point in (start, end) for axis in ("x", "y")):
+        return None
+    return math.hypot(end["x"] - start["x"], end["y"] - start["y"])
+
+
+def _node_label(nodes: dict, identifier) -> str:
+    node = nodes.get(str(identifier))
+    if not node:
+        return f"{identifier} (?)"
+    return f"{identifier} ({_meters(node.get('x'))}, {_meters(node.get('y'))})"
+
+
 def _cell(value) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ")
 
@@ -155,7 +171,7 @@ def build_review(plan_path: Path, previous_path: Path | None = None,
 
     lines = ["# Contrato de plan · hoja de revisión", "",
              "> Nada se dibuja hasta que un humano apruebe **este** hash. "
-             "Un agente nunca aprueba.", ""]
+             "Un agente no debe aprobar.", ""]
     lines += _table(["Campo", "Valor"], [
         ["Plan", f"`{plan_path.name}`"],
         ["Esquema", f"`{plan.get('schema_version', '?')}` · unidades "
@@ -169,54 +185,71 @@ def build_review(plan_path: Path, previous_path: Path | None = None,
     ])
 
     lines += ["", "## 1. Qué se va a dibujar", ""]
-    walls = _elements(plan, "walls")
-    if walls:
-        rows = []
-        for wall in walls:
-            start, end = nodes.get(str(wall.get("start"))), nodes.get(str(wall.get("end")))
-            length = (math.hypot(end["x"] - start["x"], end["y"] - start["y"])
-                      if start and end and all(isinstance(point.get(axis), (int, float))
-                                                for point in (start, end) for axis in ("x", "y"))
-                      else None)
-            rows.append([f"`{wall.get('id')}`", f"{wall.get('start')} → {wall.get('end')}",
-                         _meters(length), _meters(wall.get("thickness_m")), wall.get("layer", "?"),
-                         _source_label(wall)])
-        lines += [f"**Muros ({len(walls)})**", ""]
-        lines += _table(["id", "de → a", "longitud (m)", "espesor (m)", "capa", "origen"], rows)
+    kinds = {"door": "puerta", "window": "ventana", "clear": "vano libre"}
+    sections = [
+        ("nodes", "Nodos", "nodos", ["id", "x (m)", "y (m)", "origen"],
+         lambda item: [f"`{item.get('id')}`", _meters(item.get("x")), _meters(item.get("y")),
+                       _source_label(item)]),
+        ("walls", "Muros", "muros", ["id", "de → a", "longitud (m)", "espesor (m)", "capa", "origen"],
+         lambda item: [f"`{item.get('id')}`", f"{item.get('start')} → {item.get('end')}",
+                       _meters(_length(nodes, item)), _meters(item.get("thickness_m")),
+                       item.get("layer", "?"), _source_label(item)]),
+        ("openings", "Vanos", "vanos",
+         ["id", "muro", "desde inicio (m)", "ancho (m)", "tipo", "detalle", "origen"],
+         lambda item: [f"`{item.get('id')}`", item.get("wall_id", "?"),
+                       _meters(item.get("offset_m")), _meters(item.get("width_m")),
+                       kinds.get(item.get("kind"), item.get("kind", "?")),
+                       _opening_detail(item), _source_label(item)]),
+        ("joins", "Uniones", "uniones", ["id", "muro A (extremo)", "muro B (extremo)", "estilo", "origen"],
+         lambda item: [f"`{item.get('id')}`", f"{item.get('wall_a_id')} ({item.get('wall_a_end')})",
+                       f"{item.get('wall_b_id')} ({item.get('wall_b_end')})",
+                       item.get("style", "?"), _source_label(item)]),
+        ("lines", "Líneas", "líneas", ["id", "de → a", "longitud (m)", "capa", "origen"],
+         lambda item: [f"`{item.get('id')}`", f"{item.get('start')} → {item.get('end')}",
+                       _meters(_length(nodes, item)), item.get("layer", "?"), _source_label(item)]),
+        ("circles", "Círculos", "círculos", ["id", "centro", "radio (m)", "capa", "origen"],
+         lambda item: [f"`{item.get('id')}`", _node_label(nodes, item.get("center")),
+                       _meters(item.get("radius")), item.get("layer", "?"), _source_label(item)]),
+        ("dimensions", "Cotas", "cotas", ["id", "eje", "referencia", "valor (m)", "texto", "origen"],
+         lambda item: [f"`{item.get('id')}`", item.get("axis", "?"), item.get("reference_type", "?"),
+                       _meters(item.get("value")), item.get("text", ""), _source_label(item)]),
+        ("door_symbols", "Símbolos de puerta", "símbolos",
+         ["id", "líneas opuesta / bisagra / hoja", "capa", "origen"],
+         lambda item: [f"`{item.get('id')}`", f"{item.get('opposite_line_id')} / "
+                       f"{item.get('hinge_line_id')} / {item.get('leaf_line_id')}",
+                       item.get("layer", "?"), _source_label(item)]),
+        ("window_symbols", "Símbolos de ventana", "símbolos",
+         ["id", "capa", "elevación", "perfil", "origen"],
+         lambda item: [f"`{item.get('id')}`", item.get("layer", "?"),
+                       item.get("elevation_status", "?"), item.get("frame_profile_status", "?"),
+                       _source_label(item)]),
+        ("obstacles", "Obstáculos", "obstáculos",
+         ["id", "tipo", "caja mín → máx (m)", "base z (m)", "altura (m)", "origen"],
+         lambda item: [f"`{item.get('id')}`", item.get("kind", "?"),
+                       f"({_meters(item.get('min_x_m'))}, {_meters(item.get('min_y_m'))}) → "
+                       f"({_meters(item.get('max_x_m'))}, {_meters(item.get('max_y_m'))})",
+                       _meters(item.get("base_z_m")), _meters(item.get("height_m")),
+                       _source_label(item)]),
+    ]
+    drawn = False
+    for key, title, plural, headers, row in sections:
+        items = _elements(plan, key)
+        if not items:
+            continue
+        drawn = True
+        shown = items[:DETAIL_ROWS]
+        lines += [f"**{title} ({len(items)})**", ""]
+        lines += _table(headers, [row(item) for item in shown])
+        if len(items) > len(shown):
+            lines.append(f"… y {len(items) - len(shown)} {plural} más: revisa el PlanSpec íntegro.")
         lines.append("")
-    openings = _elements(plan, "openings")
-    if openings:
-        kinds = {"door": "puerta", "window": "ventana", "clear": "vano libre"}
-        lines += [f"**Vanos ({len(openings)})**", ""]
-        lines += _table(["id", "muro", "desde inicio (m)", "ancho (m)", "tipo", "detalle", "origen"],
-                        [[f"`{item.get('id')}`", item.get("wall_id", "?"),
-                          _meters(item.get("offset_m")), _meters(item.get("width_m")),
-                          kinds.get(item.get("kind"), item.get("kind", "?")),
-                          _opening_detail(item), _source_label(item)] for item in openings])
+    references = [(noun, len(_elements(plan, key))) for key, noun in ELEMENT_GROUPS
+                  if key in {"dimension_bindings", "dimension_placements"} and _elements(plan, key)]
+    if references:
+        lines.append("**Referencias de cotas:** " +
+                     ", ".join(f"{count} × {noun}" for noun, count in references))
         lines.append("")
-    joins = _elements(plan, "joins")
-    if joins:
-        lines += [f"**Uniones ({len(joins)})**", ""]
-        lines += _table(["id", "muro A (extremo)", "muro B (extremo)", "estilo", "origen"],
-                        [[f"`{item.get('id')}`", f"{item.get('wall_a_id')} ({item.get('wall_a_end')})",
-                          f"{item.get('wall_b_id')} ({item.get('wall_b_end')})",
-                          item.get("style", "?"), _source_label(item)] for item in joins])
-        lines.append("")
-    dimensions = _elements(plan, "dimensions")
-    if dimensions:
-        lines += [f"**Cotas ({len(dimensions)})**", ""]
-        lines += _table(["id", "eje", "referencia", "valor (m)", "texto", "origen"],
-                        [[f"`{item.get('id')}`", item.get("axis", "?"),
-                          item.get("reference_type", "?"), _meters(item.get("value")),
-                          item.get("text", ""), _source_label(item)] for item in dimensions])
-        lines.append("")
-    others = [(noun, len(_elements(plan, key))) for key, noun in ELEMENT_GROUPS
-              if key in {"lines", "circles", "door_symbols", "window_symbols", "obstacles",
-                         "dimension_bindings", "dimension_placements"} and _elements(plan, key)]
-    if others:
-        lines.append("**Otros elementos:** " + ", ".join(f"{count} × {noun}" for noun, count in others))
-        lines.append("")
-    if not (walls or openings or joins or dimensions or others):
+    if not drawn:
         lines += ["Ningún elemento dibujable.", ""]
 
     lines += ["## 2. Supuestos del agente (inferidos, sin dato medido)", ""]
@@ -442,6 +475,21 @@ def find_record(registry: Path, record_sha256: str) -> dict:
     raise ContractError("Approval record is not in the registry")
 
 
+def approval_status(registry: Path, plan_path: Path) -> dict:
+    """Latest decision for a plan and whether the execution gate would accept it now."""
+    _, data = build_review(plan_path)
+    latest = _latest(read_registry(registry), data["plan_sha256"]) if registry.is_file() else None
+    try:
+        require_approval(registry, data["plan_sha256"], data["commands_sha256"])
+        usable, reason = True, None
+    except ContractError as error:
+        usable, reason = False, str(error)
+    return {"plan_sha256": data["plan_sha256"], "commands_sha256": data["commands_sha256"],
+            "decision": latest["decision"] if latest else "none",
+            "record_sha256": latest["record_sha256"] if latest else None,
+            "usable_by_run": usable, "reason": reason}
+
+
 def _interactive() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
@@ -489,9 +537,9 @@ def main() -> None:
         plan = args.plan.resolve(strict=True)
         registry = args.registry.resolve()
         if args.mode == "status":
-            latest = _latest(read_registry(registry), digest(plan))
-            print(json.dumps(latest or {"decision": "none"}, indent=2, ensure_ascii=False))
-            sys.exit(0 if latest and latest["decision"] == "approved" else 1)
+            status = approval_status(registry, plan)
+            print(json.dumps(status, indent=2, ensure_ascii=False))
+            sys.exit(0 if status["usable_by_run"] else 1)
         if not _interactive():
             raise ContractError("Human decision requires an interactive terminal; "
                                 "agents must never approve or revoke plans")

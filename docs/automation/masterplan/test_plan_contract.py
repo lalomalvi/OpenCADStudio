@@ -3,10 +3,11 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 from plan_contract import (DOUBTS_ACK, HUMAN_CHANNEL, PREFIX_LENGTH, REVIEW_JSON, REVIEW_MD,
-                           ContractError, approve, build_review, find_record, read_registry,
-                           require_approval, revoke, write_review)
+                           ContractError, approval_status, approve, build_review, find_record,
+                           read_registry, require_approval, revoke, write_review)
 
 
 FIXTURES = Path(__file__).with_name("fixtures")
@@ -59,10 +60,39 @@ class PlanContractTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertTrue(data["executable"])
         self.assertEqual(data["entity_count"], 4)
-        for expected in ("**Muros (1)**", "`wall-south`", "4.000", "0.200", "**Sí**",
+        for expected in ("**Nodos (2)**", "| `b` | 4.000 | 0.000 | medido 1.00 |",
+                         "**Muros (1)**", "`wall-south`", "4.000", "0.200", "**Sí**",
                          data["plan_sha256"][:PREFIX_LENGTH], "## 2. Supuestos",
                          "## 3. Dudas", "## 4. Bloqueos", "No se verifica:", "## Aprobación"):
             self.assertIn(expected, first)
+
+    def test_review_shows_lines_circles_and_their_geometry(self):
+        self.plan = self.use_fixture("synthetic-room.planspec.json")
+        markdown, _ = build_review(self.plan)
+        self.assertIn("**Líneas (2)**", markdown)
+        self.assertIn("| `line-1` | a → b | 10.000 | 0 |", markdown)
+        self.assertIn("**Círculos (1)**", markdown)
+        self.assertIn("| `circle-1` | center (5.000, 5.000) | 2.000 | 0 |", markdown)
+
+    def test_long_groups_are_capped_with_a_notice(self):
+        with mock.patch("plan_contract.DETAIL_ROWS", 1):
+            markdown, _ = build_review(self.plan)
+        self.assertIn("… y 1 nodos más: revisa el PlanSpec íntegro.", markdown)
+
+    def test_status_reports_whether_run_would_accept_the_approval(self):
+        review_dir, data = self.review()
+        status = approval_status(self.registry, self.plan)
+        self.assertEqual((status["decision"], status["usable_by_run"]), ("none", False))
+        self.approve(review_dir)
+        status = approval_status(self.registry, self.plan)
+        self.assertEqual((status["decision"], status["usable_by_run"]), ("approved", False))
+        self.assertIn("interactive human channel", status["reason"])
+        self.approve(review_dir, channel=HUMAN_CHANNEL)
+        self.assertTrue(approval_status(self.registry, self.plan)["usable_by_run"])
+        revoke(self.plan, self.registry, "Luis", "prueba", channel=HUMAN_CHANNEL,
+               ask=answers(data["plan_sha256"][:PREFIX_LENGTH]))
+        status = approval_status(self.registry, self.plan)
+        self.assertEqual((status["decision"], status["usable_by_run"]), ("revoked", False))
 
     def test_openings_show_swing_and_elevation(self):
         self.plan = self.use_fixture("synthetic-door-swing.planspec.json")

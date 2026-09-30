@@ -7,7 +7,16 @@
 ## Qué hace
 
 1. **`review`.** Escribe una hoja de revisión de una página, determinista, en una carpeta nueva que no se sobrescribe. Contiene:
-   - lo que se va a dibujar (muros con longitud y espesor, vanos con giro o antepecho, uniones, cotas);
+   - la geometría a dibujar:
+     - nodos con coordenadas;
+     - muros con longitud y espesor;
+     - vanos con giro o antepecho;
+     - uniones;
+     - líneas con longitud;
+     - círculos con centro y radio;
+     - cotas, símbolos y obstáculos con su caja.
+
+     Cada tabla tiene un tope de 60 filas y, si se alcanza, avisa de revisar el PlanSpec íntegro;
    - los **supuestos** (`source.classification = inferred`) y las **dudas** (`unknown`), con su confianza;
    - los bloqueos y lo no soportado según `dry_run`;
    - lo que se verificará y, explícitamente, lo que **no**;
@@ -17,6 +26,7 @@
    - Si hay dudas, exige además teclear `ACEPTO DUDAS`.
    - La decisión queda en un registro JSONL encadenado: `sequence`, `previous_record_sha256` y `record_sha256`, con escritura sincronizada a disco.
    - La aprobación ata el hash del plan, el `commands_sha256`, las dos hojas y el código del compilador.
+   - `status` distingue la última decisión de si `run` la aceptaría hoy (`usable_by_run`), con la misma función que usa la puerta.
 3. **Puerta de ejecución.** `m8_case_cli.py run` exige una aprobación vigente del mismo plan **y** de los mismos comandos compilados, registrada por el canal humano. Sin ella no crea carpetas ni abre la GUI.
    - El informe de la corrida guarda `approval_record_sha256`.
    - `verify --approvals` vuelve a comprobarla.
@@ -24,9 +34,11 @@
 
 ## Verificado (2026-09-30, Windows, Python 3.13.7)
 
-**`test_plan_contract.py` (15 pruebas):**
+**`test_plan_contract.py` (18 pruebas):**
 
 - determinismo de la hoja;
+- nodos, líneas y círculos con su geometría, y tope con aviso;
+- `status` informa si `run` aceptaría la aprobación;
 - supuestos y dudas tomados de `source.classification`;
 - giro de puerta y antepecho de ventana;
 - un prefijo equivocado no registra nada;
@@ -41,13 +53,14 @@
 - diferencias contra la versión anterior;
 - la carpeta de revisión no se sobrescribe.
 
-**`test_m8_case_cli.py` (7 pruebas):**
+**`test_m8_case_cli.py` (10 pruebas):**
 
 - con un plan **no aprobado**, `Popen` no se llama y no se crean carpetas;
+- lo mismo en `run` con aprobación **revocada**, con aprobación por **canal no humano** y con aprobación de **otros comandos compilados**;
 - con un plan **aprobado**, la puerta deja pasar hasta el lanzamiento de la GUI (simulado);
 - `verify` sin atadura de aprobación se rechaza.
 
-**Suites completas:** masterplan 220/220 y automatización 59/59.
+**Suites completas:** masterplan 226/226 y automatización 59/59.
 
 **Humo del CLI:**
 
@@ -98,7 +111,31 @@ El L2 prueba la **puerta del contrato de punta a punta**, no la build de la GUI.
 - **Niveles de aprobación** (decisión 7 del plan 08). Hoy todo exige firma humana.
 - **Una aprobación sirve para más de una corrida.** Cada carpeta de corrida se ejecuta una sola vez, pero la misma aprobación habilita varias corridas del mismo plan y los mismos comandos. Queda por decidir si debe ser de un solo uso o acotada por alcance.
 - **Repetir el L2 con un binario release del código vigente** (B19).
-- **Integración con otros flujos.** El contrato solo protege la ruta `m8_case_cli`. Los harnesses que hablan con el MCP directamente no pasan por esta puerta.
+- **Integración con otros flujos.** El contrato solo protege la ruta `m8_case_cli`. No pasan por esta puerta:
+  - los harnesses que hablan con el MCP directamente;
+  - los scripts de ensayo que abren su propia GUI (p. ej. `apartment_door_trial_v10.py`).
+
+  Los puentes L4 que llaman a `verify` con tres argumentos reciben `human_approval: not_rechecked`. Si su dictamen debe revalidar la aprobación, hay que pasarles el registro.
+
+## Doble auditoría (Codex, 2026-09-30)
+
+**Veredicto:** bloqueó el push por dos motivos:
+
+- privacidad en el commit documental previo, en su versión local, que publicaría rutas locales, el programa de un proyecto privado y nombres y hashes de entregables;
+- un commit nuevo añadido mientras auditaba.
+
+**De la fase 4a, se corrigió en la ronda siguiente:**
+
+- `status` informaba «approved» sin mirar canal ni comandos. Ahora reporta `usable_by_run`.
+- La hoja solo contaba líneas, círculos y otros grupos. Ahora muestra su geometría y las coordenadas de los nodos.
+- Las pruebas de integración de `run` no cubrían revocación, canal ajeno ni comandos alterados. Ahora sí.
+- La guía rápida afirmaba que un agente «no puede» aprobar. Se precisó que es un freno de procedimiento.
+
+**Confirmado sin cambios:**
+
+- la puerta actúa antes de escribir nada y exige ambos hashes;
+- la cadena y la atadura de la hoja resisten las alteraciones probadas;
+- los límites declarados abajo son correctos.
 
 ## Límites (doctrina, no garantía)
 

@@ -24,8 +24,9 @@ For synchronizing upstream or publishing this fork, follow
 - Reuse the successful Windows runner with `fork_sync_ci.py --artifact --reuse-ref
   <tested-sha>`; keep its producer SHA/version. Verify hashes before executing it.
   The receipt must cover the required scope; omitted jobs are not passed tests.
-- Existing user authorization for merging/pushing the fork remains valid. Ask only
-  for missing information or permissions actually required by the environment.
+- Existing user authorization for merging/pushing the fork remains valid for routine
+  fork synchronization only; it does not cover the MCP stabilization cycle below.
+  Ask only for missing information or permissions actually required by the environment.
 - Preserve private drawings/images and historical evidence; never stage them.
   Use explicit paths when staging. No force push or reset to discard user work.
 - Keep routine sync acceptance independent from the M7/M8 product evaluation.
@@ -68,5 +69,8 @@ continue that report.
   approval registry and never emulates an interactive terminal to satisfy it. Only
   Luis approves plans. Without an active approval, `m8_case_cli.py run` must not
   open the GUI.
-- Pushes proposed by a Claude session require a Codex audit of the exact commit
-  range first (double audit); push only after that audit passes.
+- Pushes of this cycle require, in order: a frozen commit SHA; a Codex audit of
+  that exact range with no new commits while it runs (double audit); a
+  publishability review (no absolute local paths, private project programs or
+  private deliverable names/hashes anywhere in the history being published); and
+  Luis's explicit approval of that frozen range.

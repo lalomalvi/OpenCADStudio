@@ -165,7 +165,7 @@ El contrato adelanta los errores; no los elimina. Un PlanSpec equivocado que se 
 
 | Fase | Qué | Sesiones | Modelo | Sale cuando |
 |---|---|---|---|---|
-| 0 | Higiene: commit local de 07 y 08 (si se aprueba), `AGENTS.md` sin contradicción, release por defecto y perfil en recibos, spec = código | 1 | Sonnet (Haiku para el barrido de docs) | Una prueba confirma que spec y listas de operaciones coinciden; las series rechazan binarios de depuración |
+| 0 | Higiene: commit local de 07 y 08 (si se aprueba), `AGENTS.md` sin contradicción, release por defecto y perfil en recibos, spec = código, revisión de publicabilidad antes de cualquier push | 1 | Sonnet (Haiku para el barrido de docs) | Una prueba confirma que spec y listas de operaciones coinciden; las series rechazan binarios de depuración; el historial a publicar no contiene rutas locales ni datos de proyectos privados |
 | 1 | Contrato MCP P0 + suite T4 mínima | 2–3 | Sonnet; Opus revisa la taxonomía | T4 con 0 duplicados en 50 corridas sintéticas |
 | 2 | Corrección del dominio (B06–B10) | 2–3 | Sonnet | Fixtures en verde: bounds, capas, guardado por propiedades y handles |
 | 3 | Instrumentación y recibos | 1–2 | Sonnet | ≥ 95 % del tiempo de pared atribuido o marcado; lo ausente queda `null` |
@@ -216,3 +216,15 @@ El contrato adelanta los errores; no los elimina. Un PlanSpec equivocado que se 
   - El aprobado se ejecutó y se verificó con `human_approval: rechecked`.
   - Binario: artefacto de CI en depuración `09794ab6`, que no es el código auditado. Repetirlo con release (B19).
   - **Criterio de salida de la 4a cumplido en su alcance.**
+- **2026-09-30 · Doble auditoría (Codex) del rango `26bce00a..fb0bdd25`, auditado con sus SHAs locales previos a la redacción: bloqueado para push.**
+  - **Privacidad.** El commit documental, en su versión local, expone rutas locales, el programa de un proyecto privado y nombres y hashes de entregables. Hay que redactar y reescribir la rama local antes del primer push (fase 0). Decide Luis.
+  - **Proceso.** Se añadió un commit durante la auditoría. Regla nueva en `AGENTS.md`: SHA congelado mientras se audita.
+  - **Fase 4a**, corregido:
+    - `status` informa si `run` aceptaría la aprobación;
+    - la hoja muestra geometría y coordenadas;
+    - hay pruebas de integración de `run` con revocación, canal ajeno y comandos alterados;
+    - la guía precisa el alcance del freno.
+
+    Resultado: 226/226 y 59/59.
+  - **Auditoría 07.** Tres exageraciones de redacción corregidas como erratas.
+  - **Pendiente:** redacción y reescritura, y reauditoría de Codex sobre el SHA congelado del rango nuevo.
