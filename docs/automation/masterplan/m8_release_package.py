@@ -28,6 +28,8 @@ SOURCE_FILES = {
         "docs/automation/masterplan/multi_axis_chain_l4.py",
     "docs/automation/masterplan/owned_cad_executor.py":
         "docs/automation/masterplan/owned_cad_executor.py",
+    "docs/automation/masterplan/plan_contract.py":
+        "docs/automation/masterplan/plan_contract.py",
     "docs/automation/masterplan/planspec.py":
         "docs/automation/masterplan/planspec.py",
     "docs/automation/masterplan/provider_response_receipt.py":

@@ -205,3 +205,10 @@ El contrato adelanta los errores; no los elimina. Un PlanSpec equivocado que se 
 - **Optimizar latencia antes de medir en release.**
 - **Usar imagen→CAD como vara de estabilidad:** es la pista más difícil y va aparte.
 - **Añadir capacidades al MCP mientras la fase 1 siga abierta.**
+
+## 11. Avance
+
+- **2026-09-30 · Fase 4a.** Implementados `plan_contract.py` y la puerta en `m8_case_cli.py`.
+  - Verificado en L0/L1: masterplan 220/220, automatización 59/59.
+  - Pendiente: el L2 con GUI, tras la primera aprobación humana real.
+  - Detalle: [M4-CONTRATO-HUMANO-AGENTE-V1](M4-CONTRATO-HUMANO-AGENTE-V1.md).

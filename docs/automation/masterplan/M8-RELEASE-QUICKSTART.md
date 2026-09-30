@@ -16,10 +16,19 @@ python docs/automation/masterplan/m8_release_package.py verify --root .
 
 El siguiente caso sintético genera un DWG y una captura en una GUI propia, comprueba guardado/reapertura y cierra esa GUI. Ejecuta `run` **una sola vez** para cada nombre; si una respuesta se pierde, inspecciona ese run, sin repetir la mutación.
 
+Primero, el contrato. `review` escribe una hoja de una página con lo que se va a dibujar, los supuestos, las dudas y lo que no se verifica. `approve` lo ejecuta **solo el humano**, en su propia terminal interactiva: muestra la hoja, pide teclear los primeros 12 caracteres del hash del plan y lo anota en un registro encadenado por hash. Un agente no puede aprobar: sin terminal interactiva, el comando se niega. Sin aprobación, `run` no abre la GUI.
+
+```powershell
+python docs/automation/masterplan/plan_contract.py review --plan docs/automation/masterplan/fixtures/synthetic-wall.planspec.json --out target/mcp-release/synthetic-01-review
+python docs/automation/masterplan/plan_contract.py approve --plan docs/automation/masterplan/fixtures/synthetic-wall.planspec.json --review target/mcp-release/synthetic-01-review --registry target/mcp-release/plan-approvals.jsonl --approver "Nombre" --scope "caso sintético"
+```
+
+Después, el caso:
+
 ```powershell
 python docs/automation/masterplan/m8_case_cli.py prepare --run-root target/mcp-release/synthetic-01 --plan docs/automation/masterplan/fixtures/synthetic-wall.planspec.json --binary OpenCADStudio.exe
-python docs/automation/masterplan/m8_case_cli.py run --run-root target/mcp-release/synthetic-01 --plan docs/automation/masterplan/fixtures/synthetic-wall.planspec.json --binary OpenCADStudio.exe
-python docs/automation/masterplan/m8_case_cli.py verify --run-root target/mcp-release/synthetic-01 --plan docs/automation/masterplan/fixtures/synthetic-wall.planspec.json --binary OpenCADStudio.exe
+python docs/automation/masterplan/m8_case_cli.py run --run-root target/mcp-release/synthetic-01 --plan docs/automation/masterplan/fixtures/synthetic-wall.planspec.json --binary OpenCADStudio.exe --approvals target/mcp-release/plan-approvals.jsonl
+python docs/automation/masterplan/m8_case_cli.py verify --run-root target/mcp-release/synthetic-01 --plan docs/automation/masterplan/fixtures/synthetic-wall.planspec.json --binary OpenCADStudio.exe --approvals target/mcp-release/plan-approvals.jsonl
 ```
 
 Para un PlanSpec propio autorizado, usa una ruta distinta en `--plan` y un nombre nuevo en `--run-root`. `prepare` congela SHA de entrada, binario, compilador y comandos. `verify` revalida esos SHA junto con DWG, captura y cierre. La sonda `docs/automation/mcp_autocad_probe.ps1` y `m8_case_l4_mixed.py` están incluidos para L4 en una instalación con AutoCAD; la copia sintética debe estar bajo `target/mcp-isolated` y cada sonda usa un directorio nuevo. Un L4 positivo no sustituye la comparación contra la imagen fuente ni L5.

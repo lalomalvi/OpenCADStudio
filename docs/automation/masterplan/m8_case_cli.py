@@ -10,6 +10,7 @@ import sys
 import uuid
 
 from owned_cad_executor import OwnedCadExecutor, verify_owned_cad_evidence
+from plan_contract import ContractError, find_record, require_approval
 from planspec import dry_run
 from reserved_runner import Invocation
 
@@ -52,7 +53,7 @@ def compile_plan(plan_path: Path) -> dict:
 def expected_contract(plan_path: Path, binary: Path, compiled: dict) -> dict:
     code = Path(__file__).parent
     return {
-        "schema_version": "m8-deterministic-case-contract-1",
+        "schema_version": "m8-deterministic-case-contract-2",
         "plan_sha256": digest(plan_path),
         "binary_sha256": digest(binary),
         "commands_sha256": compiled["commands_sha256"],
@@ -60,6 +61,7 @@ def expected_contract(plan_path: Path, binary: Path, compiled: dict) -> dict:
         "planspec_code_sha256": digest(code / "planspec.py"),
         "executor_code_sha256": digest(code / "owned_cad_executor.py"),
         "cli_code_sha256": digest(Path(__file__)),
+        "contract_gate_code_sha256": digest(code / "plan_contract.py"),
         "model_call": False,
         "target_format": "dwg",
         "target_version": "2018",
@@ -92,12 +94,18 @@ def validate(root: Path, plan_path: Path, binary: Path) -> tuple[dict, dict]:
     return contract, compiled
 
 
-def run(root: Path, plan_path: Path, binary: Path) -> dict:
+def run(root: Path, plan_path: Path, binary: Path, approvals: Path) -> dict:
     root = allowed_root(root)
     contract, compiled = validate(root, plan_path, binary)
     if (root / "report.json").exists() or (root / "profile").exists() or \
             (root / "cad").exists():
         raise ReleaseCaseError("Run already started; verify or reconcile, never replay")
+    try:
+        approval = require_approval(approvals, contract["plan_sha256"],
+                                    contract["commands_sha256"])
+    except ContractError as error:
+        raise ReleaseCaseError(f"Human approval required before opening the GUI: {error}") \
+            from error
     profile, temporary, cad_root = (root / name for name in ("profile", "temp", "cad"))
     for path in (profile, temporary, cad_root):
         path.mkdir(exist_ok=False)
@@ -114,6 +122,7 @@ def run(root: Path, plan_path: Path, binary: Path) -> dict:
     report = {"schema_version": "m8-deterministic-case-report-1", "status": "failed",
               "contract_sha256": digest(root / "contract.json"),
               "plan_sha256": digest(plan_path), "binary_sha256": digest(binary),
+              "approval_record_sha256": approval["record_sha256"],
               "model_call": False, "cad_status": "pending"}
     try:
         client.handshake()
@@ -183,10 +192,24 @@ def run(root: Path, plan_path: Path, binary: Path) -> dict:
     return report
 
 
-def verify(root: Path, plan_path: Path, binary: Path) -> dict:
+def verify(root: Path, plan_path: Path, binary: Path, approvals: Path | None = None) -> dict:
     root = allowed_root(root)
     contract, compiled = validate(root, plan_path, binary)
     report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+    approval_hash = report.get("approval_record_sha256")
+    if not approval_hash:
+        raise ReleaseCaseError("Run report lacks its human approval binding")
+    approval_status = "not_rechecked"
+    if approvals is not None:
+        try:
+            approval = find_record(approvals, approval_hash)
+        except ContractError as error:
+            raise ReleaseCaseError(f"Human approval cannot be rechecked: {error}") from error
+        if approval["decision"] != "approved" or \
+                approval["plan_sha256"] != contract["plan_sha256"] or \
+                approval["commands_sha256"] != contract["commands_sha256"].upper():
+            raise ReleaseCaseError("Approval record does not cover this plan and command set")
+        approval_status = "rechecked"
     files = list((root / "cad").glob("*.json"))
     if len(files) != 1:
         raise ReleaseCaseError("Owned CAD evidence count differs")
@@ -209,6 +232,8 @@ def verify(root: Path, plan_path: Path, binary: Path) -> dict:
             "dwg_sha256": evidence["dwg"]["sha256"],
             "capture_sha256": evidence["capture"]["sha256"],
             "entity_count": contract["entity_count"],
+            "approval_record_sha256": approval_hash,
+            "human_approval": approval_status,
             "external_l4": "pending"}
 
 
@@ -218,12 +243,19 @@ def main() -> None:
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--binary", type=Path, required=True)
+    parser.add_argument("--approvals", type=Path,
+                        help="human approval registry written by plan_contract.py approve")
     args = parser.parse_args()
+    if args.mode in {"run", "verify"} and args.approvals is None:
+        parser.error(f"{args.mode} requires --approvals")
     root = args.run_root.resolve()
     plan = args.plan.resolve(strict=True)
     binary = args.binary.resolve(strict=True)
-    result = {"prepare": prepare, "run": run, "verify": verify}[args.mode](
-        root, plan, binary)
+    if args.mode == "prepare":
+        result = prepare(root, plan, binary)
+    else:
+        result = {"run": run, "verify": verify}[args.mode](
+            root, plan, binary, args.approvals.resolve())
     print(json.dumps(result, indent=2))
 
 

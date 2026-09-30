@@ -59,3 +59,14 @@ For MCP evaluation, performance and hardening work, start with
 [the consolidated evidence and improvement report](docs/automation/masterplan/06-INFORME-MAESTRO-Y-MEJORAS-20260929.md).
 It maps current findings to M0-M8 and preserves scoped results and private evidence.
 The report's current cycle is local-only: do not push based on historical publication authorization.
+The [independent audit](docs/automation/masterplan/07-AUDITORIA-INDEPENDIENTE-MCP-20260930.md)
+and the [stabilization plan](docs/automation/masterplan/08-PLAN-DE-ESTABILIZACION-20260930.md)
+continue that report.
+
+- Human-agent plan contract: an agent may write a PlanSpec review with
+  `plan_contract.py review`, but never runs `approve` or `revoke`, never writes an
+  approval registry and never emulates an interactive terminal to satisfy it. Only
+  Luis approves plans. Without an active approval, `m8_case_cli.py run` must not
+  open the GUI.
+- Pushes proposed by a Claude session require a Codex audit of the exact commit
+  range first (double audit); push only after that audit passes.
