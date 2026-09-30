@@ -848,3 +848,13 @@ Primero hay que corregir B01–B04 para que el contrato valga igual para cualqui
 - **Operaciones:** el fork no pierde ninguna del upstream; añade 7 de ejecución y 1 de lectura.
 
 (†) Localizado por barrido delegado y verificado solo de forma puntual. Todo hallazgo de severidad Media o superior se verificó línea a línea.
+
+## Adenda 2026-09-30 (posterior a la auditoría)
+
+**A02 (binario instalado)** sigue parcial, con dato nuevo:
+
+- La v2026.40.1 no está en la ruta de instalación del fork (`%LOCALAPPDATA%\Programs\OpenCADStudio Fork`).
+- La aplicación instalada en `%LOCALAPPDATA%\Programs\Open CAD Studio` es v2026.38: release, revisión `0d023d26`.
+- En los worktrees solo hay binarios de depuración o anteriores al código auditado. El más cercano es un artefacto de CI en depuración (`09794ab6`).
+
+No hay evidencia local de un binario compilado del código auditado, así que B19 gana prioridad. Detalle en [M4-CONTRATO-HUMANO-AGENTE-V1](M4-CONTRATO-HUMANO-AGENTE-V1.md).

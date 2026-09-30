@@ -1,7 +1,7 @@
 # M4 · Contrato humano–agente v1 (fase 4a)
 
 **Fecha:** 2026-09-30 · **Plan:** [08 §3](08-PLAN-DE-ESTABILIZACION-20260930.md)
-**Estado:** verificado en L0/L1. El L2 con GUI está pendiente hasta la primera aprobación humana real.
+**Estado:** verificado en L0/L1 y en **L2 acotado** (2026-09-30), con la primera aprobación humana real. L4 externo pendiente.
 **Código:** `plan_contract.py`; puerta en `m8_case_cli.py`
 
 ## Qué hace
@@ -54,10 +54,50 @@
 - `review` escribió la hoja del fixture `synthetic-wall` (hash `DDA61A032A26…`).
 - `approve`, lanzado desde el harness de un agente, se negó por falta de terminal interactiva y no creó el registro.
 
+## L2 con aprobación humana real (2026-09-30)
+
+**Aprobación.** Luis revisó la hoja del fixture `synthetic-wall` (hash `DDA61A032A26…`) en su PowerShell y tecleó el prefijo.
+
+- Registro: una decisión, cadena válida, canal `interactive_tty`.
+- Registro `9B8AADB7B321925C6AF378336379E276C7C712EA15003994310B33CAEF75D61C`, 2026-09-30T08:06:31Z.
+
+**Negativo con CLI y binario reales.** El fixture `synthetic-room`, sin aprobar, fue rechazado por `run`: «Human approval required before opening the GUI». La carpeta de la corrida solo contiene `contract.json`: sin perfil, sin CAD y sin GUI lanzada.
+
+**Positivo.** `prepare`, `run` y `verify` con `--approvals`, sobre el plan aprobado:
+
+- `run` dio `passed_scoped_l2` en 10 s:
+  - 4 entidades añadidas, igual a las compiladas;
+  - GUI propia con perfil aislado, cerrada con `exited`.
+- `verify` dio `passed_scoped_l2` con `human_approval: rechecked`.
+
+| Pieza | SHA-256 |
+|---|---|
+| Contrato | `3934D967247BC068494AE725BBB3A23E89F72C1720567BE3140CC5B8A30C05CE` |
+| Informe | `F4E62EDD3D086F1F07C3A96845868BC079DD2388FFD6D06067ABBD4815F2F68B` |
+| DWG | `80E7F98F7A5889F2B88717F09476EAFE749CAB2B5FD92A39CA652BED178A0977` |
+| Captura | `08D45D440725BCDF4BD1FB0D3C194324012E525C8C702359694CF619AD0E603A` |
+| Aprobación | `9B8AADB7B321925C6AF378336379E276C7C712EA15003994310B33CAEF75D61C` |
+
+La evidencia queda en `target/mcp-release/l2-contrato-aprobado-20260930`, fuera de Git.
+
+**Binario usado.** Artefacto de CI `target/distribution-port/runner-07f63cbe/OpenCADStudio.exe`:
+
+- revisión `09794ab6`, un merge de integración del 28-sep;
+- perfil **debug**;
+- SHA-256 `94F01706…`, que coincide con su `runtime.json`.
+
+**No es el código auditado** (`26bce00a`): difiere en 24 archivos de `src/`. No había un binario del código actual:
+
+- el instalado en `%LOCALAPPDATA%\Programs\Open CAD Studio` es v2026.38, release, revisión `0d023d26`;
+- la v2026.40.1 que el informe 06 da por instalada no apareció en la ruta del fork.
+
+El L2 prueba la **puerta del contrato de punta a punta**, no la build de la GUI. La sesión abierta de Luis no se tocó.
+
 ## Pendiente
 
-- **L2 real.** Luis aprueba el fixture sintético en su terminal. Después se corren `prepare`, `run` y `verify` con GUI propia y `--approvals`.
 - **Niveles de aprobación** (decisión 7 del plan 08). Hoy todo exige firma humana.
+- **Una aprobación sirve para más de una corrida.** Cada carpeta de corrida se ejecuta una sola vez, pero la misma aprobación habilita varias corridas del mismo plan y los mismos comandos. Queda por decidir si debe ser de un solo uso o acotada por alcance.
+- **Repetir el L2 con un binario release del código vigente** (B19).
 - **Integración con otros flujos.** El contrato solo protege la ruta `m8_case_cli`. Los harnesses que hablan con el MCP directamente no pasan por esta puerta.
 
 ## Límites (doctrina, no garantía)

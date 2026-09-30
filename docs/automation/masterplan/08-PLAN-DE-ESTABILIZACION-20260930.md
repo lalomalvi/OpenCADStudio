@@ -210,5 +210,9 @@ El contrato adelanta los errores; no los elimina. Un PlanSpec equivocado que se 
 
 - **2026-09-30 · Fase 4a.** Implementados `plan_contract.py` y la puerta en `m8_case_cli.py`.
   - Verificado en L0/L1: masterplan 220/220, automatización 59/59.
-  - Pendiente: el L2 con GUI, tras la primera aprobación humana real.
   - Detalle: [M4-CONTRATO-HUMANO-AGENTE-V1](M4-CONTRATO-HUMANO-AGENTE-V1.md).
+- **2026-09-30 · Fase 4a, L2 acotado.** Primera aprobación humana real (registro `9B8AADB7…`).
+  - Un plan sin aprobar no abrió la GUI.
+  - El aprobado se ejecutó y se verificó con `human_approval: rechecked`.
+  - Binario: artefacto de CI en depuración `09794ab6`, que no es el código auditado. Repetirlo con release (B19).
+  - **Criterio de salida de la 4a cumplido en su alcance.**
