@@ -3,12 +3,13 @@
 **Fecha:** 2026-09-30 · **Autor:** Claude (Opus 5.5) con Luis
 **Base:** auditoría independiente [07-AUDITORIA-INDEPENDIENTE-MCP-20260930.md](07-AUDITORIA-INDEPENDIENTE-MCP-20260930.md) sobre `d0d88409`, cuyo código es el de `26bce00a`
 
-**Estado: propuesta (doctrina), no resultado verificado.**
+**Estado (2026-10-01): en ejecución.** Fase 4a cumplida en su alcance; fase 0 a medias; el resto pendiente.
 
-- Los hechos que la sustentan están en la auditoría 07; los identificadores B01–B22 y A01–A30 remiten a ella.
+- **Estado vigente:** en la [§11](#11-estado-vigente-2026-10-01). Esa sección, este encabezado y la columna «Estado» de la §7 **se reescriben**, no se apilan.
+- Los hechos que sustentan el plan están en la auditoría 07; los identificadores B01–B22 y A01–A30 remiten a ella.
 - R01–R19 remiten al [informe maestro 06](06-INFORME-MAESTRO-Y-MEJORAS-20260929.md).
 - Las sesiones son estimados, no compromisos.
-- Sin push.
+- **Publicación:** historial redactado en una rama candidata; el push espera la reauditoría de Codex y el visto bueno de Luis (§11).
 
 ---
 
@@ -163,16 +164,16 @@ El contrato adelanta los errores; no los elimina. Un PlanSpec equivocado que se 
 
 ## 7. Secuencia
 
-| Fase | Qué | Sesiones | Modelo | Sale cuando |
-|---|---|---|---|---|
-| 0 | Higiene: commit local de 07 y 08 (si se aprueba), `AGENTS.md` sin contradicción, release por defecto y perfil en recibos, spec = código, revisión de publicabilidad antes de cualquier push | 1 | Sonnet (Haiku para el barrido de docs) | Una prueba confirma que spec y listas de operaciones coinciden; las series rechazan binarios de depuración; el historial a publicar no contiene rutas locales ni datos de proyectos privados |
-| 1 | Contrato MCP P0 + suite T4 mínima | 2–3 | Sonnet; Opus revisa la taxonomía | T4 con 0 duplicados en 50 corridas sintéticas |
-| 2 | Corrección del dominio (B06–B10) | 2–3 | Sonnet | Fixtures en verde: bounds, capas, guardado por propiedades y handles |
-| 3 | Instrumentación y recibos | 1–2 | Sonnet | ≥ 95 % del tiempo de pared atribuido o marcado; lo ausente queda `null` |
-| 4a | Contrato humano–agente (§3): vista legible, registro de aprobación, ejecutor que exige hash aprobado | 1–2 | Sonnet con esta receta | Un plan no aprobado no abre la GUI; uno aprobado se ejecuta y se verifica contra su contrato |
-| 4b | Identidad ARQ en el DWG + patch v1 + compilador único | 1 de diseño + 2–4 | Opus diseña, Sonnet ejecuta | Una sesión nueva reconstruye el contexto desde el DWG y aplica los 3 patches sin tocar nada más |
-| 5 | Suite canaria + línea base del modelo actual | 1–2 | Sonnet; requiere cuota | Línea base con intervalos y regla escrita para aceptar un cambio de modelo |
-| 6 | Rendimiento medido, orquestación en el despachador (decisión), comparación de modelos (§6 de la auditoría 07), L5, imagen→CAD | abierto | según tarea | Cada mejora con su antes y después en release |
+| Fase | Qué | Sesiones | Modelo | Sale cuando | Estado (2026-10-01) |
+|---|---|---|---|---|---|
+| 0 | Higiene: commit local de 07 y 08 (si se aprueba), `AGENTS.md` sin contradicción, release por defecto y perfil en recibos, spec = código, revisión de publicabilidad antes de cualquier push | 1 | Sonnet (Haiku para el barrido de docs) | Una prueba confirma que spec y listas de operaciones coinciden; las series rechazan binarios de depuración; el historial a publicar no contiene rutas locales ni datos de proyectos privados | **A medias.** Hecho: 07 y 08 commiteados; `AGENTS.md` aclarado; historial redactado en la rama candidata. Falta: reauditoría de publicabilidad, release por defecto y spec = código |
+| 1 | Contrato MCP P0 + suite T4 mínima | 2–3 | Sonnet; Opus revisa la taxonomía | T4 con 0 duplicados en 50 corridas sintéticas | Pendiente |
+| 2 | Corrección del dominio (B06–B10) | 2–3 | Sonnet | Fixtures en verde: bounds, capas, guardado por propiedades y handles | Pendiente |
+| 3 | Instrumentación y recibos | 1–2 | Sonnet | ≥ 95 % del tiempo de pared atribuido o marcado; lo ausente queda `null` | Pendiente |
+| 4a | Contrato humano–agente (§3): vista legible, registro de aprobación, ejecutor que exige hash aprobado | 1–2 | Sonnet con esta receta | Un plan no aprobado no abre la GUI; uno aprobado se ejecuta y se verifica contra su contrato | **Cumplida en su alcance:** L2 acotado con binario de depuración |
+| 4b | Identidad ARQ en el DWG + patch v1 + compilador único | 1 de diseño + 2–4 | Opus diseña, Sonnet ejecuta | Una sesión nueva reconstruye el contexto desde el DWG y aplica los 3 patches sin tocar nada más | Pendiente |
+| 5 | Suite canaria + línea base del modelo actual | 1–2 | Sonnet; requiere cuota | Línea base con intervalos y regla escrita para aceptar un cambio de modelo | Pendiente |
+| 6 | Rendimiento medido, orquestación en el despachador (decisión), comparación de modelos (§6 de la auditoría 07), L5, imagen→CAD | abierto | según tarea | Cada mejora con su antes y después en release | Abierto |
 
 **Adelantar la 4a.** No depende de las fases 1–3: usa `dry_run`, el contrato SHA y el cliente del proyecto, que ya compensa los defectos del contrato MCP.
 
@@ -206,25 +207,107 @@ El contrato adelanta los errores; no los elimina. Un PlanSpec equivocado que se 
 - **Usar imagen→CAD como vara de estabilidad:** es la pista más difícil y va aparte.
 - **Añadir capacidades al MCP mientras la fase 1 siga abierta.**
 
-## 11. Avance
+## 11. Estado vigente (2026-10-01)
 
-- **2026-09-30 · Fase 4a.** Implementados `plan_contract.py` y la puerta en `m8_case_cli.py`.
-  - Verificado en L0/L1: masterplan 220/220, automatización 59/59.
-  - Detalle: [M4-CONTRATO-HUMANO-AGENTE-V1](M4-CONTRATO-HUMANO-AGENTE-V1.md).
-- **2026-09-30 · Fase 4a, L2 acotado.** Primera aprobación humana real (registro `9B8AADB7…`).
-  - Un plan sin aprobar no abrió la GUI.
-  - El aprobado se ejecutó y se verificó con `human_approval: rechecked`.
-  - Binario: artefacto de CI en depuración `09794ab6`, que no es el código auditado. Repetirlo con release (B19).
-  - **Criterio de salida de la 4a cumplido en su alcance.**
-- **2026-09-30 · Doble auditoría (Codex) del rango `26bce00a..fb0bdd25`, auditado con sus SHAs locales previos a la redacción: bloqueado para push.**
-  - **Privacidad.** El commit documental, en su versión local, expone rutas locales, el programa de un proyecto privado y nombres y hashes de entregables. Hay que redactar y reescribir la rama local antes del primer push (fase 0). Decide Luis.
-  - **Proceso.** Se añadió un commit durante la auditoría. Regla nueva en `AGENTS.md`: SHA congelado mientras se audita.
-  - **Fase 4a**, corregido:
-    - `status` informa si `run` aceptaría la aprobación;
-    - la hoja muestra geometría y coordenadas;
-    - hay pruebas de integración de `run` con revocación, canal ajeno y comandos alterados;
-    - la guía precisa el alcance del freno.
+**Se reescribe, no se apila.** Lo histórico vive en Git y en las notas M*.
 
-    Resultado: 226/226 y 59/59.
-  - **Auditoría 07.** Tres exageraciones de redacción corregidas como erratas.
-  - **Pendiente:** redacción y reescritura, y reauditoría de Codex sobre el SHA congelado del rango nuevo.
+### Dónde está el trabajo
+
+- **Ubicación:** worktree `desktop-distribution`, rama `claude/mcp-stabilization-candidate`, candidata a publicar. El checkout del escritorio no sirve de base.
+- **Commits sobre `26bce00a`, en orden:**
+  1. documental de Codex del 29-sep, redactado para publicación (`d0d88409`);
+  2. auditoría 07 y plan 08 (`186772d0`);
+  3. fase 4a (`fb0bdd25`);
+  4. registro del L2 (`6f488405`);
+  5. correcciones de la primera doble auditoría (`9db0ce37`);
+  6. hoja de revisión con referencias de cotas y líneas de ventanas (`faff5d88`);
+  7. este estado.
+- **Ramas locales que no se publican:**
+  - `codex/windows-web-dxf`, con la versión sin redactar;
+  - `claude/mcp-stabilization-candidate-r1`, la primera candidata, que bloqueó la segunda auditoría. Se conserva para comparar.
+- **Remoto:** `origin/main` sigue en `26bce00a`; la candidata no está publicada.
+
+### Hecho y verificado (2026-10-01, Windows, Python 3.13.7)
+
+- **Documentos.** Auditoría independiente [07](07-AUDITORIA-INDEPENDIENTE-MCP-20260930.md), con adenda A02 y tres erratas tras Codex. Este plan.
+- **Fase 4a**, en `plan_contract.py` y la puerta de `m8_case_cli.py`:
+  - hoja de revisión con una tabla por grupo del PlanSpec, que incluye extremos, vínculos y `offset_m` de las cotas y las líneas de los símbolos; hasta 60 filas por grupo, y la cabecera dice «PARCIALES» si alguno no cabe; no lista `topology` ni `dimension_style`;
+  - aprobación solo en terminal interactiva, con registro encadenado;
+  - `status` con `usable_by_run`.
+  - Detalle y límites: [M4-CONTRATO-HUMANO-AGENTE-V1](M4-CONTRATO-HUMANO-AGENTE-V1.md).
+- **Pruebas** con Python 3.13.7 y Pillow en un entorno aislado, sobre el código del commit 6: masterplan **230/230**, automatización **59/59**. Las de la candidata congelada van en la solicitud de reauditoría.
+- **Historial redactado:** el documental del 29-sep se rehízo sin rutas personales, PID, programa ni dimensiones de los casos privados, ni nombres, rutas o hashes de sus entregables; las métricas agregadas se conservan. Los demás commits se reaplicaron con sus referencias de SHA resueltas y sin afirmar una publicación que no ha ocurrido. Hasta el commit 5, frente a la rama anterior cambian ocho documentos y ningún `.py`.
+- **Segunda auditoría de Codex:** bloqueó la primera candidata por la hoja incompleta, afirmaciones prematuras de «publicado» y un PID histórico. Los tres motivos están corregidos (commits 1, 2, 5 y 6); detalle en M4.
+- **L2 acotado con la firma de Luis** (registro `9B8AADB7…`, único del registro, utilizable por `run`):
+  - sin aprobación, `run` no abrió la GUI;
+  - con aprobación, `passed_scoped_l2` y `verify` con `human_approval: rechecked`.
+
+### Roto o a medias
+
+- **Publicación pendiente.** La candidata tiene el SHA congelado mientras Codex la reaudita. Faltan, en orden:
+  1. veredicto favorable de Codex sobre el rango completo, de `26bce00a` a la punta de la candidata;
+  2. visto bueno explícito de Luis;
+  3. push sin forzar, solo de esta rama, a `lalomalvi/OpenCADStudio`;
+  4. CI mediante PR o despacho manual: el nombre de la rama no activa el workflow por push.
+
+  Merge y publicación de release son decisiones aparte.
+- **Una hoja parcial no bloquea.** Con más de 60 elementos en un grupo, aprobar exige leer el PlanSpec íntegro, y la puerta no lo comprueba.
+- **El L2 no se reverifica con el HEAD actual:** responde «Frozen contract differs». Es por diseño: el contrato ata el hash de `plan_contract.py`, que cambió después del L2. Hay dos caminos:
+  - reverificar con el árbol del commit «record L2» (`6f488405`);
+  - repetir el L2: la firma sigue siendo utilizable.
+- **El L2 usó un binario de depuración** (`09794ab6`, artefacto de CI), que no es el código vigente.
+  - No hay localmente un binario release del código vigente.
+  - La v2026.40.1 que el 06 da por instalada no está: lo instalado es v2026.38.
+- **Entorno de Codex:** en su primera auditoría no tuvo Pillow (24 errores de importación) y su sandbox le bloqueó `target/ci-flow-tests` y `target/fork-sync-tests`. Para correr las suites hace falta Pillow o permiso para esos temporales.
+
+### Qué sigue (más caro primero)
+
+1. **Fase 1, contrato MCP P0** (B01–B04, B14). Es lo que más riesgo de duplicar geometría quita.
+2. **Publicación:** reauditoría de Codex, visto bueno de Luis, push de la candidata y CI. Bloquea el respaldo remoto y la CI.
+3. **B19:** build release del código vigente y repetir el L2. Ocupa la máquina; decide Luis.
+4. **Fases 2 y 3**, después **4b** y **5**.
+
+### Decisiones pendientes de Luis
+
+- Visto bueno de publicación del rango congelado, después del veredicto de Codex.
+- Qué hacer con datos de la máquina que ya están en el historial publicado; el detalle queda fuera de Git.
+- Si una hoja con tablas parciales debe bloquear la aprobación.
+- Hacer o no la build release.
+- Capa de las referencias de bloque (§9.1).
+- Aprobación de un solo uso o reutilizable.
+- Niveles de aprobación (§9.7).
+- El resto de la §9.
+
+### Qué está corriendo
+
+Nada:
+
+- sin agentes ni tareas en segundo plano;
+- sin GUI propia viva.
+
+Una GUI abierta en la máquina es de Luis, salvo prueba de propiedad; esta sesión no la toca.
+
+### Cómo se comprueba (no se cita de memoria)
+
+Desde el worktree:
+
+- `git log --oneline 26bce00a..HEAD` → 7 commits
+- `git ls-remote origin refs/heads/claude/mcp-stabilization-candidate` → vacío mientras no se publique
+- `git diff --stat codex/windows-web-dxf~1 9db0ce37` → ocho documentos, ningún `.py` (solo en esta máquina: la rama anterior es local)
+- `git diff --stat claude/mcp-stabilization-candidate-r1 HEAD` → lo que cambió desde la primera candidata (solo en esta máquina)
+- Con Python 3.13 y Pillow: `python -m unittest discover -s docs/automation/masterplan -p "test_*.py"` → 230
+- Con Python 3.13 y Pillow: `python -m unittest discover -s docs/automation -p "test_*.py"` → 59
+- `python docs/automation/masterplan/plan_contract.py verify-registry --registry target/mcp-release/plan-approvals.jsonl` → 1 registro
+- `python docs/automation/masterplan/plan_contract.py status --plan docs/automation/masterplan/fixtures/synthetic-wall.planspec.json --registry target/mcp-release/plan-approvals.jsonl` → `usable_by_run: true`
+
+### Dónde vive el detalle
+
+- **Auditoría 07:** hallazgos, protocolo de comparación (§6), instrumentación (§7) y lo no verificado (§8).
+- **M4:** contrato, L2, las dos auditorías de Codex y límites.
+- **`AGENTS.md`:** reglas para agentes, incluidas la de no aprobar y el protocolo de push.
+- **Evidencia local, fuera de Git:**
+  - `target/mcp-release/plan-approvals.jsonl`;
+  - `target/mcp-release/l2-contrato-aprobado-20260930/`;
+  - `target/mcp-release/contrato-demo-20260930/`;
+  - `target/mcp-release/candidata-20261001/` (primera candidata) y `target/mcp-release/candidata-20261001-r2/` (esta): pruebas y barrido de privacidad.
+- **Canal con Codex:** no hay CLI en el PATH. Luis pasa un prompt autocontenido y trae el veredicto.

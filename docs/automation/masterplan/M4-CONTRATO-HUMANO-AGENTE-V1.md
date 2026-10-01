@@ -132,6 +132,8 @@ El L2 prueba la **puerta del contrato de punta a punta**, no la build de la GUI.
 - privacidad en el commit documental previo, en su versión local, que publicaría rutas locales, el programa de un proyecto privado y nombres y hashes de entregables;
 - un commit nuevo añadido mientras auditaba.
 
+**Seguimiento (2026-10-01):** el historial se rehízo desde `26bce00a` con el commit documental redactado para publicación (`d0d88409`) y los demás reaplicados. La segunda auditoría, abajo, revisó esa rama.
+
 **De la fase 4a, se corrigió en la ronda siguiente:**
 
 - `status` informaba «approved» sin mirar canal ni comandos. Ahora reporta `usable_by_run`.

@@ -56,13 +56,13 @@ For synchronizing upstream or publishing this fork, follow
 
 ## MCP improvement continuity
 
-For MCP evaluation, performance and hardening work, start with
-[the consolidated evidence and improvement report](docs/automation/masterplan/06-INFORME-MAESTRO-Y-MEJORAS-20260929.md).
-It maps current findings to M0-M8 and preserves scoped results and private evidence.
-The report's current cycle is local-only: do not push based on historical publication authorization.
-The [independent audit](docs/automation/masterplan/07-AUDITORIA-INDEPENDIENTE-MCP-20260930.md)
-and the [stabilization plan](docs/automation/masterplan/08-PLAN-DE-ESTABILIZACION-20260930.md)
-continue that report.
+For MCP evaluation, performance and hardening work, start with §11 "Estado vigente"
+of [the stabilization plan](docs/automation/masterplan/08-PLAN-DE-ESTABILIZACION-20260930.md):
+current location, verified results, broken or partial items, next steps, pending
+decisions and the commands that recompute every figure. It builds on
+[the independent audit](docs/automation/masterplan/07-AUDITORIA-INDEPENDIENTE-MCP-20260930.md)
+and [the earlier consolidated report](docs/automation/masterplan/06-INFORME-MAESTRO-Y-MEJORAS-20260929.md).
+This cycle is local-only: do not push based on historical publication authorization.
 
 - Human-agent plan contract: an agent may write a PlanSpec review with
   `plan_contract.py review`, but never runs `approve` or `revoke`, never writes an
