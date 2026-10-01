@@ -1,22 +1,26 @@
 # M4 · Contrato humano–agente v1 (fase 4a)
 
 **Fecha:** 2026-09-30 · **Plan:** [08 §3](08-PLAN-DE-ESTABILIZACION-20260930.md)
-**Estado:** verificado en L0/L1 y en **L2 acotado** (2026-09-30), con la primera aprobación humana real. L4 externo pendiente.
+**Estado:** verificado en L0/L1 y en **L2 acotado** (2026-09-30), con la primera aprobación humana real. La hoja se amplió el 2026-10-01, verificada en L0/L1. L4 externo pendiente.
 **Código:** `plan_contract.py`; puerta en `m8_case_cli.py`
 
 ## Qué hace
 
-1. **`review`.** Escribe una hoja de revisión de una página, determinista, en una carpeta nueva que no se sobrescribe. Contiene:
-   - la geometría a dibujar:
+1. **`review`.** Escribe una hoja de revisión determinista en una carpeta nueva que no se sobrescribe. Contiene:
+   - lo que se va a dibujar, en una tabla por grupo del PlanSpec:
      - nodos con coordenadas;
-     - muros con longitud y espesor;
-     - vanos con giro o antepecho;
+     - muros con extremos, longitud, espesor y capa;
+     - vanos con muro, posición desde el inicio, ancho y giro o antepecho;
      - uniones;
-     - líneas con longitud;
+     - líneas con extremos y longitud;
      - círculos con centro y radio;
-     - cotas, símbolos y obstáculos con su caja.
+     - cotas con sus extremos y coordenadas, eje, tipo de referencia, valor y texto;
+     - vínculos de cota: muro, cara o eje, y estación de cada extremo;
+     - colocación de cotas: `offset_m` y capa;
+     - símbolos de puerta y de ventana, con las líneas que los forman;
+     - obstáculos con su caja.
 
-     Cada tabla tiene un tope de 60 filas y, si se alcanza, avisa de revisar el PlanSpec íntegro;
+     Cada tabla muestra como máximo 60 filas. Si un grupo tiene más, la tabla dice cuántas faltan y la cabecera marca las tablas como **PARCIALES**: entonces la hoja no basta y hay que revisar el PlanSpec íntegro. La hoja no lista los contornos de `topology` ni el `dimension_style`;
    - los **supuestos** (`source.classification = inferred`) y las **dudas** (`unknown`), con su confianza;
    - los bloqueos y lo no soportado según `dry_run`;
    - lo que se verificará y, explícitamente, lo que **no**;
@@ -32,12 +36,16 @@
    - `verify --approvals` vuelve a comprobarla.
 4. **Contrato del caso.** Pasa a `m8-deterministic-case-contract-2` e incluye el hash de `plan_contract.py`. El paquete de release lo incorpora a su lista cerrada.
 
-## Verificado (2026-09-30, Windows, Python 3.13.7)
+## Verificado (Windows, Python 3.13.7; 2026-09-30, ampliado el 2026-10-01)
 
-**`test_plan_contract.py` (18 pruebas):**
+**`test_plan_contract.py` (22 pruebas):**
 
 - determinismo de la hoja;
-- nodos, líneas y círculos con su geometría, y tope con aviso;
+- nodos, líneas y círculos con su geometría;
+- cotas con extremos y coordenadas, vínculos con cara o eje y estación, y colocación con `offset_m`; si cambia `offset_m`, cambia la hoja;
+- símbolos de ventana con sus seis líneas;
+- dudas y diferencias de vínculos y colocaciones nombran su cota;
+- tope por grupo con aviso y cabecera «completas» o «PARCIALES»;
 - `status` informa si `run` aceptaría la aprobación;
 - supuestos y dudas tomados de `source.classification`;
 - giro de puerta y antepecho de ventana;
@@ -60,7 +68,7 @@
 - con un plan **aprobado**, la puerta deja pasar hasta el lanzamiento de la GUI (simulado);
 - `verify` sin atadura de aprobación se rechaza.
 
-**Suites completas:** masterplan 226/226 y automatización 59/59.
+**Suites completas:** masterplan 230/230 y automatización 59/59 (2026-10-01, con Pillow en un entorno aislado).
 
 **Humo del CLI:**
 
@@ -127,7 +135,7 @@ El L2 prueba la **puerta del contrato de punta a punta**, no la build de la GUI.
 **De la fase 4a, se corrigió en la ronda siguiente:**
 
 - `status` informaba «approved» sin mirar canal ni comandos. Ahora reporta `usable_by_run`.
-- La hoja solo contaba líneas, círculos y otros grupos. Ahora muestra su geometría y las coordenadas de los nodos.
+- La hoja solo contaba líneas, círculos y otros grupos. Desde esa ronda muestra la geometría de líneas, círculos y obstáculos y las coordenadas de los nodos; cotas y símbolos de ventana quedaron incompletos hasta la segunda auditoría.
 - Las pruebas de integración de `run` no cubrían revocación, canal ajeno ni comandos alterados. Ahora sí.
 - La guía rápida afirmaba que un agente «no puede» aprobar. Se precisó que es un freno de procedimiento.
 
@@ -137,9 +145,27 @@ El L2 prueba la **puerta del contrato de punta a punta**, no la build de la GUI.
 - la cadena y la atadura de la hoja resisten las alteraciones probadas;
 - los límites declarados abajo son correctos.
 
+## Segunda auditoría (Codex, 2026-10-01)
+
+**Veredicto:** bloqueó la primera rama candidata por tres motivos:
+
+- la hoja no mostraba los extremos ni los vínculos de las cotas, ni su `offset_m`, ni las líneas de los símbolos de ventana; además, «geometría completa» y el tope de 60 filas no describían lo que de verdad se ve;
+- afirmaciones de «publicado» antes de publicar;
+- un PID histórico en el commit documental.
+
+**De la fase 4a, se corrigió:**
+
+- La hoja muestra los extremos y coordenadas de cada cota, sus vínculos y su colocación con `offset_m`, y las seis líneas de cada símbolo de ventana.
+- Las dudas y diferencias de vínculos y colocaciones nombran su cota; antes salía `?`.
+- La cabecera dice si las tablas están completas o son parciales. El resumen JSON lo registra en `detail_rows_hidden`, con esquema `m4-plan-contract-review-2`.
+- Hay cinco pruebas nuevas o ampliadas. Las cinco fallan contra el código anterior: se comprobó.
+
+Los otros dos motivos se corrigieron en el historial redactado (08 §11).
+
 ## Límites (doctrina, no garantía)
 
 - **Freno de procedimiento, no criptográfico.** Exigir una terminal interactiva lo evita un proceso que simule una terminal o que llame a la API de Python con el canal humano. `AGENTS.md` prohíbe hacerlo. Una firma con llave física queda para después.
 - **La cadena tiene un punto ciego.** Detecta alteraciones y huecos intermedios, pero no el recorte del final del registro. Por eso cada corrida guarda el hash de su aprobación como ancla.
 - **Qué cubre cada firma.** La aprobación cubre el plan y los comandos compilados. El binario lo cubre el contrato del caso (`prepare`).
 - **La hoja no juzga el plan.** Resume lo que el PlanSpec declara; no comprueba que represente fielmente el encargo o la imagen.
+- **Una hoja parcial no bloquea.** Con tablas «PARCIALES», aprobar exige leer el PlanSpec íntegro; la puerta no lo comprueba.

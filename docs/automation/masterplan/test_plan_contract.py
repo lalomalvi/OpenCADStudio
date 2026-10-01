@@ -8,6 +8,7 @@ from unittest import mock
 from plan_contract import (DOUBTS_ACK, HUMAN_CHANNEL, PREFIX_LENGTH, REVIEW_JSON, REVIEW_MD,
                            ContractError, approval_status, approve, build_review, find_record,
                            read_registry, require_approval, revoke, write_review)
+from test_planspec_v11_window_symbols import fixture as window_fixture
 
 
 FIXTURES = Path(__file__).with_name("fixtures")
@@ -74,10 +75,59 @@ class PlanContractTests(unittest.TestCase):
         self.assertIn("**Círculos (1)**", markdown)
         self.assertIn("| `circle-1` | center (5.000, 5.000) | 2.000 | 0 |", markdown)
 
-    def test_long_groups_are_capped_with_a_notice(self):
+    def test_review_shows_dimension_ends_references_and_offset(self):
+        self.plan = self.use_fixture("synthetic-wall-aligned-endpoints-v9.planspec.json")
+        markdown, _ = build_review(self.plan)
+        for expected in (
+                "| `axis-span` | axis-a (0.000, 0.000) → axis-b (3.000, 4.000) | aligned | axis "
+                "| 5.000 | 5.00 m | medido 1.00 |",
+                "**Vínculos de cota (1)**",
+                "| `axis-span` | wall-1 · eje · estación 0.000 m | wall-1 · eje · estación 5.000 m "
+                "| medido 1.00 |",
+                "**Colocación de cotas (1)**", "| cota | offset_m (m) | capa | origen |",
+                "| `axis-span` | 0.500 | 0 | medido 1.00 |"):
+            self.assertIn(expected, markdown)
+        self.edit_plan(lambda plan: plan["dimension_placements"][0].update({"offset_m": 0.75}))
+        moved, _ = build_review(self.plan)
+        self.assertIn("| `axis-span` | 0.750 | 0 | medido 1.00 |", moved)
+
+    def test_review_shows_face_side_of_dimension_references(self):
+        self.plan = self.use_fixture("synthetic-wall-face-dimension-v7.planspec.json")
+        markdown, _ = build_review(self.plan)
+        self.assertIn("| `wall-thickness` | wall-1 · cara izquierda · estación 2.000 m "
+                      "| wall-1 · cara derecha · estación 2.000 m | medido 1.00 |", markdown)
+
+    def test_review_shows_window_symbol_line_references(self):
+        self.plan = self.root / "window-v11.planspec.json"
+        self.plan.write_text(json.dumps(window_fixture()), encoding="utf-8")
+        markdown, _ = build_review(self.plan)
+        self.assertIn("**Símbolos de ventana (1)**", markdown)
+        self.assertIn("| `window` | host-left / host-right | outer / inner | jamb-left / jamb-right "
+                      "| A-WINDOW | unverified | schematic | medido 1.00 |", markdown)
+
+    def test_dimension_references_are_named_in_doubts_and_diffs(self):
+        self.plan = self.use_fixture("synthetic-wall-aligned-endpoints-v9.planspec.json")
+        previous = self.root / "previous.planspec.json"
+        shutil.copyfile(self.plan, previous)
+        def change(plan):
+            plan["dimension_bindings"][0]["source"]["classification"] = "unknown"
+            plan["dimension_placements"][0]["offset_m"] = 0.75
+        self.edit_plan(change)
+        markdown, data = build_review(self.plan, previous)
+        self.assertEqual(data["doubts"], ["axis-span"])
+        self.assertIn("- vínculo de cota `axis-span`", markdown)
+        self.assertIn("- Modificado vínculo de cota `axis-span`: source", markdown)
+        self.assertIn("- Modificado colocación de cota `axis-span`: offset_m", markdown)
+
+    def test_long_groups_are_capped_and_the_header_says_so(self):
+        markdown, data = build_review(self.plan)
+        self.assertIn("| Tablas de la §1 | completas |", markdown)
+        self.assertEqual(data["detail_rows_hidden"], {})
         with mock.patch("plan_contract.DETAIL_ROWS", 1):
-            markdown, _ = build_review(self.plan)
+            markdown, data = build_review(self.plan)
         self.assertIn("… y 1 nodos más: revisa el PlanSpec íntegro.", markdown)
+        self.assertIn("**PARCIALES** — filas sin mostrar: 1 (máximo 1 por grupo)", markdown)
+        self.assertEqual(data["detail_rows_hidden"], {"nodes": 1})
 
     def test_status_reports_whether_run_would_accept_the_approval(self):
         review_dir, data = self.review()

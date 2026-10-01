@@ -2,7 +2,7 @@
 
 Phase 4a of 08-PLAN-DE-ESTABILIZACION-20260930.md. An agent proposes a PlanSpec;
 nothing is drawn until a human approves the exact plan hash after reading a
-deterministic one-page review. Agents must never run `approve` or `revoke`:
+deterministic review sheet. Agents must never run `approve` or `revoke`:
 those commands require an interactive terminal and record the human channel.
 """
 
@@ -18,7 +18,7 @@ import sys
 from planspec import PlanError, dry_run
 
 
-REVIEW_SCHEMA = "m4-plan-contract-review-1"
+REVIEW_SCHEMA = "m4-plan-contract-review-2"
 APPROVAL_SCHEMA = "m4-plan-contract-approval-1"
 HUMAN_CHANNEL = "interactive_tty"
 DOUBTS_ACK = "ACEPTO DUDAS"
@@ -35,6 +35,7 @@ ELEMENT_GROUPS = (
     ("obstacles", "obstáculo"),
 )
 CLASSIFICATION_LABELS = {"measured": "medido", "inferred": "inferido", "unknown": "desconocido"}
+REFERENCE_SIDES = {"left": "cara izquierda", "right": "cara derecha", "axis": "eje"}
 
 
 class ContractError(ValueError):
@@ -70,6 +71,10 @@ def _elements(plan: dict, key: str) -> list[dict]:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
 
 
+def _identity(element: dict) -> str:
+    return str(element.get("id", element.get("dimension_id", "?")))
+
+
 def _source_label(element: dict) -> str:
     source = element.get("source") if isinstance(element.get("source"), dict) else {}
     label = CLASSIFICATION_LABELS.get(source.get("classification"), "sin origen")
@@ -83,7 +88,7 @@ def _classified(plan: dict, classification: str) -> list[dict]:
         for element in _elements(plan, key):
             source = element.get("source") if isinstance(element.get("source"), dict) else {}
             if source.get("classification") == classification:
-                found.append({"group": key, "noun": noun, "id": str(element.get("id", "?")),
+                found.append({"group": key, "noun": noun, "id": _identity(element),
                               "confidence": source.get("confidence")})
     return found
 
@@ -105,6 +110,14 @@ def _node_label(nodes: dict, identifier) -> str:
     if not node:
         return f"{identifier} (?)"
     return f"{identifier} ({_meters(node.get('x'))}, {_meters(node.get('y'))})"
+
+
+def _reference_label(reference) -> str:
+    if not isinstance(reference, dict):
+        return "?"
+    side = REFERENCE_SIDES.get(reference.get("side"), reference.get("side", "?"))
+    return (f"{reference.get('wall_id', '?')} · {side} · "
+            f"estación {_meters(reference.get('station_m'))} m")
 
 
 def _cell(value) -> str:
@@ -134,8 +147,8 @@ def _opening_detail(opening: dict) -> str:
 def _group_diff(previous: dict, current: dict) -> list[str]:
     lines = []
     for key, noun in ELEMENT_GROUPS:
-        before = {str(item.get("id")): item for item in _elements(previous, key)}
-        after = {str(item.get("id")): item for item in _elements(current, key)}
+        before = {_identity(item): item for item in _elements(previous, key)}
+        after = {_identity(item): item for item in _elements(current, key)}
         for identifier in sorted(after.keys() - before.keys()):
             lines.append(f"- Nuevo {noun} `{identifier}`")
         for identifier in sorted(before.keys() - after.keys()):
@@ -169,22 +182,6 @@ def build_review(plan_path: Path, previous_path: Path | None = None,
     nodes = {str(node.get("id")): node for node in _elements(plan, "nodes")}
     origin = plan.get("origin") if isinstance(plan.get("origin"), dict) else {}
 
-    lines = ["# Contrato de plan · hoja de revisión", "",
-             "> Nada se dibuja hasta que un humano apruebe **este** hash. "
-             "Un agente no debe aprobar.", ""]
-    lines += _table(["Campo", "Valor"], [
-        ["Plan", f"`{plan_path.name}`"],
-        ["Esquema", f"`{plan.get('schema_version', '?')}` · unidades "
-                    f"`{plan.get('units', '?')}` · origen ({_meters(origin.get('x'))}, "
-                    f"{_meters(origin.get('y'))})"],
-        ["Hash del plan", f"`{plan_sha[:PREFIX_LENGTH]}…` (completo al final)"],
-        ["Compilación", f"{len(commands)} comandos · `commands_sha256` "
-                        f"`{commands_sha[:PREFIX_LENGTH]}…`"],
-        ["¿Ejecutable?", "**Sí**" if executable else
-            f"**NO** — {len(blockers)} bloqueos, {len(unsupported)} no soportados"],
-    ])
-
-    lines += ["", "## 1. Qué se va a dibujar", ""]
     kinds = {"door": "puerta", "window": "ventana", "clear": "vano libre"}
     sections = [
         ("nodes", "Nodos", "nodos", ["id", "x (m)", "y (m)", "origen"],
@@ -210,19 +207,33 @@ def build_review(plan_path: Path, previous_path: Path | None = None,
         ("circles", "Círculos", "círculos", ["id", "centro", "radio (m)", "capa", "origen"],
          lambda item: [f"`{item.get('id')}`", _node_label(nodes, item.get("center")),
                        _meters(item.get("radius")), item.get("layer", "?"), _source_label(item)]),
-        ("dimensions", "Cotas", "cotas", ["id", "eje", "referencia", "valor (m)", "texto", "origen"],
-         lambda item: [f"`{item.get('id')}`", item.get("axis", "?"), item.get("reference_type", "?"),
-                       _meters(item.get("value")), item.get("text", ""), _source_label(item)]),
+        ("dimensions", "Cotas", "cotas",
+         ["id", "de → a", "eje", "referencia", "valor (m)", "texto", "origen"],
+         lambda item: [f"`{item.get('id')}`", f"{_node_label(nodes, item.get('start'))} → "
+                       f"{_node_label(nodes, item.get('end'))}", item.get("axis", "?"),
+                       item.get("reference_type", "?"), _meters(item.get("value")),
+                       item.get("text", ""), _source_label(item)]),
+        ("dimension_bindings", "Vínculos de cota", "vínculos", ["cota", "inicio", "fin", "origen"],
+         lambda item: [f"`{item.get('dimension_id')}`", _reference_label(item.get("start_ref")),
+                       _reference_label(item.get("end_ref")), _source_label(item)]),
+        ("dimension_placements", "Colocación de cotas", "colocaciones",
+         ["cota", "offset_m (m)", "capa", "origen"],
+         lambda item: [f"`{item.get('dimension_id')}`", _meters(item.get("offset_m")),
+                       item.get("layer", "?"), _source_label(item)]),
         ("door_symbols", "Símbolos de puerta", "símbolos",
          ["id", "líneas opuesta / bisagra / hoja", "capa", "origen"],
          lambda item: [f"`{item.get('id')}`", f"{item.get('opposite_line_id')} / "
                        f"{item.get('hinge_line_id')} / {item.get('leaf_line_id')}",
                        item.get("layer", "?"), _source_label(item)]),
         ("window_symbols", "Símbolos de ventana", "símbolos",
-         ["id", "capa", "elevación", "perfil", "origen"],
-         lambda item: [f"`{item.get('id')}`", item.get("layer", "?"),
-                       item.get("elevation_status", "?"), item.get("frame_profile_status", "?"),
-                       _source_label(item)]),
+         ["id", "líneas muro izq. / der.", "riel ext. / int.", "jamba izq. / der.", "capa",
+          "elevación", "perfil", "origen"],
+         lambda item: [f"`{item.get('id')}`",
+                       f"{item.get('left_wall_line_id')} / {item.get('right_wall_line_id')}",
+                       f"{item.get('outer_rail_line_id')} / {item.get('inner_rail_line_id')}",
+                       f"{item.get('left_jamb_line_id')} / {item.get('right_jamb_line_id')}",
+                       item.get("layer", "?"), item.get("elevation_status", "?"),
+                       item.get("frame_profile_status", "?"), _source_label(item)]),
         ("obstacles", "Obstáculos", "obstáculos",
          ["id", "tipo", "caja mín → máx (m)", "base z (m)", "altura (m)", "origen"],
          lambda item: [f"`{item.get('id')}`", item.get("kind", "?"),
@@ -231,6 +242,28 @@ def build_review(plan_path: Path, previous_path: Path | None = None,
                        _meters(item.get("base_z_m")), _meters(item.get("height_m")),
                        _source_label(item)]),
     ]
+    hidden = {key: len(_elements(plan, key)) - DETAIL_ROWS for key, *_ in sections
+              if len(_elements(plan, key)) > DETAIL_ROWS}
+
+    lines = ["# Contrato de plan · hoja de revisión", "",
+             "> Nada se dibuja hasta que un humano apruebe **este** hash. "
+             "Un agente no debe aprobar.", ""]
+    lines += _table(["Campo", "Valor"], [
+        ["Plan", f"`{plan_path.name}`"],
+        ["Esquema", f"`{plan.get('schema_version', '?')}` · unidades "
+                    f"`{plan.get('units', '?')}` · origen ({_meters(origin.get('x'))}, "
+                    f"{_meters(origin.get('y'))})"],
+        ["Hash del plan", f"`{plan_sha[:PREFIX_LENGTH]}…` (completo al final)"],
+        ["Compilación", f"{len(commands)} comandos · `commands_sha256` "
+                        f"`{commands_sha[:PREFIX_LENGTH]}…`"],
+        ["¿Ejecutable?", "**Sí**" if executable else
+            f"**NO** — {len(blockers)} bloqueos, {len(unsupported)} no soportados"],
+        ["Tablas de la §1", "completas" if not hidden else
+            f"**PARCIALES** — filas sin mostrar: {sum(hidden.values())} (máximo "
+            f"{DETAIL_ROWS} por grupo); revisa el PlanSpec íntegro"],
+    ])
+
+    lines += ["", "## 1. Qué se va a dibujar", ""]
     drawn = False
     for key, title, plural, headers, row in sections:
         items = _elements(plan, key)
@@ -243,14 +276,10 @@ def build_review(plan_path: Path, previous_path: Path | None = None,
         if len(items) > len(shown):
             lines.append(f"… y {len(items) - len(shown)} {plural} más: revisa el PlanSpec íntegro.")
         lines.append("")
-    references = [(noun, len(_elements(plan, key))) for key, noun in ELEMENT_GROUPS
-                  if key in {"dimension_bindings", "dimension_placements"} and _elements(plan, key)]
-    if references:
-        lines.append("**Referencias de cotas:** " +
-                     ", ".join(f"{count} × {noun}" for noun, count in references))
-        lines.append("")
     if not drawn:
         lines += ["Ningún elemento dibujable.", ""]
+    lines += ["La hoja no lista los contornos de `topology` ni el `dimension_style`: "
+              "revísalos en el PlanSpec.", ""]
 
     lines += ["## 2. Supuestos del agente (inferidos, sin dato medido)", ""]
     lines += [f"- {item['noun']} `{item['id']}` · confianza "
@@ -311,6 +340,7 @@ def build_review(plan_path: Path, previous_path: Path | None = None,
         "quality_blockers": blockers,
         "assumptions": [item["id"] for item in assumptions],
         "doubts": [item["id"] for item in doubts],
+        "detail_rows_hidden": dict(sorted(hidden.items())),
         "previous": previous,
         "planspec_code_sha256": digest(Path(__file__).with_name("planspec.py")),
         "review_code_sha256": digest(Path(__file__)),
